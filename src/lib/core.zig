@@ -591,29 +591,34 @@ pub fn nth(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// println : 改行付き出力
 pub fn println_fn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
-    const stdout = std.io.getStdOut().writer();
+    const stdout = std.fs.File.stdout();
+    var buf: [4096]u8 = undefined;
+    var file_writer = stdout.writer(&buf);
+    const writer = &file_writer.interface;
 
     for (args, 0..) |arg, i| {
-        if (i > 0) try stdout.writeByte(' ');
-        try printValue(stdout, arg);
+        if (i > 0) writer.writeByte(' ') catch {};
+        printValue(writer, arg) catch {};
     }
-    try stdout.writeByte('\n');
+    writer.writeByte('\n') catch {};
+    // flush via interface
+    writer.flush() catch {};
 
     return value_mod.nil;
 }
 
 /// pr-str : 文字列表現を返す（print 用）
 pub fn prStr(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(allocator);
 
     for (args, 0..) |arg, i| {
-        if (i > 0) try buf.append(' ');
-        try printValueToBuf(&buf, arg);
+        if (i > 0) try buf.append(allocator, ' ');
+        try printValueToBuf(allocator, &buf, arg);
     }
 
     const str = try allocator.create(value_mod.String);
-    str.* = .{ .data = try buf.toOwnedSlice() };
+    str.* = .{ .data = try buf.toOwnedSlice(allocator) };
     return Value{ .string = str };
 }
 
@@ -668,11 +673,15 @@ fn printValue(writer: anytype, val: Value) !void {
         },
         .map => |m| {
             try writer.writeByte('{');
-            for (m.entries, 0..) |entry, i| {
-                if (i > 0) try writer.writeAll(", ");
-                try printValue(writer, entry.key);
+            // entries はフラット配列 [k1, v1, k2, v2, ...]
+            var idx: usize = 0;
+            while (idx < m.entries.len) : (idx += 2) {
+                if (idx > 0) try writer.writeAll(", ");
+                try printValue(writer, m.entries[idx]);
                 try writer.writeByte(' ');
-                try printValue(writer, entry.value);
+                if (idx + 1 < m.entries.len) {
+                    try printValue(writer, m.entries[idx + 1]);
+                }
             }
             try writer.writeByte('}');
         },
@@ -699,10 +708,28 @@ fn printValue(writer: anytype, val: Value) !void {
     }
 }
 
-/// 値を出力（ArrayList 版）
-fn printValueToBuf(buf: *std.ArrayList(u8), val: Value) !void {
-    const writer = buf.writer();
-    try printValue(writer, val);
+/// 値を出力（ArrayListUnmanaged 版）
+fn printValueToBuf(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), val: Value) !void {
+    const Context = struct {
+        buf: *std.ArrayListUnmanaged(u8),
+        allocator: std.mem.Allocator,
+
+        pub fn writeByte(self: *@This(), byte: u8) !void {
+            try self.buf.append(self.allocator, byte);
+        }
+
+        pub fn writeAll(self: *@This(), data: []const u8) !void {
+            try self.buf.appendSlice(self.allocator, data);
+        }
+
+        pub fn print(self: *@This(), comptime fmt: []const u8, args: anytype) !void {
+            var local_buf: [64]u8 = undefined;
+            const s = std.fmt.bufPrint(&local_buf, fmt, args) catch return error.OutOfMemory;
+            try self.buf.appendSlice(self.allocator, s);
+        }
+    };
+    var ctx = Context{ .buf = buf, .allocator = allocator };
+    try printValue(&ctx, val);
 }
 
 // ============================================================

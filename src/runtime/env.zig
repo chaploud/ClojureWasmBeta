@@ -107,7 +107,19 @@ pub const Env = struct {
         }
 
         // 名前空間修飾なし
-        return ns.resolve(sym.name);
+        // 1. 現在の NS を検索
+        if (ns.resolve(sym.name)) |v| {
+            return v;
+        }
+
+        // 2. clojure.core をフォールバック検索（Clojure の標準動作）
+        if (self.namespaces.get("clojure.core")) |core| {
+            if (core.resolve(sym.name)) |v| {
+                return v;
+            }
+        }
+
+        return null;
     }
 
     /// clojure.core の Var を取得

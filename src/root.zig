@@ -69,7 +69,9 @@ pub const evaluator = @import("runtime/evaluator.zig");
 // === 標準ライブラリ ===
 pub const core = @import("lib/core.zig");
 
-// テスト
+// === テスト ===
+pub const test_e2e = @import("test_e2e.zig");
+
 test {
     std.testing.refAllDecls(@This());
 }
