@@ -11,12 +11,12 @@
 //! TODO: Analyzer 実装時に有効化
 
 const std = @import("std");
-const err = @import("error.zig");
+const err = @import("../core/error.zig");
 
 // TODO: 実装時にコメント解除
-// const value = @import("value.zig");
+// const value = @import("../runtime/value.zig");
 // const Value = value.Value;
-// const context = @import("context.zig");
+// const context = @import("../runtime/context.zig");
 // const Context = context.Context;
 
 /// ソース位置情報（エラー追跡用）

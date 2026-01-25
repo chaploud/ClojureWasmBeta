@@ -17,7 +17,7 @@ const std = @import("std");
 // const Value = value.Value;
 // const namespace = @import("namespace.zig");
 // const Namespace = namespace.Namespace;
-// const form = @import("form.zig");
+// const form = @import("../reader/form.zig");
 // const Symbol = form.Symbol;
 
 /// Var: Clojure変数

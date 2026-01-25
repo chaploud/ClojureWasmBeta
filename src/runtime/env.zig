@@ -13,7 +13,7 @@
 const std = @import("std");
 
 // TODO: 実装時にコメント解除
-// const form = @import("form.zig");
+// const form = @import("../reader/form.zig");
 // const Symbol = form.Symbol;
 // const namespace = @import("namespace.zig");
 // const Namespace = namespace.Namespace;

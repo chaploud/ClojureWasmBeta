@@ -13,7 +13,7 @@
 const std = @import("std");
 
 // TODO: 実装時にコメント解除
-// const form = @import("form.zig");
+// const form = @import("../reader/form.zig");
 // const Symbol = form.Symbol;
 // const var_mod = @import("var.zig");
 // const Var = var_mod.Var;

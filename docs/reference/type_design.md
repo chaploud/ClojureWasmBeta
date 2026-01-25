@@ -7,14 +7,14 @@ Clojure処理系における値の3段階表現。sci/babashka/本家Clojureの�
 ```
 ┌─────────────────────────────────────────────────────┐
 │ 1. Reader Phase: 構文表現                            │
-│    src/form.zig - Form型                             │
+│    src/reader/form.zig - Form型                      │
 │    Symbol, List, Vector, Keyword, etc.              │
 │    + メタデータ(line/column/file)                   │
 └─────────────────────────────────────────────────────┘
                     ↓ analyze (マクロ展開含む)
 ┌─────────────────────────────────────────────────────┐
 │ 2. Analyzer Phase: 実行可能ノード                    │
-│    src/node.zig - Node型                             │
+│    src/analyzer/node.zig - Node型                    │
 │    fn(ctx, bindings) -> Value                       │
 │    ConstantNode, VarNode, CallNode, IfNode, etc.    │
 │    + スタック情報（ソース位置）                      │
@@ -22,28 +22,50 @@ Clojure処理系における値の3段階表現。sci/babashka/本家Clojureの�
                     ↓ 評価
 ┌─────────────────────────────────────────────────────┐
 │ 3. Runtime Phase: 実際の値                           │
-│    src/value.zig - Value型                           │
+│    src/runtime/value.zig - Value型                   │
 │    Var, Fn, 数値, 文字列, コレクション等             │
 │    + thread-local dynamic bindings                  │
 └─────────────────────────────────────────────────────┘
+```
+
+## ディレクトリ構成
+
+```
+src/
+├── core/             # 共通基盤
+│   └── error.zig     # エラー型
+├── reader/           # Phase 1: Reader
+│   ├── tokenizer.zig # トークナイザー
+│   ├── reader.zig    # S式構築（将来）
+│   └── form.zig      # Form型
+├── analyzer/         # Phase 2: Analyzer
+│   └── node.zig      # Node型
+├── runtime/          # Phase 3: Runtime
+│   ├── value.zig     # Value型
+│   ├── var.zig       # Var
+│   ├── namespace.zig # Namespace
+│   ├── env.zig       # Env
+│   └── context.zig   # Context
+└── lib/              # 標準ライブラリ（将来）
+    └── core.zig      # clojure.core
 ```
 
 ## ファイル構成
 
 | ファイル | 型 | フェーズ | 状態 |
 |---------|-----|---------|------|
-| `src/form.zig` | Form | Reader | 実装済 |
-| `src/node.zig` | Node | Analyzer | スタブ |
-| `src/value.zig` | Value | Runtime | スタブ |
-| `src/var.zig` | Var | Runtime | スタブ |
-| `src/namespace.zig` | Namespace | Runtime | スタブ |
-| `src/env.zig` | Env | Runtime | スタブ |
-| `src/context.zig` | Context | 評価器 | スタブ |
+| `src/reader/form.zig` | Form | Reader | 実装済 |
+| `src/analyzer/node.zig` | Node | Analyzer | スタブ |
+| `src/runtime/value.zig` | Value | Runtime | スタブ |
+| `src/runtime/var.zig` | Var | Runtime | スタブ |
+| `src/runtime/namespace.zig` | Namespace | Runtime | スタブ |
+| `src/runtime/env.zig` | Env | Runtime | スタブ |
+| `src/runtime/context.zig` | Context | 評価器 | スタブ |
 
 ## Form (Reader出力)
 
 ```zig
-// src/form.zig
+// src/reader/form.zig
 pub const Form = union(enum) {
     // リテラル
     nil,
@@ -84,7 +106,7 @@ pub const FormList = struct {
 ## Node (Analyzer出力)
 
 ```zig
-// src/node.zig
+// src/analyzer/node.zig
 pub const Node = union(enum) {
     // リテラル（即値）
     constant: Value,
@@ -134,7 +156,7 @@ pub const CallNode = struct {
 ## Value (Runtime値)
 
 ```zig
-// src/value.zig
+// src/runtime/value.zig
 pub const Value = union(enum) {
     // 基本型
     nil,
@@ -181,7 +203,7 @@ pub const Value = union(enum) {
 ## Var (変数)
 
 ```zig
-// src/var.zig
+// src/runtime/var.zig
 pub const Var = struct {
     root: Value,              // グローバルバインディング
     sym: Symbol,
@@ -201,7 +223,7 @@ pub const Var = struct {
 ## Namespace (名前空間)
 
 ```zig
-// src/namespace.zig
+// src/runtime/namespace.zig
 pub const Namespace = struct {
     name: Symbol,
     mappings: SymbolVarMap,   // Symbol → *Var (intern済み)
@@ -218,7 +240,7 @@ pub const Namespace = struct {
 ## Env (グローバル環境)
 
 ```zig
-// src/env.zig
+// src/runtime/env.zig
 pub const Env = struct {
     namespaces: SymbolNsMap,  // Symbol → *Namespace
 
@@ -234,7 +256,7 @@ pub const Env = struct {
 ## Context (評価コンテキスト)
 
 ```zig
-// src/context.zig
+// src/runtime/context.zig
 pub const Context = struct {
     env: *Env,
     current_ns: *Namespace,
