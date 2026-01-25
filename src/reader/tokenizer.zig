@@ -8,7 +8,7 @@
 //! 4. それ以外はシンボルとして読む
 
 const std = @import("std");
-const err = @import("../core/error.zig");
+const err = @import("../base/error.zig");
 
 /// トークン種別
 pub const TokenKind = enum(u8) {

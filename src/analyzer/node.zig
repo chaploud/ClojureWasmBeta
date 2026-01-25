@@ -11,7 +11,7 @@
 //! TODO: Analyzer 実装時に有効化
 
 const std = @import("std");
-const err = @import("../core/error.zig");
+const err = @import("../base/error.zig");
 
 // TODO: 実装時にコメント解除
 // const value = @import("../runtime/value.zig");

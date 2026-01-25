@@ -6,18 +6,18 @@
 //!   Form (Reader) → Node (Analyzer) → Value (Runtime)
 //!
 //! ディレクトリ構成:
-//!   src/core/     - 共通基盤（error等）
+//!   src/base/     - 共通基盤（error, allocator, intern等）
 //!   src/reader/   - Phase 1: Reader（tokenizer, form）
 //!   src/analyzer/ - Phase 2: Analyzer（node）
 //!   src/runtime/  - Phase 3: Runtime（value, var, namespace, env, context）
-//!   src/lib/      - 標準ライブラリ（将来）
+//!   src/lib/      - 標準ライブラリ（clojure.core等）
 //!
 //! 詳細: docs/reference/type_design.md
 
 const std = @import("std");
 
 // === 共通基盤 ===
-pub const err = @import("core/error.zig");
+pub const err = @import("base/error.zig");
 
 // === Phase 1: Reader ===
 pub const form = @import("reader/form.zig");
