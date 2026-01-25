@@ -1,0 +1,697 @@
+//! Analyzer: Form → Node 変換
+//!
+//! Reader が生成した Form を実行可能な Node に変換する。
+//! - special forms の解析 (if, do, let, fn, def, quote)
+//! - シンボル解決（ローカル変数 vs Var）
+//! - マクロ展開（将来）
+//!
+//! 3フェーズアーキテクチャ:
+//!   Form (Reader) → Node (Analyzer) → Value (Runtime)
+
+const std = @import("std");
+const form_mod = @import("../reader/form.zig");
+const Form = form_mod.Form;
+const FormSymbol = form_mod.Symbol;
+const node_mod = @import("node.zig");
+const Node = node_mod.Node;
+const SourceInfo = node_mod.SourceInfo;
+const value_mod = @import("../runtime/value.zig");
+const Value = value_mod.Value;
+const RuntimeSymbol = value_mod.Symbol;
+const env_mod = @import("../runtime/env.zig");
+const Env = env_mod.Env;
+const var_mod = @import("../runtime/var.zig");
+const Var = var_mod.Var;
+const err = @import("../base/error.zig");
+
+/// ローカルバインディング情報
+const LocalBinding = struct {
+    name: []const u8,
+    idx: u32,
+};
+
+/// Analyzer
+/// Form を Node に変換
+pub const Analyzer = struct {
+    allocator: std.mem.Allocator,
+    env: *Env,
+
+    /// ローカル変数のスタック（let, fn のバインディング）
+    locals: std.ArrayListUnmanaged(LocalBinding) = .empty,
+
+    /// 初期化
+    pub fn init(allocator: std.mem.Allocator, env: *Env) Analyzer {
+        return .{
+            .allocator = allocator,
+            .env = env,
+        };
+    }
+
+    /// 解放
+    pub fn deinit(self: *Analyzer) void {
+        self.locals.deinit(self.allocator);
+    }
+
+    /// Form を Node に変換
+    pub fn analyze(self: *Analyzer, form: Form) err.Error!*Node {
+        return switch (form) {
+            // リテラル
+            .nil => self.makeConstant(value_mod.nil),
+            .bool_true => self.makeConstant(value_mod.true_val),
+            .bool_false => self.makeConstant(value_mod.false_val),
+            .int => |n| self.makeConstant(value_mod.intVal(n)),
+            .float => |n| self.makeConstant(value_mod.floatVal(n)),
+            .string => |s| self.analyzeString(s),
+            .keyword => |sym| self.analyzeKeyword(sym),
+            .symbol => |sym| self.analyzeSymbol(sym),
+
+            // コレクション
+            .list => |items| self.analyzeList(items),
+            .vector => |items| self.analyzeVector(items),
+        };
+    }
+
+    // === リテラル解析 ===
+
+    fn analyzeString(self: *Analyzer, s: []const u8) err.Error!*Node {
+        const str = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+        str.* = value_mod.String.init(s);
+        return self.makeConstant(.{ .string = str });
+    }
+
+    fn analyzeKeyword(self: *Analyzer, sym: FormSymbol) err.Error!*Node {
+        const kw = self.allocator.create(value_mod.Keyword) catch return error.OutOfMemory;
+        kw.* = if (sym.namespace) |ns|
+            value_mod.Keyword.initNs(ns, sym.name)
+        else
+            value_mod.Keyword.init(sym.name);
+        return self.makeConstant(.{ .keyword = kw });
+    }
+
+    fn analyzeSymbol(self: *Analyzer, sym: FormSymbol) err.Error!*Node {
+        // ローカル変数を検索
+        if (sym.namespace == null) {
+            if (self.findLocal(sym.name)) |local| {
+                return self.makeLocalRef(local.name, local.idx);
+            }
+        }
+
+        // Var を検索
+        const runtime_sym = if (sym.namespace) |ns|
+            RuntimeSymbol.initNs(ns, sym.name)
+        else
+            RuntimeSymbol.init(sym.name);
+
+        if (self.env.resolve(runtime_sym)) |v| {
+            return self.makeVarRef(v);
+        }
+
+        // 未定義シンボル
+        return err.parseError(.undefined_symbol, "Unable to resolve symbol", .{});
+    }
+
+    // === コレクション解析 ===
+
+    fn analyzeList(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len == 0) {
+            // 空リスト () は nil ではなく空リスト
+            return self.makeEmptyList();
+        }
+
+        // 先頭要素をチェック
+        const first = items[0];
+        if (first == .symbol) {
+            const sym_name = first.symbol.name;
+
+            // special forms
+            if (std.mem.eql(u8, sym_name, "if")) {
+                return self.analyzeIf(items);
+            } else if (std.mem.eql(u8, sym_name, "do")) {
+                return self.analyzeDo(items);
+            } else if (std.mem.eql(u8, sym_name, "let") or std.mem.eql(u8, sym_name, "let*")) {
+                return self.analyzeLet(items);
+            } else if (std.mem.eql(u8, sym_name, "fn") or std.mem.eql(u8, sym_name, "fn*")) {
+                return self.analyzeFn(items);
+            } else if (std.mem.eql(u8, sym_name, "def")) {
+                return self.analyzeDef(items);
+            } else if (std.mem.eql(u8, sym_name, "quote")) {
+                return self.analyzeQuote(items);
+            } else if (std.mem.eql(u8, sym_name, "loop") or std.mem.eql(u8, sym_name, "loop*")) {
+                return self.analyzeLoop(items);
+            } else if (std.mem.eql(u8, sym_name, "recur")) {
+                return self.analyzeRecur(items);
+            }
+        }
+
+        // 関数呼び出し
+        return self.analyzeCall(items);
+    }
+
+    fn analyzeVector(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // ベクターリテラル
+        var analyzed = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+        for (items, 0..) |item, i| {
+            const node = try self.analyze(item);
+            // 定数のみサポート（現時点）
+            switch (node.*) {
+                .constant => |val| analyzed[i] = val,
+                else => return err.parseError(.invalid_token, "Vector literal must contain constants", .{}),
+            }
+        }
+
+        const vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
+        vec.* = .{ .items = analyzed };
+        return self.makeConstant(.{ .vector = vec });
+    }
+
+    // === special forms ===
+
+    fn analyzeIf(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (if test then) または (if test then else)
+        if (items.len < 3 or items.len > 4) {
+            return err.parseError(.invalid_arity, "if requires 2 or 3 arguments", .{});
+        }
+
+        const test_node = try self.analyze(items[1]);
+        const then_node = try self.analyze(items[2]);
+        const else_node = if (items.len == 4)
+            try self.analyze(items[3])
+        else
+            try self.makeConstant(value_mod.nil);
+
+        const if_data = self.allocator.create(node_mod.IfNode) catch return error.OutOfMemory;
+        if_data.* = .{
+            .test_node = test_node,
+            .then_node = then_node,
+            .else_node = else_node,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .if_node = if_data };
+        return node;
+    }
+
+    fn analyzeDo(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (do expr1 expr2 ...)
+        if (items.len == 1) {
+            return self.makeConstant(value_mod.nil);
+        }
+
+        var statements = self.allocator.alloc(*Node, items.len - 1) catch return error.OutOfMemory;
+        for (items[1..], 0..) |item, i| {
+            statements[i] = try self.analyze(item);
+        }
+
+        const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
+        do_data.* = .{
+            .statements = statements,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .do_node = do_data };
+        return node;
+    }
+
+    fn analyzeLet(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (let [binding1 val1 binding2 val2 ...] body...)
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "let requires binding vector", .{});
+        }
+
+        // バインディングベクター
+        const bindings_form = items[1];
+        if (bindings_form != .vector) {
+            return err.parseError(.invalid_binding, "let bindings must be a vector", .{});
+        }
+
+        const binding_pairs = bindings_form.vector;
+        if (binding_pairs.len % 2 != 0) {
+            return err.parseError(.invalid_binding, "let bindings must have even number of forms", .{});
+        }
+
+        // ローカルバインディングをスタックに追加
+        const start_locals = self.locals.items.len;
+        var bindings = self.allocator.alloc(node_mod.LetBinding, binding_pairs.len / 2) catch return error.OutOfMemory;
+
+        var i: usize = 0;
+        while (i < binding_pairs.len) : (i += 2) {
+            const sym_form = binding_pairs[i];
+            if (sym_form != .symbol) {
+                return err.parseError(.invalid_binding, "let binding name must be a symbol", .{});
+            }
+
+            const name = sym_form.symbol.name;
+            const init_node = try self.analyze(binding_pairs[i + 1]);
+
+            // ローカルに追加
+            const idx: u32 = @intCast(self.locals.items.len);
+            self.locals.append(self.allocator, .{ .name = name, .idx = idx }) catch return error.OutOfMemory;
+
+            bindings[i / 2] = .{ .name = name, .init = init_node };
+        }
+
+        // ボディを解析
+        const body = if (items.len == 2)
+            try self.makeConstant(value_mod.nil)
+        else if (items.len == 3)
+            try self.analyze(items[2])
+        else blk: {
+            // 複数のボディ式を do でラップ
+            var statements = self.allocator.alloc(*Node, items.len - 2) catch return error.OutOfMemory;
+            for (items[2..], 0..) |item, j| {
+                statements[j] = try self.analyze(item);
+            }
+            const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
+            do_data.* = .{ .statements = statements, .stack = .{} };
+            const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
+            do_node.* = .{ .do_node = do_data };
+            break :blk do_node;
+        };
+
+        // ローカルをポップ
+        self.locals.shrinkRetainingCapacity(start_locals);
+
+        const let_data = self.allocator.create(node_mod.LetNode) catch return error.OutOfMemory;
+        let_data.* = .{
+            .bindings = bindings,
+            .body = body,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .let_node = let_data };
+        return node;
+    }
+
+    fn analyzeFn(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (fn name? [params] body...) または (fn name? ([params] body...) ...)
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "fn requires parameter vector", .{});
+        }
+
+        var idx: usize = 1;
+        var name: ?[]const u8 = null;
+
+        // オプションの名前
+        if (items[idx] == .symbol) {
+            name = items[idx].symbol.name;
+            idx += 1;
+        }
+
+        if (idx >= items.len) {
+            return err.parseError(.invalid_arity, "fn requires parameter vector", .{});
+        }
+
+        // 単一アリティ: [params] body...
+        if (items[idx] == .vector) {
+            const arity = try self.analyzeFnArity(items[idx].vector, items[idx + 1 ..]);
+            const arities = self.allocator.alloc(node_mod.FnArity, 1) catch return error.OutOfMemory;
+            arities[0] = arity;
+
+            const fn_data = self.allocator.create(node_mod.FnNode) catch return error.OutOfMemory;
+            fn_data.* = .{
+                .name = name,
+                .arities = arities,
+                .stack = .{},
+            };
+
+            const node = self.allocator.create(Node) catch return error.OutOfMemory;
+            node.* = .{ .fn_node = fn_data };
+            return node;
+        }
+
+        // 複数アリティ: ([params] body...) ...
+        // TODO: 実装
+        return err.parseError(.invalid_token, "Multi-arity fn not yet supported", .{});
+    }
+
+    fn analyzeFnArity(self: *Analyzer, params_form: []const Form, body_forms: []const Form) err.Error!node_mod.FnArity {
+        // パラメータを解析
+        var params = std.ArrayListUnmanaged([]const u8).empty;
+        var variadic = false;
+
+        const start_locals = self.locals.items.len;
+
+        for (params_form) |p| {
+            if (p != .symbol) {
+                return err.parseError(.invalid_binding, "fn parameter must be a symbol", .{});
+            }
+
+            const param_name = p.symbol.name;
+
+            if (std.mem.eql(u8, param_name, "&")) {
+                variadic = true;
+                continue;
+            }
+
+            params.append(self.allocator, param_name) catch return error.OutOfMemory;
+
+            // ローカルに追加
+            const idx: u32 = @intCast(self.locals.items.len);
+            self.locals.append(self.allocator, .{ .name = param_name, .idx = idx }) catch return error.OutOfMemory;
+        }
+
+        // ボディを解析
+        const body = if (body_forms.len == 0)
+            try self.makeConstant(value_mod.nil)
+        else if (body_forms.len == 1)
+            try self.analyze(body_forms[0])
+        else blk: {
+            var statements = self.allocator.alloc(*Node, body_forms.len) catch return error.OutOfMemory;
+            for (body_forms, 0..) |item, i| {
+                statements[i] = try self.analyze(item);
+            }
+            const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
+            do_data.* = .{ .statements = statements, .stack = .{} };
+            const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
+            do_node.* = .{ .do_node = do_data };
+            break :blk do_node;
+        };
+
+        // ローカルをポップ
+        self.locals.shrinkRetainingCapacity(start_locals);
+
+        return .{
+            .params = params.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
+            .variadic = variadic,
+            .body = body,
+        };
+    }
+
+    fn analyzeDef(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (def name) または (def name value)
+        if (items.len < 2 or items.len > 3) {
+            return err.parseError(.invalid_arity, "def requires 1 or 2 arguments", .{});
+        }
+
+        if (items[1] != .symbol) {
+            return err.parseError(.invalid_binding, "def name must be a symbol", .{});
+        }
+
+        const sym_name = items[1].symbol.name;
+        const init_node = if (items.len == 3)
+            try self.analyze(items[2])
+        else
+            null;
+
+        const def_data = self.allocator.create(node_mod.DefNode) catch return error.OutOfMemory;
+        def_data.* = .{
+            .sym_name = sym_name,
+            .init = init_node,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .def_node = def_data };
+        return node;
+    }
+
+    fn analyzeQuote(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (quote form)
+        if (items.len != 2) {
+            return err.parseError(.invalid_arity, "quote requires exactly 1 argument", .{});
+        }
+
+        // Form を Value に変換
+        const val = try self.formToValue(items[1]);
+
+        const quote_data = self.allocator.create(node_mod.QuoteNode) catch return error.OutOfMemory;
+        quote_data.* = .{
+            .form = val,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .quote_node = quote_data };
+        return node;
+    }
+
+    fn analyzeLoop(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (loop [binding1 val1 ...] body...)
+        // let と同じ構造だが、recur のターゲットになる
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "loop requires binding vector", .{});
+        }
+
+        const bindings_form = items[1];
+        if (bindings_form != .vector) {
+            return err.parseError(.invalid_binding, "loop bindings must be a vector", .{});
+        }
+
+        const binding_pairs = bindings_form.vector;
+        if (binding_pairs.len % 2 != 0) {
+            return err.parseError(.invalid_binding, "loop bindings must have even number of forms", .{});
+        }
+
+        const start_locals = self.locals.items.len;
+        var bindings = self.allocator.alloc(node_mod.LetBinding, binding_pairs.len / 2) catch return error.OutOfMemory;
+
+        var i: usize = 0;
+        while (i < binding_pairs.len) : (i += 2) {
+            const sym_form = binding_pairs[i];
+            if (sym_form != .symbol) {
+                return err.parseError(.invalid_binding, "loop binding name must be a symbol", .{});
+            }
+
+            const name = sym_form.symbol.name;
+            const init_node = try self.analyze(binding_pairs[i + 1]);
+
+            const idx: u32 = @intCast(self.locals.items.len);
+            self.locals.append(self.allocator, .{ .name = name, .idx = idx }) catch return error.OutOfMemory;
+
+            bindings[i / 2] = .{ .name = name, .init = init_node };
+        }
+
+        const body = if (items.len == 2)
+            try self.makeConstant(value_mod.nil)
+        else if (items.len == 3)
+            try self.analyze(items[2])
+        else blk: {
+            var statements = self.allocator.alloc(*Node, items.len - 2) catch return error.OutOfMemory;
+            for (items[2..], 0..) |item, j| {
+                statements[j] = try self.analyze(item);
+            }
+            const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
+            do_data.* = .{ .statements = statements, .stack = .{} };
+            const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
+            do_node.* = .{ .do_node = do_data };
+            break :blk do_node;
+        };
+
+        self.locals.shrinkRetainingCapacity(start_locals);
+
+        const loop_data = self.allocator.create(node_mod.LoopNode) catch return error.OutOfMemory;
+        loop_data.* = .{
+            .bindings = bindings,
+            .body = body,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .loop_node = loop_data };
+        return node;
+    }
+
+    fn analyzeRecur(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (recur arg1 arg2 ...)
+        var args = self.allocator.alloc(*Node, items.len - 1) catch return error.OutOfMemory;
+        for (items[1..], 0..) |item, i| {
+            args[i] = try self.analyze(item);
+        }
+
+        const recur_data = self.allocator.create(node_mod.RecurNode) catch return error.OutOfMemory;
+        recur_data.* = .{
+            .args = args,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .recur_node = recur_data };
+        return node;
+    }
+
+    fn analyzeCall(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (fn arg1 arg2 ...)
+        const fn_node = try self.analyze(items[0]);
+
+        var args = self.allocator.alloc(*Node, items.len - 1) catch return error.OutOfMemory;
+        for (items[1..], 0..) |item, i| {
+            args[i] = try self.analyze(item);
+        }
+
+        const call_data = self.allocator.create(node_mod.CallNode) catch return error.OutOfMemory;
+        call_data.* = .{
+            .fn_node = fn_node,
+            .args = args,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .call_node = call_data };
+        return node;
+    }
+
+    // === ヘルパー ===
+
+    fn findLocal(self: *const Analyzer, name: []const u8) ?LocalBinding {
+        // 後ろから検索（シャドウイング対応）
+        var i = self.locals.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (std.mem.eql(u8, self.locals.items[i].name, name)) {
+                return self.locals.items[i];
+            }
+        }
+        return null;
+    }
+
+    fn makeConstant(self: *Analyzer, val: Value) err.Error!*Node {
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .constant = val };
+        return node;
+    }
+
+    fn makeLocalRef(self: *Analyzer, name: []const u8, idx: u32) err.Error!*Node {
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{
+            .local_ref = .{
+                .name = name,
+                .idx = idx,
+                .stack = .{},
+            },
+        };
+        return node;
+    }
+
+    fn makeVarRef(self: *Analyzer, v: *Var) err.Error!*Node {
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{
+            .var_ref = .{
+                .var_ref = v,
+                .stack = .{},
+            },
+        };
+        return node;
+    }
+
+    fn makeEmptyList(self: *Analyzer) err.Error!*Node {
+        const lst = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+        lst.* = value_mod.PersistentList.empty();
+        return self.makeConstant(.{ .list = lst });
+    }
+
+    /// Form を Value に変換（quote 用）
+    fn formToValue(self: *Analyzer, form: Form) err.Error!Value {
+        return switch (form) {
+            .nil => value_mod.nil,
+            .bool_true => value_mod.true_val,
+            .bool_false => value_mod.false_val,
+            .int => |n| value_mod.intVal(n),
+            .float => |n| value_mod.floatVal(n),
+            .string => |s| blk: {
+                const str = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+                str.* = value_mod.String.init(s);
+                break :blk .{ .string = str };
+            },
+            .keyword => |sym| blk: {
+                const kw = self.allocator.create(value_mod.Keyword) catch return error.OutOfMemory;
+                kw.* = if (sym.namespace) |ns|
+                    value_mod.Keyword.initNs(ns, sym.name)
+                else
+                    value_mod.Keyword.init(sym.name);
+                break :blk .{ .keyword = kw };
+            },
+            .symbol => |sym| blk: {
+                const s = self.allocator.create(RuntimeSymbol) catch return error.OutOfMemory;
+                s.* = if (sym.namespace) |ns|
+                    RuntimeSymbol.initNs(ns, sym.name)
+                else
+                    RuntimeSymbol.init(sym.name);
+                break :blk .{ .symbol = s };
+            },
+            .list => |items| blk: {
+                var vals = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+                for (items, 0..) |item, i| {
+                    vals[i] = try self.formToValue(item);
+                }
+                const lst = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+                lst.* = .{ .items = vals };
+                break :blk .{ .list = lst };
+            },
+            .vector => |items| blk: {
+                var vals = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+                for (items, 0..) |item, i| {
+                    vals[i] = try self.formToValue(item);
+                }
+                const vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
+                vec.* = .{ .items = vals };
+                break :blk .{ .vector = vec };
+            },
+        };
+    }
+};
+
+// === テスト ===
+
+test "analyze constant" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = Env.init(allocator);
+    defer env.deinit();
+
+    var analyzer = Analyzer.init(allocator, &env);
+    defer analyzer.deinit();
+
+    const node = try analyzer.analyze(.{ .int = 42 });
+    try std.testing.expectEqualStrings("constant", node.kindName());
+}
+
+test "analyze if" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = Env.init(allocator);
+    defer env.deinit();
+
+    var analyzer = Analyzer.init(allocator, &env);
+    defer analyzer.deinit();
+
+    // (if true 1 2)
+    const items = [_]Form{
+        .{ .symbol = FormSymbol.init("if") },
+        .bool_true,
+        .{ .int = 1 },
+        .{ .int = 2 },
+    };
+
+    const node = try analyzer.analyze(.{ .list = &items });
+    try std.testing.expectEqualStrings("if", node.kindName());
+}
+
+test "analyze def" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = Env.init(allocator);
+    defer env.deinit();
+    try env.setupBasic();
+
+    var analyzer = Analyzer.init(allocator, &env);
+    defer analyzer.deinit();
+
+    // (def x 42)
+    const items = [_]Form{
+        .{ .symbol = FormSymbol.init("def") },
+        .{ .symbol = FormSymbol.init("x") },
+        .{ .int = 42 },
+    };
+
+    const node = try analyzer.analyze(.{ .list = &items });
+    try std.testing.expectEqualStrings("def", node.kindName());
+}

@@ -38,6 +38,9 @@ pub const node = @import("analyzer/node.zig");
 pub const Node = node.Node;
 pub const SourceInfo = node.SourceInfo;
 
+pub const analyze = @import("analyzer/analyze.zig");
+pub const Analyzer = analyze.Analyzer;
+
 // === Phase 3: Runtime ===
 pub const value = @import("runtime/value.zig");
 pub const Value = value.Value;

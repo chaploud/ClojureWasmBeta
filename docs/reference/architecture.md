@@ -198,14 +198,15 @@ reader ←── analyzer ←── compiler ←── vm               │
 - [x] Var, Namespace
 - [x] Env（グローバル環境）
 
-### Phase 3: Analyzer ← 現在
+### Phase 3: Analyzer ✓
 - [x] Node 型
-- [ ] special forms（if, let, fn, def, do, quote）
-- [ ] シンボル解決
+- [x] special forms（if, let, fn, def, do, quote, loop, recur）
+- [x] シンボル解決
 
-### Phase 4: ツリーウォーク評価器
-- [ ] eval インターフェース
-- [ ] TreeWalkEval 実装
+### Phase 4: ツリーウォーク評価器 ← 現在
+- [ ] Context（ローカルバインディング管理）
+- [ ] Evaluator 実装
+- [ ] 組み込み関数
 
 ### Phase 5: clojure.core 基本関数
 - [ ] 算術: +, -, *, /
