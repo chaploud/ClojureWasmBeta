@@ -1,56 +1,60 @@
 # 作業メモ
 
-> セッション間で共有すべき申し送り事項
-> 古いメモは削除して肥大化を防ぐ
+> セッション間の申し送り + 次回タスク計画
+> 古い申し送りは削除して肥大化を防ぐ
 
 ---
 
-## 現在の状態（2025-01-25）
+## 次回タスク
 
-### 完了した設計
+### Reader 実装 (`src/reader/reader.zig`)
+
+1. **基本構造作成**
+   - Tokenizer から Form を構築する Reader 構造体
+   - `read()` 関数: トークン列 → Form
+
+2. **リテラル対応**
+   - 数値（整数、浮動小数点、有理数）
+   - 文字列
+   - シンボル、キーワード
+   - nil, true, false
+
+3. **コレクション対応**
+   - リスト `()`
+   - ベクター `[]`
+   - マップ `{}`（将来）
+
+4. **数値検証**（tokens.yaml の partial 項目）
+   - 8進数 `0777` の値解釈
+   - 無効な8進数 `08`, `00` のエラー
+   - `##Inf`, `##-Inf`, `##NaN` の解釈
+
+---
+
+## 申し送り
+
+### 完了した設計（2025-01-25）
 
 - **3フェーズアーキテクチャ**: Form → Node → Value
-- **ディレクトリ構造**: base/, reader/, analyzer/, runtime/, lib/ + 将来用 compiler/, vm/, gc/, wasm/
-- **Tokenizer**: ほぼ完了（tokens.yaml の partial 項目は Reader で検証）
+- **ディレクトリ構造**: base/, reader/, analyzer/, runtime/, lib/ + 将来用スタブ
+- **Tokenizer**: 完了（tokens.yaml の partial 項目は Reader で検証）
 
-### 次のタスク: Reader 実装
+### Zig 0.15.2 注意点
 
-`src/reader/reader.zig` を作成し、Tokenizer からの Form 構築を実装する。
-
----
-
-## 設計原則
-
-### 3フェーズアーキテクチャ
-
-```
-Source → Tokenizer → Reader → Form
-                              ↓
-                           Analyzer → Node
-                              ↓
-                             VM → Value
-```
-
-詳細: `docs/reference/architecture.md`
-
-### Zig 0.15.2 の注意点
-
-詳細: `CLAUDE.md` の「落とし穴」セクション
-
+CLAUDE.md の「落とし穴」セクション参照:
 - stdout はバッファ付き writer 必須
 - format メソッド持ち型の `{}` は ambiguous
-- メソッド名と同名のローカル変数はシャドウイングエラー
 - tagged union の `==` 比較は switch で
 
----
-
-## 技術的負債
+### 技術的負債
 
 （現時点ではなし）
 
 ---
 
-## 過去の教訓
+## 参照ドキュメント
 
-- 本家 Clojure / sci / babashka の実装を参照すると設計が明確になる
-- Zig 0.15.2 の API は古いドキュメントと異なることがある
+必要時のみ参照（コンテキスト節約）:
+- `ITERATION.md` - バックログ全体
+- `docs/reference/architecture.md` - アーキテクチャ詳細
+- `docs/reference/type_design.md` - 型設計
