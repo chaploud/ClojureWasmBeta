@@ -9,7 +9,7 @@
 
 1. **Reader** - S式の構築
    - `src/reader/reader.zig`
-   - トークン列から Value を構築
+   - トークン列から Form を構築（3フェーズの Phase 1）
 
 2. **数値リテラル詳細** - 8進/16進/基数/BigInt
    - `tokens.yaml` の integers セクション参照
@@ -22,7 +22,7 @@
 ## 完了
 
 - [x] **zig init** - プロジェクト初期化
-- [x] **Value設計** - `src/value.zig`
+- [x] **Form設計** - `src/form.zig`（旧Value設計、Reader出力）
 - [x] **Error設計** - `src/error.zig`
 - [x] **Tokenizer（基本）** - `src/reader/tokenizer.zig`
   - ホワイトスペース（カンマ含む）
@@ -32,6 +32,9 @@
   - シンボル / キーワード
   - マクロ文字
   - ディスパッチ
+- [x] **3フェーズアーキテクチャ設計** - `docs/reference/type_design.md`
+  - Form (Reader) → Node (Analyzer) → Value (Runtime)
+  - スタブ: node.zig, value.zig, var.zig, namespace.zig, env.zig, context.zig
 
 ---
 
@@ -56,8 +59,8 @@
 
 ## イテレーション終了チェックリスト
 
-- [x] このファイルを更新した
-- [x] 実装したら `status/*.yaml` を更新した（todo → wip → done）
-- [x] CLAUDE.md の変更があれば更新した
+- [ ] このファイルを更新した
+- [ ] 実装したら `status/*.yaml` を更新した（todo → wip → done）
+- [ ] CLAUDE.md の変更があれば更新した
 - [ ] `git add` → `git commit` した（意味のある単位で）
 - [ ] `yamllint status/*.yaml` でエラーなし確認
