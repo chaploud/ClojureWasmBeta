@@ -208,12 +208,12 @@ reader ←── analyzer ←── compiler ←── vm               │
 - [x] Evaluator 実装
 - [x] 組み込み関数（算術、比較、述語、コレクション、出力）
 
-### Phase 5: E2E テスト ← 現在
-- [ ] 統合テスト（Reader → Analyzer → Evaluator）
-- [ ] ユーザー定義関数（fn クロージャ完全実装）
-- [ ] def された関数の呼び出し
+### Phase 5: ユーザー定義関数 ✓
+- [x] 統合テスト（Reader → Analyzer → Evaluator）
+- [x] ユーザー定義関数（fn クロージャ実装）
+- [x] def された関数の呼び出し
 
-### Phase 6: マクロシステム
+### Phase 6: マクロシステム ← 現在（後回し可）
 - [ ] defmacro
 - [ ] macroexpand
 - [ ] Analyzer 拡張（マクロ展開）
