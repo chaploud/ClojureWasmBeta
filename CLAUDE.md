@@ -117,4 +117,3 @@ return switch (self) { .nil => true, else => false };
 - tools.reader: `~/Documents/OSS/tools.reader`
 - sci / babashka: `~/Documents/OSS/sci`, `~/Documents/OSS/babashka`
 - Zig標準ライブラリ: `/opt/homebrew/Cellar/zig/0.15.2/lib/zig/std/`
-- 旧実装: `~/Documents/MyProducts/ClojureWasmAlpha`
