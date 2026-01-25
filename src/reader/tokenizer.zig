@@ -55,6 +55,8 @@ pub const TokenKind = enum(u8) {
     symbolic, // ##
     reader_cond, // #?
     ns_map, // #:
+    meta_deprecated, // #^ (非推奨)
+    unreadable, // #< (常にエラー)
 
     // コメント（スキップされるので通常返されない）
     comment,
@@ -347,6 +349,16 @@ pub const Tokenizer = struct {
                 self.advance();
                 break :blk .ns_map;
             },
+            '^' => blk: {
+                // #^ 非推奨メタデータ構文
+                self.advance();
+                break :blk .meta_deprecated;
+            },
+            '<' => blk: {
+                // #< 読み込み不可（常にエラー）
+                self.advance();
+                break :blk .unreadable;
+            },
             '!' => blk: {
                 // シェバン/コメント - 行末まで
                 while (!self.isEof() and self.peek() != '\n') {
@@ -405,7 +417,7 @@ pub const Tokenizer = struct {
         var has_exp = false;
         var has_ratio = false;
 
-        // 0x, 0o などのプレフィックス
+        // 0x などのプレフィックス
         if (!self.isEof() and self.peek() == '0') {
             self.advance();
             if (!self.isEof()) {
@@ -414,6 +426,10 @@ pub const Tokenizer = struct {
                     // 16進数
                     self.advance();
                     while (!self.isEof() and isHexDigit(self.peek())) {
+                        self.advance();
+                    }
+                    // N サフィックス
+                    if (!self.isEof() and self.peek() == 'N') {
                         self.advance();
                     }
                     const len: u16 = @intCast(self.pos - start_pos);
@@ -428,9 +444,30 @@ pub const Tokenizer = struct {
             }
         }
 
-        // 整数部
+        // 整数部（基数プレフィックスの可能性あり: 2r, 8r, 16r, 36r 等）
         while (!self.isEof() and isDigit(self.peek())) {
             self.advance();
+        }
+
+        // 基数 (radix): NNrXXX or NNRxxx (例: 2r101, 16rFF, 36rZZ)
+        if (!self.isEof() and (self.peek() == 'r' or self.peek() == 'R')) {
+            self.advance();
+            // 基数の数字部分（0-9, a-z, A-Z）
+            while (!self.isEof() and isRadixDigit(self.peek())) {
+                self.advance();
+            }
+            // N サフィックス
+            if (!self.isEof() and self.peek() == 'N') {
+                self.advance();
+            }
+            const len: u16 = @intCast(self.pos - start_pos);
+            return .{
+                .kind = .integer,
+                .start = start_pos,
+                .len = len,
+                .line = start_line,
+                .column = start_column,
+            };
         }
 
         // 有理数 (/)
@@ -534,6 +571,10 @@ fn isHexDigit(c: u8) bool {
     return isDigit(c) or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
 }
 
+fn isRadixDigit(c: u8) bool {
+    return isDigit(c) or (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z');
+}
+
 fn isTerminator(c: u8) bool {
     return isWhitespace(c) or c == '"' or c == ';' or c == '@' or c == '^' or
         c == '`' or c == '~' or c == '(' or c == ')' or c == '[' or c == ']' or
@@ -583,6 +624,26 @@ test "整数" {
     try std.testing.expectEqual(TokenKind.integer, t.next().kind);
     try std.testing.expectEqual(TokenKind.integer, t.next().kind);
     try std.testing.expectEqual(TokenKind.integer, t.next().kind);
+}
+
+test "基数 (radix)" {
+    var t = Tokenizer.init("2r101010 8r52 16r2A 36rZZ");
+
+    const tok1 = t.next();
+    try std.testing.expectEqual(TokenKind.integer, tok1.kind);
+    try std.testing.expectEqualStrings("2r101010", tok1.text(t.source));
+
+    const tok2 = t.next();
+    try std.testing.expectEqual(TokenKind.integer, tok2.kind);
+    try std.testing.expectEqualStrings("8r52", tok2.text(t.source));
+
+    const tok3 = t.next();
+    try std.testing.expectEqual(TokenKind.integer, tok3.kind);
+    try std.testing.expectEqualStrings("16r2A", tok3.text(t.source));
+
+    const tok4 = t.next();
+    try std.testing.expectEqual(TokenKind.integer, tok4.kind);
+    try std.testing.expectEqualStrings("36rZZ", tok4.text(t.source));
 }
 
 test "浮動小数点" {
@@ -665,7 +726,7 @@ test "マクロ文字" {
 }
 
 test "ディスパッチ" {
-    var t = Tokenizer.init("#_ #' #( #{ ## #? #:");
+    var t = Tokenizer.init("#_ #' #( #{ ## #? #: #^ #<");
     try std.testing.expectEqual(TokenKind.discard, t.next().kind);
     try std.testing.expectEqual(TokenKind.var_quote, t.next().kind);
     try std.testing.expectEqual(TokenKind.fn_lit, t.next().kind);
@@ -673,6 +734,8 @@ test "ディスパッチ" {
     try std.testing.expectEqual(TokenKind.symbolic, t.next().kind);
     try std.testing.expectEqual(TokenKind.reader_cond, t.next().kind);
     try std.testing.expectEqual(TokenKind.ns_map, t.next().kind);
+    try std.testing.expectEqual(TokenKind.meta_deprecated, t.next().kind);
+    try std.testing.expectEqual(TokenKind.unreadable, t.next().kind);
 }
 
 test "文字リテラル" {

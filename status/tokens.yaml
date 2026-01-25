@@ -55,45 +55,45 @@ numbers:
   # ([-+]?)(?:(0)|([1-9][0-9]*)|0[xX]([0-9A-Fa-f]+)|0([0-7]+)|([1-9][0-9]?)[rR]([0-9A-Za-z]+)|0[0-9]+)(N)?
   integers:
     zero:
-      status: todo
+      status: done
       pattern: "0"
       examples: ["0", "0N"]
 
     decimal:
-      status: todo
+      status: done
       pattern: "[1-9][0-9]*"
       examples: ["42", "123", "999"]
 
     decimal_signed:
-      status: todo
+      status: done
       pattern: "[-+][1-9][0-9]*"
       examples: ["-42", "+42"]
       note: "+/- の後に数字がある場合のみ数値として解釈"
 
     hexadecimal:
-      status: todo
+      status: done
       pattern: "0[xX][0-9A-Fa-f]+"
       examples: ["0x2A", "0XFF", "0x0"]
 
     octal:
-      status: todo
+      status: partial  # tokenizer は integer 扱い、値解釈は Reader
       pattern: "0[0-7]+"
       examples: ["052", "0777"]
       note: "0で始まり0-7のみ"
 
     octal_invalid:
-      status: todo
+      status: partial  # tokenizer は integer 扱い、エラーは Reader
       examples: ["08", "09", "00"]
       note: "エラーになるべきパターン"
 
     radix:
-      status: todo
+      status: done
       pattern: "[2-36][rR][0-9A-Za-z]+"
       examples: ["2r101010", "8r52", "16r2A", "36rZZ"]
-      note: "基数は2-36"
+      note: "基数は2-36、値検証は Reader"
 
     bigint:
-      status: todo
+      status: done  # N サフィックス消費済、型区別は Reader
       pattern: "..N"
       examples: ["42N", "0N", "999999999999999N"]
       note: "Nサフィックスで BigInt"
@@ -102,27 +102,27 @@ numbers:
   # ([-+]?[0-9]+(\.[0-9]*)?([eE][-+]?[0-9]+)?)(M)?
   floats:
     basic:
-      status: todo
+      status: done
       pattern: "[0-9]+\\.[0-9]*"
       examples: ["3.14", "1.0", "1.", "0.5"]
 
     scientific:
-      status: todo
+      status: done
       pattern: "[0-9]+[eE][-+]?[0-9]+"
       examples: ["1e10", "1E10", "1e-3", "1e+5"]
 
     scientific_decimal:
-      status: todo
+      status: done
       pattern: "[0-9]+\\.[0-9]*[eE][-+]?[0-9]+"
       examples: ["1.5e10", "3.14e-2"]
 
     signed:
-      status: todo
+      status: done
       pattern: "[-+][0-9]+..."
       examples: ["-3.14", "+1.5e10"]
 
     bigdecimal:
-      status: todo
+      status: done  # M サフィックス消費済、型区別は Reader
       pattern: "...M"
       examples: ["3.14M", "1e10M"]
       note: "Mサフィックスで BigDecimal"
@@ -130,25 +130,25 @@ numbers:
   # 有理数パターン (ratio-pattern)
   # ([-+]?[0-9]+)/([0-9]+)
   ratio:
-    status: todo
+    status: done
     pattern: "[-+]?[0-9]+/[0-9]+"
     examples: ["22/7", "1/2", "-3/4", "+1/3"]
-    note: "自動約分される"
+    note: "自動約分される（Reader で処理）"
 
   # 特殊数値 (##)
   symbolic:
     positive_infinity:
-      status: todo
+      status: partial  # ## 認識済、値解釈は Reader
       literal: "##Inf"
       value: "Double/POSITIVE_INFINITY"
 
     negative_infinity:
-      status: todo
+      status: partial
       literal: "##-Inf"
       value: "Double/NEGATIVE_INFINITY"
 
     nan:
-      status: todo
+      status: partial
       literal: "##NaN"
       value: "Double/NaN"
 
@@ -159,7 +159,7 @@ macros:
   # 文字列
   string:
     char: '"'
-    status: todo
+    status: done  # tokenizer: エスケープ消費済、Reader で検証
     escape_sequences:
       - {escape: "\\t", meaning: "タブ"}
       - {escape: "\\r", meaning: "キャリッジリターン"}
@@ -175,7 +175,7 @@ macros:
   # キーワード
   keyword:
     char: ":"
-    status: todo
+    status: done  # tokenizer: :foo, ::auto 対応済
     patterns:
       basic:
         examples: [":foo", ":kebab-case", ":CamelCase"]
@@ -193,27 +193,27 @@ macros:
   # コメント
   comment:
     char: ";"
-    status: todo
+    status: done
     note: "行末まで無視"
 
   # クォート
   quote:
     char: "'"
-    status: todo
+    status: done
     expansion: "(quote x)"
     examples: ["'foo", "'(1 2 3)", "'{:a 1}"]
 
   # Deref
   deref:
     char: "@"
-    status: todo
+    status: done
     expansion: "(clojure.core/deref x)"
     examples: ["@atom", "@(delay x)"]
 
   # メタデータ
   meta:
     char: "^"
-    status: todo
+    status: done
     examples:
       - {input: "^:keyword x", expansion: "(with-meta x {:keyword true})"}
       - {input: "^String x", expansion: "(with-meta x {:tag String})"}
@@ -224,7 +224,7 @@ macros:
   # 構文クォート
   syntax_quote:
     char: "`"
-    status: todo
+    status: done  # tokenizer 対応済、展開は Reader/Analyzer
     features:
       - "シンボルを完全修飾名に解決"
       - "~ でアンクォート"
@@ -240,42 +240,42 @@ macros:
   # アンクォート
   unquote:
     char: "~"
-    status: todo
+    status: done
     variants:
       - {pattern: "~x", name: "unquote"}
       - {pattern: "~@x", name: "unquote-splicing"}
-    note: "構文クォート内でのみ有効"
+    note: "構文クォート内でのみ有効、検証は Reader"
 
   # コレクション
   list:
     char: "("
-    status: todo
+    status: done
     closer: ")"
     examples: ["()", "(1 2 3)", "(+ 1 2)"]
 
   vector:
     char: "["
-    status: todo
+    status: done
     closer: "]"
     examples: ["[]", "[1 2 3]", "[:a :b]"]
 
   map:
     char: "{"
-    status: todo
+    status: done
     closer: "}"
     examples: ["{}", "{:a 1 :b 2}"]
-    note: "要素数は偶数"
+    note: "要素数は偶数、検証は Reader"
 
   # 閉じ括弧（不一致検出用）
   unmatched_delimiters:
     chars: [")", "]", "}"]
-    status: todo
-    note: "対応する開き括弧なしで出現したらエラー"
+    status: done
+    note: "対応する開き括弧なしで出現したらエラー（Reader で検出）"
 
   # 文字リテラル
   character:
     char: "\\"
-    status: todo
+    status: done  # tokenizer 対応済、named/unicode 検証は Reader
     patterns:
       single:
         examples: ["\\a", "\\A", "\\;", "\\("]
@@ -299,7 +299,7 @@ macros:
   # 無名関数引数
   arg:
     char: "%"
-    status: todo
+    status: done  # シンボルとして tokenize、#() 内検証は Reader
     patterns:
       - {pattern: "%", meaning: "第1引数 (= %1)"}
       - {pattern: "%N", meaning: "第N引数", examples: ["%1", "%2", "%9"]}
@@ -309,7 +309,7 @@ macros:
   # ディスパッチ
   dispatch:
     char: "#"
-    status: todo
+    status: done
     note: "dispatch-macros テーブルを参照"
 
 # ============================================================================
@@ -319,20 +319,20 @@ dispatch_macros:
   # メタデータ (非推奨)
   meta_deprecated:
     pattern: "#^"
-    status: todo
+    status: done
     note: "非推奨、^ を使用すべき"
 
   # Var参照
   var:
     pattern: "#'"
-    status: todo
+    status: done
     expansion: "(var x)"
     examples: ["#'foo", "#'clojure.core/map"]
 
   # 無名関数
   fn:
     pattern: "#(...)"
-    status: todo
+    status: done  # tokenizer 対応済、展開は Reader
     expansion: "(fn* [args] body)"
     examples:
       - {input: "#(+ % 1)", expansion: "(fn* [p1__N#] (+ p1__N# 1))"}
@@ -349,42 +349,42 @@ dispatch_macros:
   # セット
   set:
     pattern: "#{...}"
-    status: todo
+    status: done
     examples: ["#{}", "#{1 2 3}"]
-    note: "重複要素はエラー"
+    note: "重複要素はエラー（Reader で検出）"
 
   # 読み込み不可
   unreadable:
     pattern: "#<"
-    status: todo
+    status: done
     note: "常にエラー (Unreadable form)"
 
   # 正規表現
   regex:
     pattern: '#"..."'
-    status: todo
+    status: partial  # #" 認識済、内容読み取りは Reader
     examples: ['#"[a-z]+"', '#"\\d{3}"', '#"(?i)hello"']
     note: "エスケープは文字列と異なる（Javaの正規表現構文）"
 
   # コメント（シェバン）
   comment_shebang:
     pattern: "#!"
-    status: todo
+    status: done
     note: "行末まで無視、シェバン対応"
 
   # 破棄
   discard:
     pattern: "#_"
-    status: todo
+    status: done
     examples:
       - "(+ 1 #_2 3)"       # => (+ 1 3)
       - "#_#_a b c"         # => c (2つ破棄)
-    note: "次のフォームを破棄、連続可能"
+    note: "次のフォームを破棄、連続可能（Reader で処理）"
 
   # 条件読み込み
   conditional:
     pattern: "#?"
-    status: todo
+    status: done  # tokenizer 対応済、処理は Reader
     variants:
       - {pattern: "#?(...)", name: "reader-conditional"}
       - {pattern: "#?@(...)", name: "reader-conditional-splicing"}
@@ -401,7 +401,7 @@ dispatch_macros:
   # 名前空間マップ
   namespaced_map:
     pattern: "#:"
-    status: todo
+    status: done  # tokenizer 対応済、展開は Reader
     variants:
       - {pattern: "#:ns{...}", meaning: "明示的NS"}
       - {pattern: "#::{...}", meaning: "現在のNS"}
@@ -413,7 +413,7 @@ dispatch_macros:
   # シンボリック値
   symbolic_value:
     pattern: "##"
-    status: todo
+    status: done  # tokenizer 対応済、値解釈は Reader
     values:
       - "##Inf"   # Double/POSITIVE_INFINITY
       - "##-Inf"  # Double/NEGATIVE_INFINITY
@@ -421,7 +421,7 @@ dispatch_macros:
 
   # タグ付きリテラル（その他すべて）
   tagged_literal:
-    status: todo
+    status: partial  # # 後のシンボル読み取りは対応、処理は Reader
     builtin:
       - {tag: "#inst", example: '#inst "2024-01-01T00:00:00.000Z"'}
       - {tag: "#uuid", example: '#uuid "550e8400-e29b-41d4-a716-446655440000"'}
@@ -435,7 +435,7 @@ dispatch_macros:
 # シンボル
 # ============================================================================
 symbols:
-  status: todo
+  status: done  # tokenizer 対応済、nil/true/false 特別扱い
 
   special:
     - {symbol: "nil", value: "null"}
@@ -481,7 +481,7 @@ symbols:
 edge_cases:
   # +/- の曖昧性
   plus_minus:
-    status: todo
+    status: done
     rule: "次の文字が数字なら数値、それ以外ならシンボル"
     examples:
       - {input: "+42", type: "number"}
@@ -494,7 +494,7 @@ edge_cases:
 
   # 数値の先頭ゼロ
   leading_zero:
-    status: todo
+    status: partial  # 0x対応済、8進/00検証は Reader
     examples:
       - {input: "0", valid: true, type: "integer 0"}
       - {input: "07", valid: true, type: "octal"}
@@ -504,7 +504,7 @@ edge_cases:
 
   # キーワードのコロン
   keyword_colons:
-    status: todo
+    status: done  # tokenizer 対応済、詳細検証は Reader
     examples:
       - {input: ":foo", valid: true}
       - {input: "::foo", valid: true, note: "自動解決"}
@@ -514,7 +514,7 @@ edge_cases:
 
   # スラッシュ
   slash:
-    status: todo
+    status: done  # tokenizer でシンボル扱い、詳細検証は Reader
     examples:
       - {input: "/", valid: true, type: "シンボル clojure.core//"}
       - {input: "a/b", valid: true, type: "名前空間付きシンボル"}
