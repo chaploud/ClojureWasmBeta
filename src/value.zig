@@ -1,182 +1,154 @@
-//! Clojure値の表現
+//! Runtime値 (Value)
 //!
-//! tagged union で Clojure の各型を表現する。
-//! 将来的に GC 対応時は ValueId (u32) でインデックス参照に変更予定。
+//! 評価器が返す実行時の値。
+//! GC管理対象（将来）、永続データ構造。
+//!
+//! 3フェーズアーキテクチャ:
+//!   Form (Reader) → Node (Analyzer) → Value (Runtime)
+//!
+//! 詳細: docs/reference/type_design.md
+//!
+//! TODO: 評価器実装時に有効化
 
 const std = @import("std");
 
-/// シンボル・キーワード用の名前空間付き識別子
-pub const Symbol = struct {
-    namespace: ?[]const u8,
-    name: []const u8,
+// TODO: 実装時にコメント解除
+// const var_mod = @import("var.zig");
+// const Var = var_mod.Var;
+// const namespace = @import("namespace.zig");
+// const Namespace = namespace.Namespace;
 
-    pub fn init(name: []const u8) Symbol {
-        return .{ .namespace = null, .name = name };
-    }
-
-    pub fn initNs(namespace: []const u8, name: []const u8) Symbol {
-        return .{ .namespace = namespace, .name = name };
-    }
-
-    /// "ns/name" または "name" 形式で比較
-    pub fn eql(self: Symbol, other: Symbol) bool {
-        if (self.namespace) |ns1| {
-            if (other.namespace) |ns2| {
-                return std.mem.eql(u8, ns1, ns2) and std.mem.eql(u8, self.name, other.name);
-            }
-            return false;
-        } else {
-            return other.namespace == null and std.mem.eql(u8, self.name, other.name);
-        }
-    }
-};
-
-/// Clojure の値を表す tagged union
+/// Runtime値
+/// TODO: 実装時にコメント解除・拡張
 pub const Value = union(enum) {
-    // 基本型
+    // === 基本型 ===
     nil,
-    true_val,
-    false_val,
+    bool_val: bool,
     int: i64,
     float: f64,
-    string: []const u8,
-    symbol: Symbol,
-    keyword: Symbol,
+    // ratio: *Ratio,
+    // bigint: *BigInt,
+    // bigdec: *BigDecimal,
 
-    // コレクション型（初期実装はスライスで表現）
-    list: []const Value,
-    vector: []const Value,
-    // map, set は後で追加
+    // === 文字列・識別子 ===
+    // string: *String,
+    // char_val: u21,
+    // keyword: *Keyword,
+    // symbol: *Symbol,
+
+    // === コレクション（永続データ構造）===
+    // list: *PersistentList,
+    // vector: *PersistentVector,
+    // map: *PersistentMap,
+    // set: *PersistentSet,
+
+    // === 関数・参照 ===
+    // fn_val: *Fn,
+    // var_val: *Var,
+
+    // === 参照型 ===
+    // atom: *Atom,
+    // ref: *Ref,        // STM用
+    // agent: *Agent,
+
+    // === その他 ===
+    // namespace: *Namespace,
+    // regex: *Regex,
+
+    // プレースホルダー（コンパイル用）
+    placeholder: void,
 
     // === ヘルパー関数 ===
 
-    /// nil かどうか
-    pub fn isNil(self: Value) bool {
-        return switch (self) {
-            .nil => true,
-            else => false,
-        };
-    }
+    // pub fn isNil(self: Value) bool {
+    //     return self == .nil;
+    // }
 
-    /// 真偽値として評価（nil と false のみ falsy）
-    pub fn isTruthy(self: Value) bool {
-        return switch (self) {
-            .nil => false,
-            .false_val => false,
-            else => true,
-        };
-    }
+    // pub fn isTruthy(self: Value) bool {
+    //     return switch (self) {
+    //         .nil => false,
+    //         .bool_val => |b| b,
+    //         else => true,
+    //     };
+    // }
 
-    /// 型名を返す（デバッグ用）
-    pub fn typeName(self: Value) []const u8 {
-        return switch (self) {
-            .nil => "nil",
-            .true_val, .false_val => "boolean",
-            .int => "integer",
-            .float => "float",
-            .string => "string",
-            .symbol => "symbol",
-            .keyword => "keyword",
-            .list => "list",
-            .vector => "vector",
-        };
-    }
-
-    /// デバッグ表示用
-    pub fn format(
-        self: Value,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        switch (self) {
-            .nil => try writer.writeAll("nil"),
-            .true_val => try writer.writeAll("true"),
-            .false_val => try writer.writeAll("false"),
-            .int => |n| {
-                var buf: [32]u8 = undefined;
-                const s = std.fmt.bufPrint(&buf, "{d}", .{n}) catch "?";
-                try writer.writeAll(s);
-            },
-            .float => |n| {
-                var buf: [32]u8 = undefined;
-                const s = std.fmt.bufPrint(&buf, "{d}", .{n}) catch "?";
-                try writer.writeAll(s);
-            },
-            .string => |s| try writer.print("\"{s}\"", .{s}),
-            .symbol => |sym| {
-                if (sym.namespace) |ns| {
-                    try writer.print("{s}/{s}", .{ ns, sym.name });
-                } else {
-                    try writer.writeAll(sym.name);
-                }
-            },
-            .keyword => |sym| {
-                if (sym.namespace) |ns| {
-                    try writer.print(":{s}/{s}", .{ ns, sym.name });
-                } else {
-                    try writer.print(":{s}", .{sym.name});
-                }
-            },
-            .list => |items| {
-                try writer.writeByte('(');
-                for (items, 0..) |item, i| {
-                    if (i > 0) try writer.writeByte(' ');
-                    try item.format("", .{}, writer);
-                }
-                try writer.writeByte(')');
-            },
-            .vector => |items| {
-                try writer.writeByte('[');
-                for (items, 0..) |item, i| {
-                    if (i > 0) try writer.writeByte(' ');
-                    try item.format("", .{}, writer);
-                }
-                try writer.writeByte(']');
-            },
-        }
-    }
+    // pub fn typeName(self: Value) []const u8 {
+    //     // TODO: 型名を返す
+    // }
 };
+
+// === 将来追加予定の型 ===
+//
+// /// 永続リスト（Cons cell ベース）
+// pub const PersistentList = struct {
+//     first: Value,
+//     rest: ?*PersistentList,
+//     count: u32,
+//     meta: ?*PersistentMap,
+// };
+//
+// /// 永続ベクター（32分木）
+// pub const PersistentVector = struct {
+//     count: u32,
+//     shift: u5,
+//     root: *VectorNode,
+//     tail: []Value,
+//     meta: ?*PersistentMap,
+// };
+//
+// /// 永続ハッシュマップ（HAMT）
+// pub const PersistentMap = struct {
+//     count: u32,
+//     root: ?*MapNode,
+//     has_null: bool,
+//     null_value: Value,
+//     meta: ?*PersistentMap,
+// };
+//
+// /// 永続ハッシュセット
+// pub const PersistentSet = struct {
+//     impl: *PersistentMap,  // マップで実装
+//     meta: ?*PersistentMap,
+// };
+//
+// /// 関数オブジェクト
+// pub const Fn = struct {
+//     name: ?Symbol,
+//     arities: []FnArity,
+//     env: *Env,  // クロージャ環境
+//     meta: ?*PersistentMap,
+// };
+//
+// /// Atom（アトミック参照）
+// pub const Atom = struct {
+//     value: std.atomic.Value(Value),
+//     meta: ?*PersistentMap,
+//     validator: ?*Fn,
+//     watches: *PersistentMap,
+// };
+//
+// /// 有理数
+// pub const Ratio = struct {
+//     numerator: i64,    // TODO: BigInt対応
+//     denominator: i64,
+// };
+//
+// /// 文字列（不変、ハッシュキャッシュ付き）
+// pub const String = struct {
+//     data: []const u8,
+//     hash: ?u32,
+// };
+//
+// /// キーワード（インターン済み）
+// pub const Keyword = struct {
+//     namespace: ?*String,
+//     name: *String,
+//     hash: u32,
+// };
 
 // === テスト ===
 
-test "nil と boolean" {
-    const nil_val: Value = .nil;
-    const t: Value = .true_val;
-    const f: Value = .false_val;
-
-    try std.testing.expect(nil_val.isNil());
-    try std.testing.expect(!t.isNil());
-
-    try std.testing.expect(!nil_val.isTruthy());
-    try std.testing.expect(!f.isTruthy());
-    try std.testing.expect(t.isTruthy());
-}
-
-test "数値" {
-    const i = Value{ .int = 42 };
-    const fl = Value{ .float = 3.14 };
-
-    try std.testing.expect(i.isTruthy());
-    try std.testing.expectEqualStrings("integer", i.typeName());
-    try std.testing.expectEqualStrings("float", fl.typeName());
-}
-
-test "symbol と keyword" {
-    const sym = Value{ .symbol = Symbol.init("foo") };
-    const kw = Value{ .keyword = Symbol.initNs("user", "bar") };
-
-    try std.testing.expectEqualStrings("symbol", sym.typeName());
-    try std.testing.expectEqualStrings("keyword", kw.typeName());
-}
-
-test "format 出力" {
-    var buf: [256]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buf);
-    const writer = stream.writer();
-
-    const val = Value{ .keyword = Symbol.initNs("user", "name") };
-    try val.format("", .{}, writer);
-
-    try std.testing.expectEqualStrings(":user/name", stream.getWritten());
+test "placeholder" {
+    const v: Value = .{ .placeholder = {} };
+    _ = v;
 }
