@@ -578,7 +578,7 @@ pub const Analyzer = struct {
 
     fn makeEmptyList(self: *Analyzer) err.Error!*Node {
         const lst = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
-        lst.* = value_mod.PersistentList.empty();
+        lst.* = value_mod.PersistentList.emptyVal();
         return self.makeConstant(.{ .list = lst });
     }
 

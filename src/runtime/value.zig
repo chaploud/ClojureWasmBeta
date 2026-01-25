@@ -104,8 +104,24 @@ pub const PersistentList = struct {
     items: []const Value,
     meta: ?*const Value = null,
 
-    pub fn empty() PersistentList {
+    /// 空のリストを返す（値）
+    pub fn emptyVal() PersistentList {
         return .{ .items = &[_]Value{} };
+    }
+
+    /// 空のリストを作成してポインタを返す
+    pub fn empty(allocator: std.mem.Allocator) !*PersistentList {
+        const list = try allocator.create(PersistentList);
+        list.* = .{ .items = &[_]Value{} };
+        return list;
+    }
+
+    /// スライスから作成
+    pub fn fromSlice(allocator: std.mem.Allocator, items: []const Value) !*PersistentList {
+        const list = try allocator.create(PersistentList);
+        const new_items = try allocator.dupe(Value, items);
+        list.* = .{ .items = new_items };
+        return list;
     }
 
     pub fn count(self: PersistentList) usize {
@@ -118,7 +134,7 @@ pub const PersistentList = struct {
     }
 
     pub fn rest(self: PersistentList, allocator: std.mem.Allocator) !PersistentList {
-        if (self.items.len <= 1) return empty();
+        if (self.items.len <= 1) return emptyVal();
         const new_items = try allocator.dupe(Value, self.items[1..]);
         return .{ .items = new_items };
     }

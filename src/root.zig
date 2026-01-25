@@ -66,6 +66,9 @@ pub const Context = context.Context;
 
 pub const evaluator = @import("runtime/evaluator.zig");
 
+// === 標準ライブラリ ===
+pub const core = @import("lib/core.zig");
+
 // テスト
 test {
     std.testing.refAllDecls(@This());
