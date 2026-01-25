@@ -66,6 +66,42 @@ const keywords = std.StaticStringMap(Keyword).initComptime(.{
 // std.ComptimeStringMap
 ```
 
+### 落とし穴
+
+```zig
+// ❌ stdout 取得（バッファ必須）
+const stdout = std.io.getStdOut().writer();
+
+// ✅ バッファ付き writer
+var buf: [4096]u8 = undefined;
+var writer = std.fs.File.stdout().writer(&buf);
+const stdout = &writer.interface;
+try stdout.flush();  // 忘れずに
+
+// ❌ format メソッドを持つ型の {} 出力
+try writer.print("loc: {}", .{self.location});  // ambiguous format string
+
+// ✅ 明示的に format 呼び出し
+try writer.writeAll("loc: ");
+try self.location.format("", .{}, writer);
+
+// ❌ メソッド名と同名のローカル変数
+pub fn next(self: *T) {
+    const next = self.peek();  // シャドウイングエラー
+}
+
+// ✅ 別名を使う
+pub fn next(self: *T) {
+    const next_char = self.peek();
+}
+
+// ❌ tagged union で == 比較（不安定）
+return self == .nil;
+
+// ✅ switch で判定
+return switch (self) { .nil => true, else => false };
+```
+
 ## 設計原則
 
 - **comptime**: テーブル類はコンパイル時構築

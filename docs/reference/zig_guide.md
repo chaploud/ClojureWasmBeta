@@ -280,3 +280,84 @@ Zig は「処理系を書くための言語」として非常に相性が良い�
 - tagged union / NaN-boxing in Zig
 - IR を struct-of-arrays にする設計
 - Zig での JIT / 動的コード生成の注意点
+
+---
+
+## C. Zig 0.15.2 の落とし穴（実装で遭遇した問題）
+
+### C-1. stdout の取得
+
+```zig
+// ❌ 存在しない API
+const stdout = std.io.getStdOut().writer();
+
+// ✅ Zig 0.15.2 の正しい方法（バッファ必須）
+var stdout_buf: [4096]u8 = undefined;
+var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+const stdout = &stdout_writer.interface;
+try stdout.print("hello\n", .{});
+try stdout.flush();  // 忘れずに flush
+```
+
+### C-2. format メソッドを持つ型の出力
+
+カスタム `format` メソッドを持つ型を `{}` でフォーマットすると
+"ambiguous format string" エラーが発生する。
+
+```zig
+// ❌ エラー: ambiguous format string
+try writer.print("location: {}", .{self.location});
+
+// ✅ 明示的に format メソッドを呼ぶ
+try writer.writeAll("location: ");
+try self.location.format("", .{}, writer);
+```
+
+代替として `{f}` (format呼び出し) や `{any}` (スキップ) を使う方法もあるが、
+明示的な呼び出しが最も確実。
+
+### C-3. tagged union のメンバー比較
+
+```zig
+pub const Value = union(enum) {
+    nil,
+    int: i64,
+    // ...
+
+    pub fn isNil(self: Value) bool {
+        // ❌ 古い書き方（動かない場合あり）
+        // return self == .nil;
+
+        // ✅ switch で明示的に判定
+        return switch (self) {
+            .nil => true,
+            else => false,
+        };
+    }
+};
+
+// テスト時の注意
+test "nil check" {
+    // ❌ Value.nil だと enum タグとして解釈される可能性
+    // const nil = Value.nil;
+
+    // ✅ 型を明示
+    const nil: Value = .nil;
+    try std.testing.expect(nil.isNil());
+}
+```
+
+### C-4. 変数名のシャドウイング
+
+構造体のメソッド名と同名のローカル変数を作るとエラー。
+
+```zig
+pub fn next(self: *Tokenizer) Token {
+    // ...
+    // ❌ メソッド名 next と衝突
+    // const next = self.peek();
+
+    // ✅ 別の名前を使う
+    const next_char = self.peek();
+}
+```

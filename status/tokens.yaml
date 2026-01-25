@@ -16,7 +16,7 @@
 # ホワイトスペース
 # ============================================================================
 whitespace:
-  status: todo
+  status: done
   characters:
     - space        # ' '
     - tab          # '\t'
@@ -30,7 +30,7 @@ whitespace:
 # トークン終了文字 (macro-terminating?)
 # ============================================================================
 token_terminators:
-  status: todo
+  status: done
   characters:
     - '"'   # 文字列
     - ";"   # コメント
