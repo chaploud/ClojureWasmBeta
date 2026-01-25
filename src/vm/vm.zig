@@ -91,6 +91,10 @@ pub const VM = struct {
 
     /// 命令を実行
     fn execute(self: *VM, code: []const Instruction, constants: []const Value) VMError!Value {
+        // この execute が開始した時点の frame_count を記録
+        // ret でこのレベルに戻ったら、この execute から return する
+        const entry_frame_count = self.frame_count;
+
         while (true) {
             const frame = &self.frames[self.frame_count - 1];
             if (frame.ip >= code.len) {
@@ -254,19 +258,18 @@ pub const VM = struct {
 
                     // フレームを戻す
                     self.frame_count -= 1;
-                    if (self.frame_count == 0) {
+
+                    // この execute の開始レベルまで戻ったら return
+                    // （または frame_count が 0 になったら）
+                    if (self.frame_count < entry_frame_count) {
                         return result;
                     }
 
                     // スタックをフレームベースまで戻す
-                    const prev_frame = &self.frames[self.frame_count - 1];
                     self.sp = frame.base;
 
                     // 結果を push
                     try self.push(result);
-
-                    // 前のフレームの命令に戻る
-                    _ = prev_frame;
                 },
                 .closure => {
                     const proto_val = constants[instr.operand];
@@ -281,8 +284,27 @@ pub const VM = struct {
                     // マーカーのみ、何もしない
                 },
                 .recur => {
-                    // recur は loop 内で処理されるので、ここでは何もしない
-                    // 実際の処理は emitLoop で生成された jump で行われる
+                    // recur: ループ変数を新しい値で更新
+                    // スタックから引数を取り出し、ループバインディングに格納
+                    const arg_count = instr.operand;
+
+                    // 引数をスタックから取り出して一時保存
+                    const temp_values = self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
+                    defer self.allocator.free(temp_values);
+
+                    // 後ろから取り出す
+                    var i: usize = arg_count;
+                    while (i > 0) {
+                        i -= 1;
+                        temp_values[i] = self.pop();
+                    }
+
+                    // ループバインディングを更新（フレームベースから）
+                    for (temp_values, 0..) |val, idx| {
+                        self.stack[frame.base + idx] = val;
+                    }
+
+                    // 次の命令（jump）がループ先頭に戻る
                 },
 
                 // ═══════════════════════════════════════════════════════
@@ -353,18 +375,61 @@ pub const VM = struct {
                 const arity = f.findArity(arg_count) orelse return error.ArityError;
                 if (self.frame_count >= FRAMES_MAX) return error.StackOverflow;
 
+                // body から FnProto を取得（VM では body は FnProto へのポインタ）
+                const proto: *const FnProto = @ptrCast(@alignCast(arity.body));
+
+                // クロージャ環境がある場合、引数の前に配置
+                // これにより local_load でクロージャ変数にアクセス可能
+                if (f.closure_bindings) |closure_vals| {
+                    // 引数を一時保存
+                    const args_start = fn_idx + 1;
+                    const args_end = self.sp;
+                    const args_count_actual = args_end - args_start;
+
+                    // クロージャ値を引数の前に挿入
+                    // スタック: [fn, arg0, arg1, ...] -> [fn, closure0, closure1, ..., arg0, arg1, ...]
+                    // 引数を後ろにシフト
+                    if (args_count_actual > 0 and closure_vals.len > 0) {
+                        // 新しいスタック位置を計算
+                        const new_sp = args_start + closure_vals.len + args_count_actual;
+                        if (new_sp >= STACK_MAX) return error.StackOverflow;
+
+                        // 引数を後ろに移動（後ろから前に向かってコピー）
+                        var i = args_count_actual;
+                        while (i > 0) {
+                            i -= 1;
+                            self.stack[args_start + closure_vals.len + i] = self.stack[args_start + i];
+                        }
+
+                        // クロージャ値を挿入
+                        for (closure_vals, 0..) |cv, ci| {
+                            self.stack[args_start + ci] = cv;
+                        }
+
+                        self.sp = new_sp;
+                    } else if (closure_vals.len > 0) {
+                        // 引数がない場合、単にクロージャ値を追加
+                        for (closure_vals) |cv| {
+                            try self.push(cv);
+                        }
+                    }
+                }
+
                 // 新しいフレームを作成
                 self.frames[self.frame_count] = .{
-                    .proto = null, // Tree-walk スタイルの関数
+                    .proto = proto,
                     .ip = 0,
                     .base = fn_idx + 1,
                     .closure = f.closure_bindings,
                 };
                 self.frame_count += 1;
 
-                // TODO: ユーザー定義関数の実行
-                _ = arity;
-                return error.InvalidInstruction;
+                // proto のコードを実行
+                const result = try self.execute(proto.code, proto.constants);
+
+                // 結果を push
+                self.sp = fn_idx;
+                try self.push(result);
             },
             .fn_proto => |proto_ptr| {
                 const proto: *const FnProto = @ptrCast(@alignCast(proto_ptr));
@@ -400,16 +465,34 @@ pub const VM = struct {
 
         const fn_obj = self.allocator.create(value_mod.Fn) catch return error.OutOfMemory;
         const runtime_arities = self.allocator.alloc(value_mod.FnArityRuntime, 1) catch return error.OutOfMemory;
+
+        // パラメータ名のダミー配列を作成（アリティチェック用に正しい長さが必要）
+        const dummy_params = self.allocator.alloc([]const u8, proto.arity) catch return error.OutOfMemory;
+        for (0..proto.arity) |i| {
+            dummy_params[i] = ""; // ダミー名
+        }
+
         runtime_arities[0] = .{
-            .params = &[_][]const u8{}, // TODO: パラメータ名
+            .params = dummy_params,
             .variadic = proto.variadic,
             .body = @ptrCast(@constCast(proto)),
         };
 
+        // 現在のフレームのローカル変数をキャプチャ
+        const frame = &self.frames[self.frame_count - 1];
+        const locals_count = self.sp - frame.base;
+        const closure_bindings: ?[]const Value = if (locals_count > 0) blk: {
+            const bindings = self.allocator.alloc(Value, locals_count) catch return error.OutOfMemory;
+            for (0..locals_count) |i| {
+                bindings[i] = self.stack[frame.base + i];
+            }
+            break :blk bindings;
+        } else null;
+
         fn_obj.* = .{
             .name = if (proto.name) |n| value_mod.Symbol.init(n) else null,
             .arities = runtime_arities,
-            .closure_bindings = null, // TODO: キャプチャ
+            .closure_bindings = closure_bindings,
         };
 
         try self.push(Value{ .fn_val = fn_obj });
