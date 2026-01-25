@@ -188,12 +188,12 @@ reader ←── analyzer ←── compiler ←── vm               │
 
 ## ロードマップ
 
-### Phase 1: Reader ← 現在
+### Phase 1: Reader ✓
 - [x] Tokenizer
 - [x] Form 設計
-- [ ] Reader（S式構築）
+- [x] Reader（S式構築）
 
-### Phase 2: Runtime 基盤
+### Phase 2: Runtime 基盤 ← 現在
 - [ ] Value 型
 - [ ] Var, Namespace
 - [ ] Env（グローバル環境）

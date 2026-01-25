@@ -30,6 +30,9 @@ pub const Tokenizer = tokenizer.Tokenizer;
 pub const Token = tokenizer.Token;
 pub const TokenKind = tokenizer.TokenKind;
 
+pub const reader = @import("reader/reader.zig");
+pub const Reader = reader.Reader;
+
 // === Phase 2: Analyzer ===
 // TODO: 実装時にコメント解除
 // pub const node = @import("analyzer/node.zig");

@@ -138,17 +138,17 @@ numbers:
   # 特殊数値 (##)
   symbolic:
     positive_infinity:
-      status: partial  # ## 認識済、値解釈は Reader
+      status: done
       literal: "##Inf"
       value: "Double/POSITIVE_INFINITY"
 
     negative_infinity:
-      status: partial
+      status: done
       literal: "##-Inf"
       value: "Double/NEGATIVE_INFINITY"
 
     nan:
-      status: partial
+      status: done
       literal: "##NaN"
       value: "Double/NaN"
 

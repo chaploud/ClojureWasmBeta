@@ -7,37 +7,47 @@
 
 ## 前回完了
 
-- Tokenizer 実装完了
-- Form 設計完了
-- ディレクトリ構造設計（3フェーズアーキテクチャ）
-- Claude Code 基盤整備
+- Reader 実装 (`src/reader/reader.zig`)
+  - 基本構造: Tokenizer → Form 変換
+  - リテラル: 整数（10進/16進/8進/基数）、浮動小数点、有理数、文字列
+  - シンボル、キーワード（名前空間対応）
+  - コレクション: リスト `()`、ベクター `[]`
+  - マクロ文字: quote, deref, syntax-quote, unquote, unquote-splicing
+  - ディスパッチ: #\_ (discard), #() (fn), ##Inf/##NaN
 
 ---
 
 ## 次回タスク
 
-### Reader 実装 (`src/reader/reader.zig`)
+### Phase 2: Runtime 基盤
 
-1. **基本構造作成**
-   - Tokenizer から Form を構築する Reader 構造体
-   - `read()` 関数: トークン列 → Form
+1. **Value 型** (`src/runtime/value.zig`)
+   - Form と似ているが実行時の値表現
+   - nil, boolean, int, float, string, symbol, keyword
+   - コレクション: list, vector, map, set
+   - 関数: IFn インターフェース（将来）
 
-2. **リテラル対応**
-   - 数値（整数、浮動小数点、有理数）
-   - 文字列
-   - シンボル、キーワード
-   - nil, true, false
+2. **Var 型** (`src/runtime/var.zig`)
+   - 名前空間修飾シンボルに束縛
+   - root binding, thread-local binding（将来）
 
-3. **コレクション対応**
-   - リスト `()`
-   - ベクター `[]`
-   - マップ `{}`（将来）
+3. **Namespace 型** (`src/runtime/namespace.zig`)
+   - シンボル → Var のマッピング
+   - alias, refer の管理
 
-4. **数値検証**（tokens.yaml の partial 項目）
-   - 8進数 `0777` の値解釈
-   - 無効な8進数 `08`, `00` のエラー
-   - `##Inf`, `##-Inf`, `##NaN` の解釈
+4. **Env 型** (`src/runtime/env.zig`)
+   - グローバル環境
+   - Namespace のレジストリ
+
+### 今後の検討事項
+
+- マップ `{}` / セット `#{}` のデータ構造選択
+  - HashMap vs 永続データ構造（HAMT）
+- 文字リテラル `\a`, `\newline` の Value 表現
 
 ---
 
 ## 申し送り (解消したら削除)
+
+- 有理数は現在 float で近似（Ratio 型は将来実装）
+- マップ/セットは Reader で nil を返す仮実装
