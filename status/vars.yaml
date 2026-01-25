@@ -2748,6 +2748,11 @@ vars:
 
   clojure_uuid:
     # Phase 4: #uuid処理
+    # 関数なし（リーダーマクロのみ）
+    _placeholder:
+      type: note
+      status: skip
+      note: "clojure.uuid には公開関数がない"
 
   clojure_math:
     # Phase 4: 数学関数
