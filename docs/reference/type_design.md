@@ -55,11 +55,12 @@ src/
 | ファイル | 型 | フェーズ | 状態 |
 |---------|-----|---------|------|
 | `src/reader/form.zig` | Form | Reader | 実装済 |
+| `src/reader/reader.zig` | Reader | Reader | 実装済 |
 | `src/analyzer/node.zig` | Node | Analyzer | スタブ |
-| `src/runtime/value.zig` | Value | Runtime | スタブ |
-| `src/runtime/var.zig` | Var | Runtime | スタブ |
-| `src/runtime/namespace.zig` | Namespace | Runtime | スタブ |
-| `src/runtime/env.zig` | Env | Runtime | スタブ |
+| `src/runtime/value.zig` | Value | Runtime | 実装済 |
+| `src/runtime/var.zig` | Var | Runtime | 実装済 |
+| `src/runtime/namespace.zig` | Namespace | Runtime | 実装済 |
+| `src/runtime/env.zig` | Env | Runtime | 実装済 |
 | `src/runtime/context.zig` | Context | 評価器 | スタブ |
 
 ## Form (Reader出力)

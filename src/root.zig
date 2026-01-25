@@ -39,15 +39,26 @@ pub const Reader = reader.Reader;
 // pub const Node = node.Node;
 
 // === Phase 3: Runtime ===
-// TODO: 実装時にコメント解除
-// pub const value = @import("runtime/value.zig");
-// pub const Value = value.Value;
-// pub const var_mod = @import("runtime/var.zig");
-// pub const Var = var_mod.Var;
-// pub const namespace = @import("runtime/namespace.zig");
-// pub const Namespace = namespace.Namespace;
-// pub const env = @import("runtime/env.zig");
-// pub const Env = env.Env;
+pub const value = @import("runtime/value.zig");
+pub const Value = value.Value;
+pub const RuntimeSymbol = value.Symbol;
+pub const Keyword = value.Keyword;
+pub const PersistentList = value.PersistentList;
+pub const PersistentVector = value.PersistentVector;
+pub const PersistentMap = value.PersistentMap;
+pub const PersistentSet = value.PersistentSet;
+pub const Fn = value.Fn;
+
+pub const var_mod = @import("runtime/var.zig");
+pub const Var = var_mod.Var;
+
+pub const namespace = @import("runtime/namespace.zig");
+pub const Namespace = namespace.Namespace;
+
+pub const env_mod = @import("runtime/env.zig");
+pub const Env = env_mod.Env;
+
+// TODO: Context 実装時にコメント解除
 // pub const context = @import("runtime/context.zig");
 // pub const Context = context.Context;
 

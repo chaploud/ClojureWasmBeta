@@ -7,117 +7,112 @@
 //!   Form (Reader) → Node (Analyzer) → Value (Runtime)
 //!
 //! 詳細: docs/reference/type_design.md
-//!
-//! TODO: 評価器実装時に有効化
 
 const std = @import("std");
-
-// TODO: 実装時にコメント解除
-// const value = @import("value.zig");
-// const Value = value.Value;
-// const namespace = @import("namespace.zig");
-// const Namespace = namespace.Namespace;
-// const form = @import("../reader/form.zig");
-// const Symbol = form.Symbol;
+const value = @import("value.zig");
+const Value = value.Value;
+const Symbol = value.Symbol;
 
 /// Var: Clojure変数
-/// TODO: 実装時にコメント解除・拡張
+/// グローバルに名前空間修飾されたシンボルに束縛される値
 pub const Var = struct {
-    // === 基本フィールド ===
-    // root: Value,              // グローバルバインディング
-    // sym: Symbol,              // 変数名
-    // ns: *Namespace,           // 所属名前空間
+    /// 変数名
+    sym: Symbol,
 
-    // === メタデータ ===
-    // meta: ?*PersistentMap,    // :doc, :arglists, :private, etc.
-    // dynamic: bool,            // ^:dynamic フラグ
-    // macro: bool,              // ^:macro フラグ
+    /// 所属名前空間の名前
+    ns_name: []const u8,
 
-    // === Thread-local binding ===
-    // TODO: スレッドローカルバインディング実装
-    // thread_bindings: ThreadLocal(Frame),
+    /// root バインディング（グローバル値）
+    root: Value = value.nil,
 
-    // === Watches ===
-    // watches: ?*PersistentMap, // add-watch 用
+    /// ^:dynamic フラグ
+    dynamic: bool = false,
 
-    // プレースホルダー
-    placeholder: void,
+    /// ^:macro フラグ
+    macro: bool = false,
+
+    /// ^:private フラグ
+    private: bool = false,
+
+    /// メタデータ（将来: *PersistentMap）
+    meta: ?*const Value = null,
 
     // === メソッド ===
 
-    // /// root 値を取得（thread-local を考慮しない）
-    // pub fn getRawRoot(self: *Var) Value {
-    //     return self.root;
-    // }
+    /// root 値を取得（thread-local を考慮しない）
+    pub fn getRawRoot(self: *const Var) Value {
+        return self.root;
+    }
 
-    // /// 値を取得（thread-local を優先）
-    // pub fn deref(self: *Var) Value {
-    //     if (self.dynamic) {
-    //         if (getThreadBinding(self)) |binding| {
-    //             return binding.val;
-    //         }
-    //     }
-    //     return self.root;
-    // }
+    /// 値を取得（thread-local を優先）
+    /// TODO: スレッドローカルバインディング実装時に拡張
+    pub fn deref(self: *const Var) Value {
+        // 現時点では root のみ
+        return self.root;
+    }
 
-    // /// root 値を設定
-    // pub fn bindRoot(self: *Var, v: Value) void {
-    //     self.root = v;
-    // }
+    /// root 値を設定
+    pub fn bindRoot(self: *Var, v: Value) void {
+        self.root = v;
+    }
 
-    // /// dynamic かどうか
-    // pub fn isDynamic(self: *Var) bool {
-    //     return self.dynamic;
-    // }
+    /// dynamic かどうか
+    pub fn isDynamic(self: *const Var) bool {
+        return self.dynamic;
+    }
 
-    // /// macro かどうか
-    // pub fn isMacro(self: *Var) bool {
-    //     return self.macro;
-    // }
+    /// macro かどうか
+    pub fn isMacro(self: *const Var) bool {
+        return self.macro;
+    }
+
+    /// private かどうか
+    pub fn isPrivate(self: *const Var) bool {
+        return self.private;
+    }
+
+    /// 完全修飾名を返す（例: "clojure.core/map"）
+    pub fn qualifiedName(self: *const Var, buf: []u8) []const u8 {
+        return std.fmt.bufPrint(buf, "{s}/{s}", .{ self.ns_name, self.sym.name }) catch self.sym.name;
+    }
 };
 
-// === Thread-local binding ===
+// === Thread-local binding（将来実装）===
 //
-// /// スレッドローカルバインディングのフレーム
+// スレッドローカルバインディングのフレーム
 // pub const Frame = struct {
 //     bindings: *PersistentMap,  // Var → Value
 //     prev: ?*Frame,
 // };
 //
-// /// スレッドローカルストレージ
 // threadlocal var current_frame: ?*Frame = null;
 //
-// /// push-thread-bindings 相当
-// pub fn pushThreadBindings(bindings: *PersistentMap) void {
-//     const new_frame = allocator.create(Frame);
-//     new_frame.bindings = bindings;
-//     new_frame.prev = current_frame;
-//     current_frame = new_frame;
-// }
-//
-// /// pop-thread-bindings 相当
-// pub fn popThreadBindings() void {
-//     if (current_frame) |frame| {
-//         current_frame = frame.prev;
-//         allocator.destroy(frame);
-//     }
-// }
-//
-// /// 特定 Var のスレッドローカルバインディングを取得
-// fn getThreadBinding(v: *Var) ?Value {
-//     var frame = current_frame;
-//     while (frame) |f| {
-//         if (f.bindings.get(v)) |val| {
-//             return val;
-//         }
-//         frame = f.prev;
-//     }
-//     return null;
-// }
+// pub fn pushThreadBindings(bindings: *PersistentMap) void { ... }
+// pub fn popThreadBindings() void { ... }
 
 // === テスト ===
 
-test "placeholder" {
-    const v: Var = .{ .placeholder = {} };
-    _ = v;
+test "Var 基本操作" {
+    var v = Var{
+        .sym = Symbol.init("foo"),
+        .ns_name = "user",
+    };
+
+    try std.testing.expect(v.deref().isNil());
+
+    v.bindRoot(value.intVal(42));
+    try std.testing.expect(v.deref().eql(value.intVal(42)));
+}
+
+test "Var フラグ" {
+    const v = Var{
+        .sym = Symbol.init("*debug*"),
+        .ns_name = "user",
+        .dynamic = true,
+        .private = true,
+    };
+
+    try std.testing.expect(v.isDynamic());
+    try std.testing.expect(v.isPrivate());
+    try std.testing.expect(!v.isMacro());
 }

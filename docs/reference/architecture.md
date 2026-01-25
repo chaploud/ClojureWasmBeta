@@ -193,12 +193,12 @@ reader ←── analyzer ←── compiler ←── vm               │
 - [x] Form 設計
 - [x] Reader（S式構築）
 
-### Phase 2: Runtime 基盤 ← 現在
-- [ ] Value 型
-- [ ] Var, Namespace
-- [ ] Env（グローバル環境）
+### Phase 2: Runtime 基盤 ✓
+- [x] Value 型
+- [x] Var, Namespace
+- [x] Env（グローバル環境）
 
-### Phase 3: Analyzer
+### Phase 3: Analyzer ← 現在
 - [ ] Node 型
 - [ ] special forms（if, let, fn, def, do, quote）
 - [ ] シンボル解決
