@@ -243,6 +243,13 @@ pub const PersistentSet = struct {
     }
 };
 
+// === 関数プロトタイプ（コンパイル済み）===
+// 循環依存を避けるため、ここで前方宣言
+// 実際の定義は compiler/bytecode.zig
+
+/// コンパイル済み関数プロトタイプへのポインタ
+pub const FnProtoPtr = *anyopaque;
+
 // === 関数 ===
 
 /// ユーザー定義関数のアリティ
@@ -336,9 +343,11 @@ pub const Value = union(enum) {
     // === 関数 ===
     fn_val: *Fn,
 
-    // === 参照（将来）===
-    // var_val: *Var,
-    // atom: *Atom,
+    // === VM用 ===
+    fn_proto: FnProtoPtr, // コンパイル済み関数プロトタイプ
+
+    // === 参照 ===
+    var_val: *anyopaque, // *Var（循環依存を避けるため anyopaque）
 
     // === ヘルパー関数 ===
 
@@ -414,6 +423,8 @@ pub const Value = union(enum) {
                 break :blk true;
             },
             .fn_val => |a| a == other.fn_val, // 関数は参照等価
+            .fn_proto => |a| a == other.fn_proto, // 参照等価
+            .var_val => |a| a == other.var_val, // 参照等価
         };
     }
 
@@ -433,6 +444,8 @@ pub const Value = union(enum) {
             .map => "map",
             .set => "set",
             .fn_val => "function",
+            .fn_proto => "fn-proto",
+            .var_val => "var",
         };
     }
 
@@ -525,6 +538,8 @@ pub const Value = union(enum) {
                     try writer.writeAll("#<fn>");
                 }
             },
+            .fn_proto => try writer.writeAll("#<fn-proto>"),
+            .var_val => try writer.writeAll("#<var>"),
         }
     }
 };
