@@ -1,115 +1,143 @@
 //! Context: 評価コンテキスト
 //!
 //! 評価時のローカル環境を管理。
-//! ローカルバインディング、recur ターゲット、コールスタック。
+//! ローカルバインディング、recur ターゲット。
 //!
 //! 3フェーズアーキテクチャ:
 //!   Form (Reader) → Node (Analyzer) → Value (Runtime)
 //!
 //! 詳細: docs/reference/type_design.md
-//!
-//! TODO: 評価器実装時に有効化
 
 const std = @import("std");
+const value_mod = @import("value.zig");
+const Value = value_mod.Value;
+const env_mod = @import("env.zig");
+const Env = env_mod.Env;
+const namespace_mod = @import("namespace.zig");
+const Namespace = namespace_mod.Namespace;
 
-// TODO: 実装時にコメント解除
-// const form = @import("../reader/form.zig");
-// const Symbol = form.Symbol;
-// const value = @import("value.zig");
-// const Value = value.Value;
-// const env = @import("env.zig");
-// const Env = env.Env;
-// const namespace = @import("namespace.zig");
-// const Namespace = namespace.Namespace;
-
-/// Context: 評価コンテキスト
-/// TODO: 実装時にコメント解除・拡張
-pub const Context = struct {
-    // === グローバル参照 ===
-    // env: *Env,
-    // current_ns: *Namespace,
-
-    // === ローカルバインディング ===
-    // bindings: []Value,           // ローカル変数の値
-    // bindings_idx: SymbolIndexMap, // Symbol → bindings のインデックス
-
-    // === 制御フロー ===
-    // recur_target: ?*RecurTarget, // loop/fn の recur 先
-
-    // === エラー追跡 ===
-    // call_stack: CallStack,       // スタックトレース用
-
-    // プレースホルダー
-    placeholder: void,
-
-    // === メソッド ===
-
-    // /// ローカル変数を検索
-    // pub fn lookupLocal(self: *Context, sym: Symbol) ?Value {
-    //     if (self.bindings_idx.get(sym)) |idx| {
-    //         return self.bindings[idx];
-    //     }
-    //     return null;
-    // }
-
-    // /// シンボルを解決（ローカル優先）
-    // pub fn resolve(self: *Context, sym: Symbol) ?Value {
-    //     // ローカル変数
-    //     if (self.lookupLocal(sym)) |v| {
-    //         return v;
-    //     }
-    //     // Var
-    //     if (self.current_ns.resolve(sym)) |var_ref| {
-    //         return var_ref.deref();
-    //     }
-    //     return null;
-    // }
-
-    // /// 新しいバインディングを追加したコンテキストを作成
-    // pub fn pushBindings(
-    //     self: *Context,
-    //     syms: []Symbol,
-    //     vals: []Value,
-    // ) Context {
-    //     var new_ctx = self.*;
-    //     // bindings と bindings_idx を拡張
-    //     // ...
-    //     return new_ctx;
-    // }
-
-    // /// recur ターゲットを設定
-    // pub fn withRecurTarget(self: *Context, target: *RecurTarget) Context {
-    //     var new_ctx = self.*;
-    //     new_ctx.recur_target = target;
-    //     return new_ctx;
-    // }
+/// recur で値を渡すための構造体
+pub const RecurValues = struct {
+    values: []Value,
 };
 
-// === 補助型（将来）===
-//
-// /// recur のジャンプ先
-// pub const RecurTarget = struct {
-//     bindings: []Value,  // rebind 先
-// };
-//
-// /// コールスタック（エラー追跡用）
-// pub const CallStack = struct {
-//     frames: []StackFrame,
-// };
-//
-// pub const StackFrame = struct {
-//     fn_name: ?Symbol,
-//     ns_name: ?Symbol,
-//     line: u32,
-//     column: u32,
-//     file: ?[]const u8,
-// };
-//
-// const SymbolIndexMap = std.HashMap(Symbol, u32, ...);
+/// Context: 評価コンテキスト
+pub const Context = struct {
+    /// グローバル環境
+    env: *Env,
+
+    /// アロケータ
+    allocator: std.mem.Allocator,
+
+    /// ローカルバインディングの値（インデックスでアクセス）
+    bindings: []Value,
+
+    /// recur 発生フラグと値
+    /// null: recur 未発生
+    /// non-null: recur 発生、値を含む
+    recur_values: ?RecurValues = null,
+
+    /// 初期化（バインディングなし）
+    pub fn init(allocator: std.mem.Allocator, env: *Env) Context {
+        return .{
+            .env = env,
+            .allocator = allocator,
+            .bindings = &[_]Value{},
+        };
+    }
+
+    /// インデックスでローカル変数を取得
+    pub fn getLocal(self: *const Context, idx: u32) ?Value {
+        if (idx >= self.bindings.len) return null;
+        return self.bindings[idx];
+    }
+
+    /// 新しいバインディングを追加したコンテキストを作成
+    pub fn withBindings(self: *const Context, new_bindings: []const Value) !Context {
+        const combined = try self.allocator.alloc(Value, self.bindings.len + new_bindings.len);
+        @memcpy(combined[0..self.bindings.len], self.bindings);
+        @memcpy(combined[self.bindings.len..], new_bindings);
+
+        return Context{
+            .env = self.env,
+            .allocator = self.allocator,
+            .bindings = combined,
+        };
+    }
+
+    /// バインディングを置き換えたコンテキストを作成（recur 用）
+    pub fn replaceBindings(self: *const Context, start_idx: usize, new_values: []const Value) !Context {
+        const new_bindings = try self.allocator.dupe(Value, self.bindings);
+        for (new_values, 0..) |val, i| {
+            new_bindings[start_idx + i] = val;
+        }
+
+        return Context{
+            .env = self.env,
+            .allocator = self.allocator,
+            .bindings = new_bindings,
+        };
+    }
+
+    /// recur を設定
+    pub fn setRecur(self: *Context, values: []Value) void {
+        self.recur_values = .{ .values = values };
+    }
+
+    /// recur をクリア
+    pub fn clearRecur(self: *Context) void {
+        self.recur_values = null;
+    }
+
+    /// recur が発生したか
+    pub fn hasRecur(self: *const Context) bool {
+        return self.recur_values != null;
+    }
+};
 
 // === テスト ===
 
-test "placeholder" {
-    const ctx: Context = .{ .placeholder = {} };
-    _ = ctx;
+test "Context 基本操作" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = Env.init(allocator);
+    defer env.deinit();
+
+    var ctx = Context.init(allocator, &env);
+
+    // 初期状態
+    try std.testing.expect(ctx.getLocal(0) == null);
+
+    // バインディング追加
+    const vals = [_]Value{ value_mod.intVal(1), value_mod.intVal(2) };
+    ctx = try ctx.withBindings(&vals);
+
+    try std.testing.expect(ctx.getLocal(0).?.eql(value_mod.intVal(1)));
+    try std.testing.expect(ctx.getLocal(1).?.eql(value_mod.intVal(2)));
+    try std.testing.expect(ctx.getLocal(2) == null);
+}
+
+test "Context recur" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = Env.init(allocator);
+    defer env.deinit();
+
+    var ctx = Context.init(allocator, &env);
+
+    // recur 未発生
+    try std.testing.expect(!ctx.hasRecur());
+
+    // recur 設定
+    var vals = [_]Value{ value_mod.intVal(10) };
+    ctx.setRecur(&vals);
+    try std.testing.expect(ctx.hasRecur());
+
+    // recur クリア
+    ctx.clearRecur();
+    try std.testing.expect(!ctx.hasRecur());
 }

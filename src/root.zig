@@ -61,9 +61,10 @@ pub const Namespace = namespace.Namespace;
 pub const env_mod = @import("runtime/env.zig");
 pub const Env = env_mod.Env;
 
-// TODO: Context 実装時にコメント解除
-// pub const context = @import("runtime/context.zig");
-// pub const Context = context.Context;
+pub const context = @import("runtime/context.zig");
+pub const Context = context.Context;
+
+pub const evaluator = @import("runtime/evaluator.zig");
 
 // テスト
 test {
