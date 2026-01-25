@@ -1,0 +1,523 @@
+---
+# Clojure トークン完全リスト
+# 参照: tools.reader (clojure/tools/reader.clj, impl/commons.clj, impl/utils.clj)
+# 最終更新: 2026-01-25
+
+# ============================================================================
+# 処理の流れ
+# ============================================================================
+# 1. ホワイトスペースをスキップ
+# 2. 数値リテラルか判定（先頭が数字、または +/- の後に数字）
+# 3. macros テーブルで文字をチェック
+# 4. それ以外はシンボルとして読む
+# ============================================================================
+
+# ============================================================================
+# ホワイトスペース
+# ============================================================================
+whitespace:
+  status: todo
+  characters:
+    - space        # ' '
+    - tab          # '\t'
+    - newline      # '\n'
+    - return       # '\r'
+    - formfeed     # '\f'
+    - comma        # ',' (Clojure特有: ホワイトスペース扱い)
+  note: "Character.isWhitespace() || ','"
+
+# ============================================================================
+# トークン終了文字 (macro-terminating?)
+# ============================================================================
+token_terminators:
+  status: todo
+  characters:
+    - '"'   # 文字列
+    - ";"   # コメント
+    - "@"   # deref
+    - "^"   # メタデータ
+    - "`"   # 構文クォート
+    - "~"   # アンクォート
+    - "("   # リスト
+    - ")"
+    - "["   # ベクタ
+    - "]"
+    - "{"   # マップ
+    - "}"
+    - "\\"  # 文字リテラル
+  note: "これらの文字でトークンが終了する"
+
+# ============================================================================
+# 数値リテラル
+# ============================================================================
+numbers:
+  # 整数パターン (int-pattern)
+  # ([-+]?)(?:(0)|([1-9][0-9]*)|0[xX]([0-9A-Fa-f]+)|0([0-7]+)|([1-9][0-9]?)[rR]([0-9A-Za-z]+)|0[0-9]+)(N)?
+  integers:
+    zero:
+      status: todo
+      pattern: "0"
+      examples: ["0", "0N"]
+
+    decimal:
+      status: todo
+      pattern: "[1-9][0-9]*"
+      examples: ["42", "123", "999"]
+
+    decimal_signed:
+      status: todo
+      pattern: "[-+][1-9][0-9]*"
+      examples: ["-42", "+42"]
+      note: "+/- の後に数字がある場合のみ数値として解釈"
+
+    hexadecimal:
+      status: todo
+      pattern: "0[xX][0-9A-Fa-f]+"
+      examples: ["0x2A", "0XFF", "0x0"]
+
+    octal:
+      status: todo
+      pattern: "0[0-7]+"
+      examples: ["052", "0777"]
+      note: "0で始まり0-7のみ"
+
+    octal_invalid:
+      status: todo
+      examples: ["08", "09", "00"]
+      note: "エラーになるべきパターン"
+
+    radix:
+      status: todo
+      pattern: "[2-36][rR][0-9A-Za-z]+"
+      examples: ["2r101010", "8r52", "16r2A", "36rZZ"]
+      note: "基数は2-36"
+
+    bigint:
+      status: todo
+      pattern: "..N"
+      examples: ["42N", "0N", "999999999999999N"]
+      note: "Nサフィックスで BigInt"
+
+  # 浮動小数点パターン (float-pattern)
+  # ([-+]?[0-9]+(\.[0-9]*)?([eE][-+]?[0-9]+)?)(M)?
+  floats:
+    basic:
+      status: todo
+      pattern: "[0-9]+\\.[0-9]*"
+      examples: ["3.14", "1.0", "1.", "0.5"]
+
+    scientific:
+      status: todo
+      pattern: "[0-9]+[eE][-+]?[0-9]+"
+      examples: ["1e10", "1E10", "1e-3", "1e+5"]
+
+    scientific_decimal:
+      status: todo
+      pattern: "[0-9]+\\.[0-9]*[eE][-+]?[0-9]+"
+      examples: ["1.5e10", "3.14e-2"]
+
+    signed:
+      status: todo
+      pattern: "[-+][0-9]+..."
+      examples: ["-3.14", "+1.5e10"]
+
+    bigdecimal:
+      status: todo
+      pattern: "...M"
+      examples: ["3.14M", "1e10M"]
+      note: "Mサフィックスで BigDecimal"
+
+  # 有理数パターン (ratio-pattern)
+  # ([-+]?[0-9]+)/([0-9]+)
+  ratio:
+    status: todo
+    pattern: "[-+]?[0-9]+/[0-9]+"
+    examples: ["22/7", "1/2", "-3/4", "+1/3"]
+    note: "自動約分される"
+
+  # 特殊数値 (##)
+  symbolic:
+    positive_infinity:
+      status: todo
+      literal: "##Inf"
+      value: "Double/POSITIVE_INFINITY"
+
+    negative_infinity:
+      status: todo
+      literal: "##-Inf"
+      value: "Double/NEGATIVE_INFINITY"
+
+    nan:
+      status: todo
+      literal: "##NaN"
+      value: "Double/NaN"
+
+# ============================================================================
+# マクロテーブル (macros 関数)
+# ============================================================================
+macros:
+  # 文字列
+  string:
+    char: '"'
+    status: todo
+    escape_sequences:
+      - {escape: "\\t", meaning: "タブ"}
+      - {escape: "\\r", meaning: "キャリッジリターン"}
+      - {escape: "\\n", meaning: "改行"}
+      - {escape: "\\\\", meaning: "バックスラッシュ"}
+      - {escape: "\\\"", meaning: "ダブルクォート"}
+      - {escape: "\\b", meaning: "バックスペース"}
+      - {escape: "\\f", meaning: "フォームフィード"}
+      - {escape: "\\uXXXX", meaning: "Unicode (4桁16進)"}
+      - {escape: "\\oXXX", meaning: "八進 (1-3桁, 0-377)"}
+    note: "複数行可、改行はそのまま保持"
+
+  # キーワード
+  keyword:
+    char: ":"
+    status: todo
+    patterns:
+      basic:
+        examples: [":foo", ":kebab-case", ":CamelCase"]
+      namespaced:
+        examples: [":ns/name", ":clojure.core/map"]
+      auto_resolved:
+        examples: ["::foo", "::alias/name"]
+        note: ":: は現在のNS、::alias/ はエイリアス解決"
+    invalid:
+      - ":"        # 単独コロン
+      - "::"       # 空の自動解決
+      - ":::"      # 3つ以上のコロン
+      - ":foo:"    # 末尾コロン
+
+  # コメント
+  comment:
+    char: ";"
+    status: todo
+    note: "行末まで無視"
+
+  # クォート
+  quote:
+    char: "'"
+    status: todo
+    expansion: "(quote x)"
+    examples: ["'foo", "'(1 2 3)", "'{:a 1}"]
+
+  # Deref
+  deref:
+    char: "@"
+    status: todo
+    expansion: "(clojure.core/deref x)"
+    examples: ["@atom", "@(delay x)"]
+
+  # メタデータ
+  meta:
+    char: "^"
+    status: todo
+    examples:
+      - {input: "^:keyword x", expansion: "(with-meta x {:keyword true})"}
+      - {input: "^String x", expansion: "(with-meta x {:tag String})"}
+      - {input: "^{:a 1} x", expansion: "(with-meta x {:a 1})"}
+      - {input: "^[int] x", expansion: "(with-meta x {:param-tags [int]})"}
+    note: "desugar-meta: keyword→{k true}, symbol/string→{:tag s}, vector→{:param-tags v}"
+
+  # 構文クォート
+  syntax_quote:
+    char: "`"
+    status: todo
+    features:
+      - "シンボルを完全修飾名に解決"
+      - "~ でアンクォート"
+      - "~@ でスプライシング"
+      - "foo# で gensym 生成"
+    examples:
+      - {input: "`foo", output: "user/foo (NS修飾)"}
+      - {input: "`~x", output: "xの値"}
+      - {input: "`(~@xs)", output: "xsの要素を展開"}
+      - {input: "`foo#", output: "foo__1234__auto__"}
+    note: "マクロ定義で頻用"
+
+  # アンクォート
+  unquote:
+    char: "~"
+    status: todo
+    variants:
+      - {pattern: "~x", name: "unquote"}
+      - {pattern: "~@x", name: "unquote-splicing"}
+    note: "構文クォート内でのみ有効"
+
+  # コレクション
+  list:
+    char: "("
+    status: todo
+    closer: ")"
+    examples: ["()", "(1 2 3)", "(+ 1 2)"]
+
+  vector:
+    char: "["
+    status: todo
+    closer: "]"
+    examples: ["[]", "[1 2 3]", "[:a :b]"]
+
+  map:
+    char: "{"
+    status: todo
+    closer: "}"
+    examples: ["{}", "{:a 1 :b 2}"]
+    note: "要素数は偶数"
+
+  # 閉じ括弧（不一致検出用）
+  unmatched_delimiters:
+    chars: [")", "]", "}"]
+    status: todo
+    note: "対応する開き括弧なしで出現したらエラー"
+
+  # 文字リテラル
+  character:
+    char: "\\"
+    status: todo
+    patterns:
+      single:
+        examples: ["\\a", "\\A", "\\;", "\\("]
+        note: "任意の1文字"
+      named:
+        - {literal: "\\newline", value: "\\n"}
+        - {literal: "\\space", value: "' '"}
+        - {literal: "\\tab", value: "\\t"}
+        - {literal: "\\backspace", value: "\\b"}
+        - {literal: "\\formfeed", value: "\\f"}
+        - {literal: "\\return", value: "\\r"}
+      unicode:
+        pattern: "\\uXXXX"
+        examples: ["\\u0041", "\\u3042"]
+        note: "4桁16進固定"
+      octal:
+        pattern: "\\oXXX"
+        examples: ["\\o101", "\\o377"]
+        note: "1-3桁, 0-377"
+
+  # 無名関数引数
+  arg:
+    char: "%"
+    status: todo
+    patterns:
+      - {pattern: "%", meaning: "第1引数 (= %1)"}
+      - {pattern: "%N", meaning: "第N引数", examples: ["%1", "%2", "%9"]}
+      - {pattern: "%&", meaning: "残り引数"}
+    note: "#() 内でのみ有効"
+
+  # ディスパッチ
+  dispatch:
+    char: "#"
+    status: todo
+    note: "dispatch-macros テーブルを参照"
+
+# ============================================================================
+# ディスパッチマクロテーブル (dispatch-macros 関数)
+# ============================================================================
+dispatch_macros:
+  # メタデータ (非推奨)
+  meta_deprecated:
+    pattern: "#^"
+    status: todo
+    note: "非推奨、^ を使用すべき"
+
+  # Var参照
+  var:
+    pattern: "#'"
+    status: todo
+    expansion: "(var x)"
+    examples: ["#'foo", "#'clojure.core/map"]
+
+  # 無名関数
+  fn:
+    pattern: "#(...)"
+    status: todo
+    expansion: "(fn* [args] body)"
+    examples:
+      - {input: "#(+ % 1)", expansion: "(fn* [p1__N#] (+ p1__N# 1))"}
+      - {input: "#(+ %1 %2)", expansion: "(fn* [p1__N# p2__M#] (+ p1__N# p2__M#))"}
+      - {input: "#(apply + %&)", expansion: "(fn* [& rest__N#] (apply + rest__N#))"}
+    note: "ネスト不可"
+
+  # 読み込み時評価
+  eval:
+    pattern: "#="
+    status: skip
+    note: "*read-eval* で制御、セキュリティリスクあり"
+
+  # セット
+  set:
+    pattern: "#{...}"
+    status: todo
+    examples: ["#{}", "#{1 2 3}"]
+    note: "重複要素はエラー"
+
+  # 読み込み不可
+  unreadable:
+    pattern: "#<"
+    status: todo
+    note: "常にエラー (Unreadable form)"
+
+  # 正規表現
+  regex:
+    pattern: '#"..."'
+    status: todo
+    examples: ['#"[a-z]+"', '#"\\d{3}"', '#"(?i)hello"']
+    note: "エスケープは文字列と異なる（Javaの正規表現構文）"
+
+  # コメント（シェバン）
+  comment_shebang:
+    pattern: "#!"
+    status: todo
+    note: "行末まで無視、シェバン対応"
+
+  # 破棄
+  discard:
+    pattern: "#_"
+    status: todo
+    examples:
+      - "(+ 1 #_2 3)"       # => (+ 1 3)
+      - "#_#_a b c"         # => c (2つ破棄)
+    note: "次のフォームを破棄、連続可能"
+
+  # 条件読み込み
+  conditional:
+    pattern: "#?"
+    status: todo
+    variants:
+      - {pattern: "#?(...)", name: "reader-conditional"}
+      - {pattern: "#?@(...)", name: "reader-conditional-splicing"}
+    feature_keys:
+      - ":clj"      # Clojure (JVM)
+      - ":cljs"     # ClojureScript
+      - ":cljr"     # Clojure CLR
+      - ":default"  # フォールバック
+    examples:
+      - '#?(:clj "JVM" :cljs "JS")'
+      - '#?@(:clj [1 2 3])'
+    note: "require :read-cond :allow"
+
+  # 名前空間マップ
+  namespaced_map:
+    pattern: "#:"
+    status: todo
+    variants:
+      - {pattern: "#:ns{...}", meaning: "明示的NS"}
+      - {pattern: "#::{...}", meaning: "現在のNS"}
+      - {pattern: "#::alias{...}", meaning: "エイリアス解決"}
+    examples:
+      - '#:person{:name "Bob"}'   # => {:person/name "Bob"}
+      - '#::{:name "Bob"}'        # => {:current-ns/name "Bob"}
+
+  # シンボリック値
+  symbolic_value:
+    pattern: "##"
+    status: todo
+    values:
+      - "##Inf"   # Double/POSITIVE_INFINITY
+      - "##-Inf"  # Double/NEGATIVE_INFINITY
+      - "##NaN"   # Double/NaN
+
+  # タグ付きリテラル（その他すべて）
+  tagged_literal:
+    status: todo
+    builtin:
+      - {tag: "#inst", example: '#inst "2024-01-01T00:00:00.000Z"'}
+      - {tag: "#uuid", example: '#uuid "550e8400-e29b-41d4-a716-446655440000"'}
+    custom:
+      note: "data_readers.clj で定義"
+    constructor:
+      pattern: "#ns.ClassName[...]"
+      note: "レコード/型のコンストラクタ構文、*read-eval* 必要"
+
+# ============================================================================
+# シンボル
+# ============================================================================
+symbols:
+  status: todo
+
+  special:
+    - {symbol: "nil", value: "null"}
+    - {symbol: "true", value: "true"}
+    - {symbol: "false", value: "false"}
+    - {symbol: "/", value: "clojure.core// (除算)"}
+
+  valid_first_chars:
+    note: "数字以外、かつ以下を含む"
+    chars: "a-z A-Z * + ! - _ ' ? < > = $ & ."
+
+  valid_subsequent_chars:
+    note: "上記 + 数字 + :"
+    chars: "a-z A-Z 0-9 * + ! - _ ' ? < > = $ & . :"
+
+  patterns:
+    basic:
+      examples: ["foo", "my-symbol", "+", "-", "*", "!", "?", "&", "->", "->>"]
+
+    namespaced:
+      pattern: "ns/name"
+      examples: ["clojure.core/map", "user/foo"]
+      note: "/ は1つのみ"
+
+    dotted:
+      examples: [".method", ".."]
+      note: "Javaメソッド呼び出し用"
+
+    constructor:
+      examples: ["String.", "java.util.Date."]
+      note: "Javaコンストラクタ呼び出し用"
+
+  invalid:
+    - ""           # 空
+    - "foo:"       # 末尾コロン
+    - "::foo"      # :: で始まる (キーワード構文)
+    - "foo/bar/baz"  # / が複数
+    - "foo/"       # 末尾スラッシュ
+
+# ============================================================================
+# エッジケース
+# ============================================================================
+edge_cases:
+  # +/- の曖昧性
+  plus_minus:
+    status: todo
+    rule: "次の文字が数字なら数値、それ以外ならシンボル"
+    examples:
+      - {input: "+42", type: "number"}
+      - {input: "-17", type: "number"}
+      - {input: "+", type: "symbol"}
+      - {input: "-", type: "symbol"}
+      - {input: "->>", type: "symbol"}
+      - {input: "->", type: "symbol"}
+      - {input: "+-", type: "symbol"}
+
+  # 数値の先頭ゼロ
+  leading_zero:
+    status: todo
+    examples:
+      - {input: "0", valid: true, type: "integer 0"}
+      - {input: "07", valid: true, type: "octal"}
+      - {input: "08", valid: false, note: "無効な8進"}
+      - {input: "00", valid: false, note: "無効"}
+      - {input: "0x1F", valid: true, type: "hexadecimal"}
+
+  # キーワードのコロン
+  keyword_colons:
+    status: todo
+    examples:
+      - {input: ":foo", valid: true}
+      - {input: "::foo", valid: true, note: "自動解決"}
+      - {input: ":::", valid: false}
+      - {input: ":foo:", valid: false, note: "末尾コロン無効"}
+      - {input: ":foo:bar", valid: true, note: "中間コロンは有効だが非推奨"}
+
+  # スラッシュ
+  slash:
+    status: todo
+    examples:
+      - {input: "/", valid: true, type: "シンボル clojure.core//"}
+      - {input: "a/b", valid: true, type: "名前空間付きシンボル"}
+      - {input: "a/b/c", valid: false, note: "/ は1つのみ"}
+      - {input: "/foo", valid: false, note: "先頭スラッシュ無効"}
+      - {input: "foo/", valid: false, note: "末尾スラッシュ無効"}

@@ -1,0 +1,2890 @@
+---
+# Clojure Var 対応状況
+# 自動生成: scripts/generate_vars_yaml.clj
+# 生成日時: 2026-01-25T21:58:50.733237
+#
+# Phase 1: 必須 (clojure.core, clojure.repl, clojure.string, clojure.set)
+# Phase 2: テスト・デバッグ (clojure.test, clojure.pprint, clojure.stacktrace, clojure.walk)
+# Phase 3: データ (clojure.edn, clojure.data, clojure.zip)
+# Phase 4: その他 (clojure.template, clojure.instant, clojure.uuid, clojure.math)
+
+vars:
+
+  clojure_core:
+    # Phase 1: 中核
+    # SPECIAL FORM (23個)
+    # 注: 特殊形式はVarではなくコンパイラに組み込み
+    ".":
+      type: special-form
+      status: todo
+      note: "Javaメソッド呼び出し"
+    "case*":
+      type: special-form
+      status: todo
+      note: "case（低レベル）"
+    catch:
+      type: special-form
+      status: todo
+      note: "例外捕捉（try内）"
+    def:
+      type: special-form
+      status: todo
+      note: "変数定義"
+    "deftype*":
+      type: special-form
+      status: todo
+      note: "型定義（低レベル）"
+    do:
+      type: special-form
+      status: todo
+      note: "逐次実行"
+    finally:
+      type: special-form
+      status: todo
+      note: "後処理（try内）"
+    "fn*":
+      type: special-form
+      status: todo
+      note: "無名関数（fnマクロの展開先）"
+    if:
+      type: special-form
+      status: todo
+      note: "条件分岐"
+    "import*":
+      type: special-form
+      status: todo
+      note: "クラスインポート（低レベル）"
+    "let*":
+      type: special-form
+      status: todo
+      note: "ローカル束縛（letマクロの展開先）"
+    "letfn*":
+      type: special-form
+      status: todo
+      note: "相互再帰関数（低レベル）"
+    "loop*":
+      type: special-form
+      status: todo
+      note: "ループ（loopマクロの展開先）"
+    monitor-enter:
+      type: special-form
+      status: todo
+      note: "モニタ入（低レベル同期）"
+    monitor-exit:
+      type: special-form
+      status: todo
+      note: "モニタ出（低レベル同期）"
+    new:
+      type: special-form
+      status: todo
+      note: "インスタンス生成"
+    quote:
+      type: special-form
+      status: todo
+      note: "クォート"
+    recur:
+      type: special-form
+      status: todo
+      note: "末尾再帰"
+    "reify*":
+      type: special-form
+      status: todo
+      note: "無名型（低レベル）"
+    set!:
+      type: special-form
+      status: todo
+      note: "代入"
+    throw:
+      type: special-form
+      status: todo
+      note: "例外送出"
+    try:
+      type: special-form
+      status: todo
+      note: "例外処理"
+    var:
+      type: special-form
+      status: todo
+      note: "Var参照"
+    # MACRO (79個)
+    "->":
+      type: macro
+      status: todo
+    "->>":
+      type: macro
+      status: todo
+    "..":
+      type: macro
+      status: todo
+    amap:
+      type: macro
+      status: todo
+    and:
+      type: macro
+      status: todo
+    areduce:
+      type: macro
+      status: todo
+    as->:
+      type: macro
+      status: todo
+    assert:
+      type: macro
+      status: todo
+    binding:
+      type: macro
+      status: todo
+    bound-fn:
+      type: macro
+      status: todo
+    case:
+      type: macro
+      status: todo
+    comment:
+      type: macro
+      status: todo
+    cond:
+      type: macro
+      status: todo
+    cond->:
+      type: macro
+      status: todo
+    cond->>:
+      type: macro
+      status: todo
+    condp:
+      type: macro
+      status: todo
+    declare:
+      type: macro
+      status: todo
+    definline:
+      type: macro
+      status: todo
+    definterface:
+      type: macro
+      status: todo
+    defmacro:
+      type: macro
+      status: todo
+    defmethod:
+      type: macro
+      status: todo
+    defmulti:
+      type: macro
+      status: todo
+    defn:
+      type: macro
+      status: todo
+    defn-:
+      type: macro
+      status: todo
+    defonce:
+      type: macro
+      status: todo
+    defprotocol:
+      type: macro
+      status: todo
+    defrecord:
+      type: macro
+      status: todo
+    defstruct:
+      type: macro
+      status: todo
+    deftype:
+      type: macro
+      status: todo
+    delay:
+      type: macro
+      status: todo
+    doseq:
+      type: macro
+      status: todo
+    dosync:
+      type: macro
+      status: todo
+    dotimes:
+      type: macro
+      status: todo
+    doto:
+      type: macro
+      status: todo
+    extend-protocol:
+      type: macro
+      status: todo
+    extend-type:
+      type: macro
+      status: todo
+    fn:
+      type: macro
+      status: todo
+    for:
+      type: macro
+      status: todo
+    future:
+      type: macro
+      status: todo
+    gen-class:
+      type: macro
+      status: todo
+    gen-interface:
+      type: macro
+      status: todo
+    if-let:
+      type: macro
+      status: todo
+    if-not:
+      type: macro
+      status: todo
+    if-some:
+      type: macro
+      status: todo
+    import:
+      type: macro
+      status: todo
+    io!:
+      type: macro
+      status: todo
+    lazy-cat:
+      type: macro
+      status: todo
+    lazy-seq:
+      type: macro
+      status: todo
+    let:
+      type: macro
+      status: todo
+    letfn:
+      type: macro
+      status: todo
+    locking:
+      type: macro
+      status: todo
+    loop:
+      type: macro
+      status: todo
+    memfn:
+      type: macro
+      status: todo
+    ns:
+      type: macro
+      status: todo
+    or:
+      type: macro
+      status: todo
+    proxy:
+      type: macro
+      status: todo
+    proxy-super:
+      type: macro
+      status: todo
+    pvalues:
+      type: macro
+      status: todo
+    refer-clojure:
+      type: macro
+      status: todo
+    reify:
+      type: macro
+      status: todo
+    some->:
+      type: macro
+      status: todo
+    some->>:
+      type: macro
+      status: todo
+    sync:
+      type: macro
+      status: todo
+    time:
+      type: macro
+      status: todo
+    vswap!:
+      type: macro
+      status: todo
+    when:
+      type: macro
+      status: todo
+    when-first:
+      type: macro
+      status: todo
+    when-let:
+      type: macro
+      status: todo
+    when-not:
+      type: macro
+      status: todo
+    when-some:
+      type: macro
+      status: todo
+    while:
+      type: macro
+      status: todo
+    with-bindings:
+      type: macro
+      status: todo
+    with-in-str:
+      type: macro
+      status: todo
+    with-loading-context:
+      type: macro
+      status: todo
+    with-local-vars:
+      type: macro
+      status: todo
+    with-open:
+      type: macro
+      status: todo
+    with-out-str:
+      type: macro
+      status: todo
+    with-precision:
+      type: macro
+      status: todo
+    with-redefs:
+      type: macro
+      status: todo
+    # FUNCTION (551個)
+    "*":
+      type: function
+      status: todo
+    "*'":
+      type: function
+      status: todo
+    "+":
+      type: function
+      status: todo
+    "+'":
+      type: function
+      status: todo
+    "-":
+      type: function
+      status: todo
+    "-'":
+      type: function
+      status: todo
+    "->ArrayChunk":
+      type: function
+      status: todo
+    "->Eduction":
+      type: function
+      status: todo
+    "->Vec":
+      type: function
+      status: todo
+    "->VecNode":
+      type: function
+      status: todo
+    "->VecSeq":
+      type: function
+      status: todo
+    "-cache-protocol-fn":
+      type: function
+      status: todo
+    "-reset-methods":
+      type: function
+      status: todo
+    "/":
+      type: function
+      status: todo
+    "<":
+      type: function
+      status: todo
+    "<=":
+      type: function
+      status: todo
+    "=":
+      type: function
+      status: todo
+    "==":
+      type: function
+      status: todo
+    ">":
+      type: function
+      status: todo
+    ">=":
+      type: function
+      status: todo
+    NaN?:
+      type: function
+      status: todo
+    PrintWriter-on:
+      type: function
+      status: todo
+    StackTraceElement->vec:
+      type: function
+      status: todo
+    Throwable->map:
+      type: function
+      status: todo
+    abs:
+      type: function
+      status: todo
+    accessor:
+      type: function
+      status: todo
+    aclone:
+      type: function
+      status: todo
+    add-classpath:
+      type: function
+      status: todo
+      deprecated: true
+    add-tap:
+      type: function
+      status: todo
+    add-watch:
+      type: function
+      status: todo
+    agent:
+      type: function
+      status: todo
+    agent-error:
+      type: function
+      status: todo
+    agent-errors:
+      type: function
+      status: todo
+      deprecated: true
+    aget:
+      type: function
+      status: todo
+    alength:
+      type: function
+      status: todo
+    alias:
+      type: function
+      status: todo
+    all-ns:
+      type: function
+      status: todo
+    alter:
+      type: function
+      status: todo
+    alter-meta!:
+      type: function
+      status: todo
+    alter-var-root:
+      type: function
+      status: todo
+    ancestors:
+      type: function
+      status: todo
+    any?:
+      type: function
+      status: todo
+    apply:
+      type: function
+      status: todo
+    array-map:
+      type: function
+      status: todo
+    aset:
+      type: function
+      status: todo
+    aset-boolean:
+      type: function
+      status: todo
+    aset-byte:
+      type: function
+      status: todo
+    aset-char:
+      type: function
+      status: todo
+    aset-double:
+      type: function
+      status: todo
+    aset-float:
+      type: function
+      status: todo
+    aset-int:
+      type: function
+      status: todo
+    aset-long:
+      type: function
+      status: todo
+    aset-short:
+      type: function
+      status: todo
+    assoc:
+      type: function
+      status: todo
+    assoc!:
+      type: function
+      status: todo
+    assoc-in:
+      type: function
+      status: todo
+    associative?:
+      type: function
+      status: todo
+    atom:
+      type: function
+      status: todo
+    await:
+      type: function
+      status: todo
+    await-for:
+      type: function
+      status: todo
+    await1:
+      type: function
+      status: todo
+    bases:
+      type: function
+      status: todo
+    bean:
+      type: function
+      status: todo
+    bigdec:
+      type: function
+      status: todo
+    bigint:
+      type: function
+      status: todo
+    biginteger:
+      type: function
+      status: todo
+    bit-and:
+      type: function
+      status: todo
+    bit-and-not:
+      type: function
+      status: todo
+    bit-clear:
+      type: function
+      status: todo
+    bit-flip:
+      type: function
+      status: todo
+    bit-not:
+      type: function
+      status: todo
+    bit-or:
+      type: function
+      status: todo
+    bit-set:
+      type: function
+      status: todo
+    bit-shift-left:
+      type: function
+      status: todo
+    bit-shift-right:
+      type: function
+      status: todo
+    bit-test:
+      type: function
+      status: todo
+    bit-xor:
+      type: function
+      status: todo
+    boolean:
+      type: function
+      status: todo
+    boolean-array:
+      type: function
+      status: todo
+    boolean?:
+      type: function
+      status: todo
+    booleans:
+      type: function
+      status: todo
+    "bound-fn*":
+      type: function
+      status: todo
+    bound?:
+      type: function
+      status: todo
+    bounded-count:
+      type: function
+      status: todo
+    butlast:
+      type: function
+      status: todo
+    byte:
+      type: function
+      status: todo
+    byte-array:
+      type: function
+      status: todo
+    bytes:
+      type: function
+      status: todo
+    bytes?:
+      type: function
+      status: todo
+    cast:
+      type: function
+      status: todo
+    cat:
+      type: function
+      status: todo
+    char:
+      type: function
+      status: todo
+    char-array:
+      type: function
+      status: todo
+    char?:
+      type: function
+      status: todo
+    chars:
+      type: function
+      status: todo
+    chunk:
+      type: function
+      status: todo
+    chunk-append:
+      type: function
+      status: todo
+    chunk-buffer:
+      type: function
+      status: todo
+    chunk-cons:
+      type: function
+      status: todo
+    chunk-first:
+      type: function
+      status: todo
+    chunk-next:
+      type: function
+      status: todo
+    chunk-rest:
+      type: function
+      status: todo
+    chunked-seq?:
+      type: function
+      status: todo
+    class:
+      type: function
+      status: todo
+    class?:
+      type: function
+      status: todo
+    clear-agent-errors:
+      type: function
+      status: todo
+      deprecated: true
+    clojure-version:
+      type: function
+      status: todo
+    coll?:
+      type: function
+      status: todo
+    commute:
+      type: function
+      status: todo
+    comp:
+      type: function
+      status: todo
+    comparator:
+      type: function
+      status: todo
+    compare:
+      type: function
+      status: todo
+    compare-and-set!:
+      type: function
+      status: todo
+    compile:
+      type: function
+      status: todo
+    complement:
+      type: function
+      status: todo
+    completing:
+      type: function
+      status: todo
+    concat:
+      type: function
+      status: todo
+    conj:
+      type: function
+      status: todo
+    conj!:
+      type: function
+      status: todo
+    cons:
+      type: function
+      status: todo
+    constantly:
+      type: function
+      status: todo
+    construct-proxy:
+      type: function
+      status: todo
+    contains?:
+      type: function
+      status: todo
+    count:
+      type: function
+      status: todo
+    counted?:
+      type: function
+      status: todo
+    create-ns:
+      type: function
+      status: todo
+    create-struct:
+      type: function
+      status: todo
+    cycle:
+      type: function
+      status: todo
+    dec:
+      type: function
+      status: todo
+    "dec'":
+      type: function
+      status: todo
+    decimal?:
+      type: function
+      status: todo
+    dedupe:
+      type: function
+      status: todo
+    delay?:
+      type: function
+      status: todo
+    deliver:
+      type: function
+      status: todo
+    denominator:
+      type: function
+      status: todo
+    deref:
+      type: function
+      status: todo
+    derive:
+      type: function
+      status: todo
+    descendants:
+      type: function
+      status: todo
+    destructure:
+      type: function
+      status: todo
+    disj:
+      type: function
+      status: todo
+    disj!:
+      type: function
+      status: todo
+    dissoc:
+      type: function
+      status: todo
+    dissoc!:
+      type: function
+      status: todo
+    distinct:
+      type: function
+      status: todo
+    distinct?:
+      type: function
+      status: todo
+    doall:
+      type: function
+      status: todo
+    dorun:
+      type: function
+      status: todo
+    double:
+      type: function
+      status: todo
+    double-array:
+      type: function
+      status: todo
+    double?:
+      type: function
+      status: todo
+    doubles:
+      type: function
+      status: todo
+    drop:
+      type: function
+      status: todo
+    drop-last:
+      type: function
+      status: todo
+    drop-while:
+      type: function
+      status: todo
+    eduction:
+      type: function
+      status: todo
+    empty:
+      type: function
+      status: todo
+    empty?:
+      type: function
+      status: todo
+    ensure:
+      type: function
+      status: todo
+    ensure-reduced:
+      type: function
+      status: todo
+    enumeration-seq:
+      type: function
+      status: todo
+    error-handler:
+      type: function
+      status: todo
+    error-mode:
+      type: function
+      status: todo
+    eval:
+      type: function
+      status: todo
+    even?:
+      type: function
+      status: todo
+    every-pred:
+      type: function
+      status: todo
+    every?:
+      type: function
+      status: todo
+    ex-cause:
+      type: function
+      status: todo
+    ex-data:
+      type: function
+      status: todo
+    ex-info:
+      type: function
+      status: todo
+    ex-message:
+      type: function
+      status: todo
+    extend:
+      type: function
+      status: todo
+    extenders:
+      type: function
+      status: todo
+    extends?:
+      type: function
+      status: todo
+    false?:
+      type: function
+      status: todo
+    ffirst:
+      type: function
+      status: todo
+    file-seq:
+      type: function
+      status: todo
+    filter:
+      type: function
+      status: todo
+    filterv:
+      type: function
+      status: todo
+    find:
+      type: function
+      status: todo
+    find-keyword:
+      type: function
+      status: todo
+    find-ns:
+      type: function
+      status: todo
+    find-protocol-impl:
+      type: function
+      status: todo
+    find-protocol-method:
+      type: function
+      status: todo
+    find-var:
+      type: function
+      status: todo
+    first:
+      type: function
+      status: todo
+    flatten:
+      type: function
+      status: todo
+    float:
+      type: function
+      status: todo
+    float-array:
+      type: function
+      status: todo
+    float?:
+      type: function
+      status: todo
+    floats:
+      type: function
+      status: todo
+    flush:
+      type: function
+      status: todo
+    fn?:
+      type: function
+      status: todo
+    fnext:
+      type: function
+      status: todo
+    fnil:
+      type: function
+      status: todo
+    force:
+      type: function
+      status: todo
+    format:
+      type: function
+      status: todo
+    frequencies:
+      type: function
+      status: todo
+    future-call:
+      type: function
+      status: todo
+    future-cancel:
+      type: function
+      status: todo
+    future-cancelled?:
+      type: function
+      status: todo
+    future-done?:
+      type: function
+      status: todo
+    future?:
+      type: function
+      status: todo
+    gensym:
+      type: function
+      status: todo
+    get:
+      type: function
+      status: todo
+    get-in:
+      type: function
+      status: todo
+    get-method:
+      type: function
+      status: todo
+    get-proxy-class:
+      type: function
+      status: todo
+    get-thread-bindings:
+      type: function
+      status: todo
+    get-validator:
+      type: function
+      status: todo
+    group-by:
+      type: function
+      status: todo
+    halt-when:
+      type: function
+      status: todo
+    hash:
+      type: function
+      status: todo
+    hash-combine:
+      type: function
+      status: todo
+    hash-map:
+      type: function
+      status: todo
+    hash-ordered-coll:
+      type: function
+      status: todo
+    hash-set:
+      type: function
+      status: todo
+    hash-unordered-coll:
+      type: function
+      status: todo
+    ident?:
+      type: function
+      status: todo
+    identical?:
+      type: function
+      status: todo
+    identity:
+      type: function
+      status: todo
+    ifn?:
+      type: function
+      status: todo
+    inc:
+      type: function
+      status: todo
+    "inc'":
+      type: function
+      status: todo
+    indexed?:
+      type: function
+      status: todo
+    infinite?:
+      type: function
+      status: todo
+    init-proxy:
+      type: function
+      status: todo
+    inst-ms:
+      type: function
+      status: todo
+    "inst-ms*":
+      type: function
+      status: todo
+    inst?:
+      type: function
+      status: todo
+    instance?:
+      type: function
+      status: todo
+    int:
+      type: function
+      status: todo
+    int-array:
+      type: function
+      status: todo
+    int?:
+      type: function
+      status: todo
+    integer?:
+      type: function
+      status: todo
+    interleave:
+      type: function
+      status: todo
+    intern:
+      type: function
+      status: todo
+    interpose:
+      type: function
+      status: todo
+    into:
+      type: function
+      status: todo
+    into-array:
+      type: function
+      status: todo
+    ints:
+      type: function
+      status: todo
+    isa?:
+      type: function
+      status: todo
+    iterate:
+      type: function
+      status: todo
+    iteration:
+      type: function
+      status: todo
+    iterator-seq:
+      type: function
+      status: todo
+    juxt:
+      type: function
+      status: todo
+    keep:
+      type: function
+      status: todo
+    keep-indexed:
+      type: function
+      status: todo
+    key:
+      type: function
+      status: todo
+    keys:
+      type: function
+      status: todo
+    keyword:
+      type: function
+      status: todo
+    keyword?:
+      type: function
+      status: todo
+    last:
+      type: function
+      status: todo
+    line-seq:
+      type: function
+      status: todo
+    list:
+      type: function
+      status: todo
+    "list*":
+      type: function
+      status: todo
+    list?:
+      type: function
+      status: todo
+    load:
+      type: function
+      status: todo
+    load-reader:
+      type: function
+      status: todo
+    load-string:
+      type: function
+      status: todo
+    loaded-libs:
+      type: function
+      status: todo
+    long:
+      type: function
+      status: todo
+    long-array:
+      type: function
+      status: todo
+    longs:
+      type: function
+      status: todo
+    macroexpand:
+      type: function
+      status: todo
+    macroexpand-1:
+      type: function
+      status: todo
+    make-array:
+      type: function
+      status: todo
+    make-hierarchy:
+      type: function
+      status: todo
+    map:
+      type: function
+      status: todo
+    map-entry?:
+      type: function
+      status: todo
+    map-indexed:
+      type: function
+      status: todo
+    map?:
+      type: function
+      status: todo
+    mapcat:
+      type: function
+      status: todo
+    mapv:
+      type: function
+      status: todo
+    max:
+      type: function
+      status: todo
+    max-key:
+      type: function
+      status: todo
+    memoize:
+      type: function
+      status: todo
+    merge:
+      type: function
+      status: todo
+    merge-with:
+      type: function
+      status: todo
+    meta:
+      type: function
+      status: todo
+    method-sig:
+      type: function
+      status: todo
+    methods:
+      type: function
+      status: todo
+    min:
+      type: function
+      status: todo
+    min-key:
+      type: function
+      status: todo
+    mix-collection-hash:
+      type: function
+      status: todo
+    mod:
+      type: function
+      status: todo
+    munge:
+      type: function
+      status: todo
+    name:
+      type: function
+      status: todo
+    namespace:
+      type: function
+      status: todo
+    namespace-munge:
+      type: function
+      status: todo
+    nat-int?:
+      type: function
+      status: todo
+    neg-int?:
+      type: function
+      status: todo
+    neg?:
+      type: function
+      status: todo
+    newline:
+      type: function
+      status: todo
+    next:
+      type: function
+      status: todo
+    nfirst:
+      type: function
+      status: todo
+    nil?:
+      type: function
+      status: todo
+    nnext:
+      type: function
+      status: todo
+    not:
+      type: function
+      status: todo
+    not-any?:
+      type: function
+      status: todo
+    not-empty:
+      type: function
+      status: todo
+    not-every?:
+      type: function
+      status: todo
+    not=:
+      type: function
+      status: todo
+    ns-aliases:
+      type: function
+      status: todo
+    ns-imports:
+      type: function
+      status: todo
+    ns-interns:
+      type: function
+      status: todo
+    ns-map:
+      type: function
+      status: todo
+    ns-name:
+      type: function
+      status: todo
+    ns-publics:
+      type: function
+      status: todo
+    ns-refers:
+      type: function
+      status: todo
+    ns-resolve:
+      type: function
+      status: todo
+    ns-unalias:
+      type: function
+      status: todo
+    ns-unmap:
+      type: function
+      status: todo
+    nth:
+      type: function
+      status: todo
+    nthnext:
+      type: function
+      status: todo
+    nthrest:
+      type: function
+      status: todo
+    num:
+      type: function
+      status: todo
+    number?:
+      type: function
+      status: todo
+    numerator:
+      type: function
+      status: todo
+    object-array:
+      type: function
+      status: todo
+    odd?:
+      type: function
+      status: todo
+    parents:
+      type: function
+      status: todo
+    parse-boolean:
+      type: function
+      status: todo
+    parse-double:
+      type: function
+      status: todo
+    parse-long:
+      type: function
+      status: todo
+    parse-uuid:
+      type: function
+      status: todo
+    partial:
+      type: function
+      status: todo
+    partition:
+      type: function
+      status: todo
+    partition-all:
+      type: function
+      status: todo
+    partition-by:
+      type: function
+      status: todo
+    partitionv:
+      type: function
+      status: todo
+    partitionv-all:
+      type: function
+      status: todo
+    pcalls:
+      type: function
+      status: todo
+    peek:
+      type: function
+      status: todo
+    persistent!:
+      type: function
+      status: todo
+    pmap:
+      type: function
+      status: todo
+    pop:
+      type: function
+      status: todo
+    pop!:
+      type: function
+      status: todo
+    pop-thread-bindings:
+      type: function
+      status: todo
+    pos-int?:
+      type: function
+      status: todo
+    pos?:
+      type: function
+      status: todo
+    pr:
+      type: function
+      status: todo
+      dynamic: true
+    pr-str:
+      type: function
+      status: todo
+    prefer-method:
+      type: function
+      status: todo
+    prefers:
+      type: function
+      status: todo
+    print:
+      type: function
+      status: todo
+    print-ctor:
+      type: function
+      status: todo
+    print-simple:
+      type: function
+      status: todo
+    print-str:
+      type: function
+      status: todo
+    printf:
+      type: function
+      status: todo
+    println:
+      type: function
+      status: todo
+    println-str:
+      type: function
+      status: todo
+    prn:
+      type: function
+      status: todo
+    prn-str:
+      type: function
+      status: todo
+    promise:
+      type: function
+      status: todo
+    proxy-call-with-super:
+      type: function
+      status: todo
+    proxy-mappings:
+      type: function
+      status: todo
+    proxy-name:
+      type: function
+      status: todo
+    push-thread-bindings:
+      type: function
+      status: todo
+    qualified-ident?:
+      type: function
+      status: todo
+    qualified-keyword?:
+      type: function
+      status: todo
+    qualified-symbol?:
+      type: function
+      status: todo
+    quot:
+      type: function
+      status: todo
+    rand:
+      type: function
+      status: todo
+    rand-int:
+      type: function
+      status: todo
+    rand-nth:
+      type: function
+      status: todo
+    random-sample:
+      type: function
+      status: todo
+    random-uuid:
+      type: function
+      status: todo
+    range:
+      type: function
+      status: todo
+    ratio?:
+      type: function
+      status: todo
+    rational?:
+      type: function
+      status: todo
+    rationalize:
+      type: function
+      status: todo
+    re-find:
+      type: function
+      status: todo
+    re-groups:
+      type: function
+      status: todo
+    re-matcher:
+      type: function
+      status: todo
+    re-matches:
+      type: function
+      status: todo
+    re-pattern:
+      type: function
+      status: todo
+    re-seq:
+      type: function
+      status: todo
+    read:
+      type: function
+      status: todo
+    read+string:
+      type: function
+      status: todo
+    read-line:
+      type: function
+      status: todo
+    read-string:
+      type: function
+      status: todo
+    reader-conditional:
+      type: function
+      status: todo
+    reader-conditional?:
+      type: function
+      status: todo
+    realized?:
+      type: function
+      status: todo
+    record?:
+      type: function
+      status: todo
+    reduce:
+      type: function
+      status: todo
+    reduce-kv:
+      type: function
+      status: todo
+    reduced:
+      type: function
+      status: todo
+    reduced?:
+      type: function
+      status: todo
+    reductions:
+      type: function
+      status: todo
+    ref:
+      type: function
+      status: todo
+    ref-history-count:
+      type: function
+      status: todo
+    ref-max-history:
+      type: function
+      status: todo
+    ref-min-history:
+      type: function
+      status: todo
+    ref-set:
+      type: function
+      status: todo
+    refer:
+      type: function
+      status: todo
+    release-pending-sends:
+      type: function
+      status: todo
+    rem:
+      type: function
+      status: todo
+    remove:
+      type: function
+      status: todo
+    remove-all-methods:
+      type: function
+      status: todo
+    remove-method:
+      type: function
+      status: todo
+    remove-ns:
+      type: function
+      status: todo
+    remove-tap:
+      type: function
+      status: todo
+    remove-watch:
+      type: function
+      status: todo
+    repeat:
+      type: function
+      status: todo
+    repeatedly:
+      type: function
+      status: todo
+    replace:
+      type: function
+      status: todo
+    replicate:
+      type: function
+      status: todo
+      deprecated: true
+    require:
+      type: function
+      status: todo
+    requiring-resolve:
+      type: function
+      status: todo
+    reset!:
+      type: function
+      status: todo
+    reset-meta!:
+      type: function
+      status: todo
+    reset-vals!:
+      type: function
+      status: todo
+    resolve:
+      type: function
+      status: todo
+    rest:
+      type: function
+      status: todo
+    restart-agent:
+      type: function
+      status: todo
+    resultset-seq:
+      type: function
+      status: todo
+    reverse:
+      type: function
+      status: todo
+    reversible?:
+      type: function
+      status: todo
+    rseq:
+      type: function
+      status: todo
+    rsubseq:
+      type: function
+      status: todo
+    run!:
+      type: function
+      status: todo
+    satisfies?:
+      type: function
+      status: todo
+    second:
+      type: function
+      status: todo
+    select-keys:
+      type: function
+      status: todo
+    send:
+      type: function
+      status: todo
+    send-off:
+      type: function
+      status: todo
+    send-via:
+      type: function
+      status: todo
+    seq:
+      type: function
+      status: todo
+    seq-to-map-for-destructuring:
+      type: function
+      status: todo
+    seq?:
+      type: function
+      status: todo
+    seqable?:
+      type: function
+      status: todo
+    seque:
+      type: function
+      status: todo
+    sequence:
+      type: function
+      status: todo
+    sequential?:
+      type: function
+      status: todo
+    set:
+      type: function
+      status: todo
+    set-agent-send-executor!:
+      type: function
+      status: todo
+    set-agent-send-off-executor!:
+      type: function
+      status: todo
+    set-error-handler!:
+      type: function
+      status: todo
+    set-error-mode!:
+      type: function
+      status: todo
+    set-validator!:
+      type: function
+      status: todo
+    set?:
+      type: function
+      status: todo
+    short:
+      type: function
+      status: todo
+    short-array:
+      type: function
+      status: todo
+    shorts:
+      type: function
+      status: todo
+    shuffle:
+      type: function
+      status: todo
+    shutdown-agents:
+      type: function
+      status: todo
+    simple-ident?:
+      type: function
+      status: todo
+    simple-keyword?:
+      type: function
+      status: todo
+    simple-symbol?:
+      type: function
+      status: todo
+    slurp:
+      type: function
+      status: todo
+    some:
+      type: function
+      status: todo
+    some-fn:
+      type: function
+      status: todo
+    some?:
+      type: function
+      status: todo
+    sort:
+      type: function
+      status: todo
+    sort-by:
+      type: function
+      status: todo
+    sorted-map:
+      type: function
+      status: todo
+    sorted-map-by:
+      type: function
+      status: todo
+    sorted-set:
+      type: function
+      status: todo
+    sorted-set-by:
+      type: function
+      status: todo
+    sorted?:
+      type: function
+      status: todo
+    special-symbol?:
+      type: function
+      status: todo
+    spit:
+      type: function
+      status: todo
+    split-at:
+      type: function
+      status: todo
+    split-with:
+      type: function
+      status: todo
+    splitv-at:
+      type: function
+      status: todo
+    str:
+      type: function
+      status: todo
+    stream-into!:
+      type: function
+      status: todo
+    stream-reduce!:
+      type: function
+      status: todo
+    stream-seq!:
+      type: function
+      status: todo
+    stream-transduce!:
+      type: function
+      status: todo
+    string?:
+      type: function
+      status: todo
+    struct:
+      type: function
+      status: todo
+    struct-map:
+      type: function
+      status: todo
+    subs:
+      type: function
+      status: todo
+    subseq:
+      type: function
+      status: todo
+    subvec:
+      type: function
+      status: todo
+    supers:
+      type: function
+      status: todo
+    swap!:
+      type: function
+      status: todo
+    swap-vals!:
+      type: function
+      status: todo
+    symbol:
+      type: function
+      status: todo
+    symbol?:
+      type: function
+      status: todo
+    tagged-literal:
+      type: function
+      status: todo
+    tagged-literal?:
+      type: function
+      status: todo
+    take:
+      type: function
+      status: todo
+    take-last:
+      type: function
+      status: todo
+    take-nth:
+      type: function
+      status: todo
+    take-while:
+      type: function
+      status: todo
+    tap>:
+      type: function
+      status: todo
+    test:
+      type: function
+      status: todo
+    the-ns:
+      type: function
+      status: todo
+    thread-bound?:
+      type: function
+      status: todo
+    to-array:
+      type: function
+      status: todo
+    to-array-2d:
+      type: function
+      status: todo
+    trampoline:
+      type: function
+      status: todo
+    transduce:
+      type: function
+      status: todo
+    transient:
+      type: function
+      status: todo
+    tree-seq:
+      type: function
+      status: todo
+    true?:
+      type: function
+      status: todo
+    type:
+      type: function
+      status: todo
+    unchecked-add:
+      type: function
+      status: todo
+    unchecked-add-int:
+      type: function
+      status: todo
+    unchecked-byte:
+      type: function
+      status: todo
+    unchecked-char:
+      type: function
+      status: todo
+    unchecked-dec:
+      type: function
+      status: todo
+    unchecked-dec-int:
+      type: function
+      status: todo
+    unchecked-divide-int:
+      type: function
+      status: todo
+    unchecked-double:
+      type: function
+      status: todo
+    unchecked-float:
+      type: function
+      status: todo
+    unchecked-inc:
+      type: function
+      status: todo
+    unchecked-inc-int:
+      type: function
+      status: todo
+    unchecked-int:
+      type: function
+      status: todo
+    unchecked-long:
+      type: function
+      status: todo
+    unchecked-multiply:
+      type: function
+      status: todo
+    unchecked-multiply-int:
+      type: function
+      status: todo
+    unchecked-negate:
+      type: function
+      status: todo
+    unchecked-negate-int:
+      type: function
+      status: todo
+    unchecked-remainder-int:
+      type: function
+      status: todo
+    unchecked-short:
+      type: function
+      status: todo
+    unchecked-subtract:
+      type: function
+      status: todo
+    unchecked-subtract-int:
+      type: function
+      status: todo
+    underive:
+      type: function
+      status: todo
+    unreduced:
+      type: function
+      status: todo
+    unsigned-bit-shift-right:
+      type: function
+      status: todo
+    update:
+      type: function
+      status: todo
+    update-in:
+      type: function
+      status: todo
+    update-keys:
+      type: function
+      status: todo
+    update-proxy:
+      type: function
+      status: todo
+    update-vals:
+      type: function
+      status: todo
+    uri?:
+      type: function
+      status: todo
+    use:
+      type: function
+      status: todo
+    uuid?:
+      type: function
+      status: todo
+    val:
+      type: function
+      status: todo
+    vals:
+      type: function
+      status: todo
+    var-get:
+      type: function
+      status: todo
+    var-set:
+      type: function
+      status: todo
+    var?:
+      type: function
+      status: todo
+    vary-meta:
+      type: function
+      status: todo
+    vec:
+      type: function
+      status: todo
+    vector:
+      type: function
+      status: todo
+    vector-of:
+      type: function
+      status: todo
+    vector?:
+      type: function
+      status: todo
+    volatile!:
+      type: function
+      status: todo
+    volatile?:
+      type: function
+      status: todo
+    vreset!:
+      type: function
+      status: todo
+    "with-bindings*":
+      type: function
+      status: todo
+    with-meta:
+      type: function
+      status: todo
+    with-redefs-fn:
+      type: function
+      status: todo
+    xml-seq:
+      type: function
+      status: todo
+    zero?:
+      type: function
+      status: todo
+    zipmap:
+      type: function
+      status: todo
+    # DYNAMIC VAR (12個)
+    "*1":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*2":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*3":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*clojure-version*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*data-readers*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*default-data-reader-fn*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*e":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*print-length*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*print-level*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*print-namespace-maps*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*repl*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*verbose-defrecords*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    # VAR (37個)
+    "*agent*":
+      type: var
+      status: todo
+    "*allow-unresolved-vars*":
+      type: var
+      status: todo
+    "*assert*":
+      type: var
+      status: todo
+    "*command-line-args*":
+      type: var
+      status: todo
+    "*compile-files*":
+      type: var
+      status: todo
+    "*compile-path*":
+      type: var
+      status: todo
+    "*compiler-options*":
+      type: var
+      status: todo
+    "*err*":
+      type: var
+      status: todo
+    "*file*":
+      type: var
+      status: todo
+    "*flush-on-newline*":
+      type: var
+      status: todo
+    "*fn-loader*":
+      type: var
+      status: todo
+    "*in*":
+      type: var
+      status: todo
+    "*math-context*":
+      type: var
+      status: todo
+    "*ns*":
+      type: var
+      status: todo
+    "*out*":
+      type: var
+      status: todo
+    "*print-dup*":
+      type: var
+      status: todo
+    "*print-meta*":
+      type: var
+      status: todo
+    "*print-readably*":
+      type: var
+      status: todo
+    "*read-eval*":
+      type: var
+      status: todo
+    "*reader-resolver*":
+      type: var
+      status: todo
+    "*source-path*":
+      type: var
+      status: todo
+    "*suppress-read*":
+      type: var
+      status: todo
+    "*unchecked-math*":
+      type: var
+      status: todo
+    "*use-context-classloader*":
+      type: var
+      status: todo
+    "*warn-on-reflection*":
+      type: var
+      status: todo
+    EMPTY-NODE:
+      type: var
+      status: todo
+    Inst:
+      type: var
+      status: todo
+    char-escape-string:
+      type: var
+      status: todo
+    char-name-string:
+      type: var
+      status: todo
+    default-data-readers:
+      type: var
+      status: todo
+    in-ns:
+      type: var
+      status: todo
+    load-file:
+      type: var
+      status: todo
+    primitives-classnames:
+      type: var
+      status: todo
+    print-dup:
+      type: var
+      status: todo
+    print-method:
+      type: var
+      status: todo
+    unquote:
+      type: var
+      status: todo
+    unquote-splicing:
+      type: var
+      status: todo
+
+  clojure_repl:
+    # Phase 1: doc, source, apropos
+    # MACRO (3個)
+    dir:
+      type: macro
+      status: todo
+    doc:
+      type: macro
+      status: todo
+    source:
+      type: macro
+      status: todo
+    # FUNCTION (10個)
+    apropos:
+      type: function
+      status: todo
+    demunge:
+      type: function
+      status: todo
+    dir-fn:
+      type: function
+      status: todo
+    find-doc:
+      type: function
+      status: todo
+    pst:
+      type: function
+      status: todo
+    root-cause:
+      type: function
+      status: todo
+    set-break-handler!:
+      type: function
+      status: todo
+    source-fn:
+      type: function
+      status: todo
+    stack-element-str:
+      type: function
+      status: todo
+    thread-stopper:
+      type: function
+      status: todo
+
+  clojure_string:
+    # Phase 1: 文字列操作
+    # FUNCTION (21個)
+    blank?:
+      type: function
+      status: todo
+    capitalize:
+      type: function
+      status: todo
+    ends-with?:
+      type: function
+      status: todo
+    escape:
+      type: function
+      status: todo
+    includes?:
+      type: function
+      status: todo
+    index-of:
+      type: function
+      status: todo
+    join:
+      type: function
+      status: todo
+    last-index-of:
+      type: function
+      status: todo
+    lower-case:
+      type: function
+      status: todo
+    re-quote-replacement:
+      type: function
+      status: todo
+    replace:
+      type: function
+      status: todo
+    replace-first:
+      type: function
+      status: todo
+    reverse:
+      type: function
+      status: todo
+    split:
+      type: function
+      status: todo
+    split-lines:
+      type: function
+      status: todo
+    starts-with?:
+      type: function
+      status: todo
+    trim:
+      type: function
+      status: todo
+    trim-newline:
+      type: function
+      status: todo
+    triml:
+      type: function
+      status: todo
+    trimr:
+      type: function
+      status: todo
+    upper-case:
+      type: function
+      status: todo
+
+  clojure_set:
+    # Phase 1: 集合操作
+    # FUNCTION (12個)
+    difference:
+      type: function
+      status: todo
+    index:
+      type: function
+      status: todo
+    intersection:
+      type: function
+      status: todo
+    join:
+      type: function
+      status: todo
+    map-invert:
+      type: function
+      status: todo
+    project:
+      type: function
+      status: todo
+    rename:
+      type: function
+      status: todo
+    rename-keys:
+      type: function
+      status: todo
+    select:
+      type: function
+      status: todo
+    subset?:
+      type: function
+      status: todo
+    superset?:
+      type: function
+      status: todo
+    union:
+      type: function
+      status: todo
+
+  clojure_test:
+    # Phase 2: テストフレームワーク
+    # MACRO (10個)
+    are:
+      type: macro
+      status: todo
+    deftest:
+      type: macro
+      status: todo
+    deftest-:
+      type: macro
+      status: todo
+    is:
+      type: macro
+      status: todo
+    run-test:
+      type: macro
+      status: todo
+    set-test:
+      type: macro
+      status: todo
+    testing:
+      type: macro
+      status: todo
+    try-expr:
+      type: macro
+      status: todo
+    with-test:
+      type: macro
+      status: todo
+    with-test-out:
+      type: macro
+      status: todo
+    # FUNCTION (19個)
+    assert-any:
+      type: function
+      status: todo
+    assert-predicate:
+      type: function
+      status: todo
+    compose-fixtures:
+      type: function
+      status: todo
+    do-report:
+      type: function
+      status: todo
+    file-position:
+      type: function
+      status: todo
+      deprecated: true
+    function?:
+      type: function
+      status: todo
+    get-possibly-unbound-var:
+      type: function
+      status: todo
+    inc-report-counter:
+      type: function
+      status: todo
+    join-fixtures:
+      type: function
+      status: todo
+    run-all-tests:
+      type: function
+      status: todo
+    run-test-var:
+      type: function
+      status: todo
+    run-tests:
+      type: function
+      status: todo
+    successful?:
+      type: function
+      status: todo
+    test-all-vars:
+      type: function
+      status: todo
+    test-ns:
+      type: function
+      status: todo
+    test-var:
+      type: function
+      status: todo
+      dynamic: true
+    test-vars:
+      type: function
+      status: todo
+    testing-contexts-str:
+      type: function
+      status: todo
+    testing-vars-str:
+      type: function
+      status: todo
+    # DYNAMIC VAR (8個)
+    "*initial-report-counters*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*load-tests*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*report-counters*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*stack-trace-depth*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*test-out*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*testing-contexts*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*testing-vars*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    report:
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    # VAR (2個)
+    assert-expr:
+      type: var
+      status: todo
+    use-fixtures:
+      type: var
+      status: todo
+
+  clojure_pprint:
+    # Phase 2: Pretty Print
+    # MACRO (6個)
+    formatter:
+      type: macro
+      status: todo
+    formatter-out:
+      type: macro
+      status: todo
+    pp:
+      type: macro
+      status: todo
+    pprint-logical-block:
+      type: macro
+      status: todo
+    print-length-loop:
+      type: macro
+      status: todo
+    with-pprint-dispatch:
+      type: macro
+      status: todo
+    # FUNCTION (11個)
+    cl-format:
+      type: function
+      status: todo
+    fresh-line:
+      type: function
+      status: todo
+    get-pretty-writer:
+      type: function
+      status: todo
+    pprint:
+      type: function
+      status: todo
+    pprint-indent:
+      type: function
+      status: todo
+    pprint-newline:
+      type: function
+      status: todo
+    pprint-tab:
+      type: function
+      status: todo
+    print-table:
+      type: function
+      status: todo
+    set-pprint-dispatch:
+      type: function
+      status: todo
+    write:
+      type: function
+      status: todo
+    write-out:
+      type: function
+      status: todo
+    # DYNAMIC VAR (7個)
+    "*print-base*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*print-miser-width*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*print-pprint-dispatch*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*print-pretty*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*print-radix*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*print-right-margin*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    "*print-suppress-namespaces*":
+      type: dynamic-var
+      status: todo
+      dynamic: true
+    # VAR (2個)
+    code-dispatch:
+      type: var
+      status: todo
+    simple-dispatch:
+      type: var
+      status: todo
+
+  clojure_stacktrace:
+    # Phase 2: スタックトレース
+    # FUNCTION (6個)
+    e:
+      type: function
+      status: todo
+    print-cause-trace:
+      type: function
+      status: todo
+    print-stack-trace:
+      type: function
+      status: todo
+    print-throwable:
+      type: function
+      status: todo
+    print-trace-element:
+      type: function
+      status: todo
+    root-cause:
+      type: function
+      status: todo
+
+  clojure_walk:
+    # Phase 2: データ構造走査
+    # FUNCTION (10個)
+    keywordize-keys:
+      type: function
+      status: todo
+    macroexpand-all:
+      type: function
+      status: todo
+    postwalk:
+      type: function
+      status: todo
+    postwalk-demo:
+      type: function
+      status: todo
+    postwalk-replace:
+      type: function
+      status: todo
+    prewalk:
+      type: function
+      status: todo
+    prewalk-demo:
+      type: function
+      status: todo
+    prewalk-replace:
+      type: function
+      status: todo
+    stringify-keys:
+      type: function
+      status: todo
+    walk:
+      type: function
+      status: todo
+
+  clojure_edn:
+    # Phase 3: EDN読み書き
+    # FUNCTION (2個)
+    read:
+      type: function
+      status: todo
+    read-string:
+      type: function
+      status: todo
+
+  clojure_data:
+    # Phase 3: diff等
+    # FUNCTION (3個)
+    diff:
+      type: function
+      status: todo
+    diff-similar:
+      type: function
+      status: todo
+    equality-partition:
+      type: function
+      status: todo
+    # VAR (2個)
+    Diff:
+      type: var
+      status: todo
+    EqualityPartition:
+      type: var
+      status: todo
+
+  clojure_zip:
+    # Phase 3: Zipper
+    # FUNCTION (28個)
+    append-child:
+      type: function
+      status: todo
+    branch?:
+      type: function
+      status: todo
+    children:
+      type: function
+      status: todo
+    down:
+      type: function
+      status: todo
+    edit:
+      type: function
+      status: todo
+    end?:
+      type: function
+      status: todo
+    insert-child:
+      type: function
+      status: todo
+    insert-left:
+      type: function
+      status: todo
+    insert-right:
+      type: function
+      status: todo
+    left:
+      type: function
+      status: todo
+    leftmost:
+      type: function
+      status: todo
+    lefts:
+      type: function
+      status: todo
+    make-node:
+      type: function
+      status: todo
+    next:
+      type: function
+      status: todo
+    node:
+      type: function
+      status: todo
+    path:
+      type: function
+      status: todo
+    prev:
+      type: function
+      status: todo
+    remove:
+      type: function
+      status: todo
+    replace:
+      type: function
+      status: todo
+    right:
+      type: function
+      status: todo
+    rightmost:
+      type: function
+      status: todo
+    rights:
+      type: function
+      status: todo
+    root:
+      type: function
+      status: todo
+    seq-zip:
+      type: function
+      status: todo
+    up:
+      type: function
+      status: todo
+    vector-zip:
+      type: function
+      status: todo
+    xml-zip:
+      type: function
+      status: todo
+    zipper:
+      type: function
+      status: todo
+
+  clojure_template:
+    # Phase 4: テンプレート
+    # MACRO (1個)
+    do-template:
+      type: macro
+      status: todo
+    # FUNCTION (1個)
+    apply-template:
+      type: function
+      status: todo
+
+  clojure_instant:
+    # Phase 4: #inst処理
+    # FUNCTION (5個)
+    parse-timestamp:
+      type: function
+      status: todo
+    read-instant-calendar:
+      type: function
+      status: todo
+    read-instant-date:
+      type: function
+      status: todo
+    read-instant-timestamp:
+      type: function
+      status: todo
+    validated:
+      type: function
+      status: todo
+
+  clojure_uuid:
+    # Phase 4: #uuid処理
+
+  clojure_math:
+    # Phase 4: 数学関数
+    # FUNCTION (43個)
+    IEEE-remainder:
+      type: function
+      status: todo
+    acos:
+      type: function
+      status: todo
+    add-exact:
+      type: function
+      status: todo
+    asin:
+      type: function
+      status: todo
+    atan:
+      type: function
+      status: todo
+    atan2:
+      type: function
+      status: todo
+    cbrt:
+      type: function
+      status: todo
+    ceil:
+      type: function
+      status: todo
+    copy-sign:
+      type: function
+      status: todo
+    cos:
+      type: function
+      status: todo
+    cosh:
+      type: function
+      status: todo
+    decrement-exact:
+      type: function
+      status: todo
+    exp:
+      type: function
+      status: todo
+    expm1:
+      type: function
+      status: todo
+    floor:
+      type: function
+      status: todo
+    floor-div:
+      type: function
+      status: todo
+    floor-mod:
+      type: function
+      status: todo
+    get-exponent:
+      type: function
+      status: todo
+    hypot:
+      type: function
+      status: todo
+    increment-exact:
+      type: function
+      status: todo
+    log:
+      type: function
+      status: todo
+    log10:
+      type: function
+      status: todo
+    log1p:
+      type: function
+      status: todo
+    multiply-exact:
+      type: function
+      status: todo
+    negate-exact:
+      type: function
+      status: todo
+    next-after:
+      type: function
+      status: todo
+    next-down:
+      type: function
+      status: todo
+    next-up:
+      type: function
+      status: todo
+    pow:
+      type: function
+      status: todo
+    random:
+      type: function
+      status: todo
+    rint:
+      type: function
+      status: todo
+    round:
+      type: function
+      status: todo
+    scalb:
+      type: function
+      status: todo
+    signum:
+      type: function
+      status: todo
+    sin:
+      type: function
+      status: todo
+    sinh:
+      type: function
+      status: todo
+    sqrt:
+      type: function
+      status: todo
+    subtract-exact:
+      type: function
+      status: todo
+    tan:
+      type: function
+      status: todo
+    tanh:
+      type: function
+      status: todo
+    to-degrees:
+      type: function
+      status: todo
+    to-radians:
+      type: function
+      status: todo
+    ulp:
+      type: function
+      status: todo
+    # VAR (2個)
+    E:
+      type: var
+      status: todo
+    PI:
+      type: var
+      status: todo
