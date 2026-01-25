@@ -40,11 +40,4 @@
 
 ---
 
-## 注意点
-
-### Zig 0.15.2 落とし穴
-
-CLAUDE.md の「Zig 0.15.2 ガイド」参照:
-- stdout はバッファ付き writer 必須
-- format メソッド持ち型の `{}` は ambiguous
-- tagged union の `==` 比較は switch で
+## 申し送り (解消したら削除)
