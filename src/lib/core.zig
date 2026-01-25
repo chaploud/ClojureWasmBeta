@@ -412,6 +412,32 @@ pub fn isSet(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 }
 
 // ============================================================
+// コンストラクタ
+// ============================================================
+
+/// list : 引数からリストを作成
+pub fn list(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    const items = allocator.alloc(Value, args.len) catch return error.OutOfMemory;
+    @memcpy(items, args);
+
+    const lst = allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+    lst.* = .{ .items = items };
+
+    return Value{ .list = lst };
+}
+
+/// vector : 引数からベクタを作成
+pub fn vector(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    const items = allocator.alloc(Value, args.len) catch return error.OutOfMemory;
+    @memcpy(items, args);
+
+    const vec = allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
+    vec.* = .{ .items = items };
+
+    return Value{ .vector = vec };
+}
+
+// ============================================================
 // コレクション操作
 // ============================================================
 
@@ -707,6 +733,8 @@ fn printValue(writer: anytype, val: Value) !void {
             }
             try writer.writeByte('>');
         },
+        .fn_proto => try writer.writeAll("#<fn-proto>"),
+        .var_val => try writer.writeAll("#<var>"),
     }
 }
 
@@ -772,6 +800,9 @@ const builtins = [_]BuiltinDef{
     .{ .name = "map?", .func = isMap },
     .{ .name = "set?", .func = isSet },
     .{ .name = "empty?", .func = isEmpty },
+    // コンストラクタ
+    .{ .name = "list", .func = list },
+    .{ .name = "vector", .func = vector },
     // コレクション
     .{ .name = "first", .func = first },
     .{ .name = "rest", .func = rest },
@@ -881,15 +912,15 @@ test "isNil" {
 test "first" {
     const alloc = std.testing.allocator;
 
-    const list = try value_mod.PersistentList.fromSlice(alloc, &[_]Value{
+    const test_list = try value_mod.PersistentList.fromSlice(alloc, &[_]Value{
         value_mod.intVal(1),
         value_mod.intVal(2),
         value_mod.intVal(3),
     });
-    defer alloc.destroy(list);
-    defer alloc.free(list.items);
+    defer alloc.destroy(test_list);
+    defer alloc.free(test_list.items);
 
-    const args = [_]Value{Value{ .list = list }};
+    const args = [_]Value{Value{ .list = test_list }};
     const result = try first(alloc, &args);
     try std.testing.expect(result.eql(value_mod.intVal(1)));
 }
@@ -897,15 +928,15 @@ test "first" {
 test "rest" {
     const alloc = std.testing.allocator;
 
-    const list = try value_mod.PersistentList.fromSlice(alloc, &[_]Value{
+    const test_list = try value_mod.PersistentList.fromSlice(alloc, &[_]Value{
         value_mod.intVal(1),
         value_mod.intVal(2),
         value_mod.intVal(3),
     });
-    defer alloc.destroy(list);
-    defer alloc.free(list.items);
+    defer alloc.destroy(test_list);
+    defer alloc.free(test_list.items);
 
-    const args = [_]Value{Value{ .list = list }};
+    const args = [_]Value{Value{ .list = test_list }};
     const result = try rest(alloc, &args);
 
     // rest は新しいリストを返す
@@ -920,14 +951,14 @@ test "rest" {
 test "cons" {
     const alloc = std.testing.allocator;
 
-    const list = try value_mod.PersistentList.fromSlice(alloc, &[_]Value{
+    const test_list = try value_mod.PersistentList.fromSlice(alloc, &[_]Value{
         value_mod.intVal(2),
         value_mod.intVal(3),
     });
-    defer alloc.destroy(list);
-    defer alloc.free(list.items);
+    defer alloc.destroy(test_list);
+    defer alloc.free(test_list.items);
 
-    const args = [_]Value{ value_mod.intVal(1), Value{ .list = list } };
+    const args = [_]Value{ value_mod.intVal(1), Value{ .list = test_list } };
     const result = try cons(alloc, &args);
 
     try std.testing.expectEqual(@as(usize, 3), result.list.items.len);
@@ -942,15 +973,15 @@ test "cons" {
 test "count" {
     const alloc = std.testing.allocator;
 
-    const list = try value_mod.PersistentList.fromSlice(alloc, &[_]Value{
+    const test_list = try value_mod.PersistentList.fromSlice(alloc, &[_]Value{
         value_mod.intVal(1),
         value_mod.intVal(2),
         value_mod.intVal(3),
     });
-    defer alloc.destroy(list);
-    defer alloc.free(list.items);
+    defer alloc.destroy(test_list);
+    defer alloc.free(test_list.items);
 
-    const args = [_]Value{Value{ .list = list }};
+    const args = [_]Value{Value{ .list = test_list }};
     const result = try count(alloc, &args);
     try std.testing.expect(result.eql(value_mod.intVal(3)));
 }

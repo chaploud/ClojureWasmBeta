@@ -1,9 +1,9 @@
 //! Analyzer: Form → Node 変換
 //!
 //! Reader が生成した Form を実行可能な Node に変換する。
-//! - special forms の解析 (if, do, let, fn, def, quote)
+//! - special forms の解析 (if, do, let, fn, def, quote, defmacro)
 //! - シンボル解決（ローカル変数 vs Var）
-//! - マクロ展開（将来）
+//! - マクロ展開
 //!
 //! 3フェーズアーキテクチャ:
 //!   Form (Reader) → Node (Analyzer) → Value (Runtime)
@@ -17,12 +17,17 @@ const Node = node_mod.Node;
 const SourceInfo = node_mod.SourceInfo;
 const value_mod = @import("../runtime/value.zig");
 const Value = value_mod.Value;
+const Fn = value_mod.Fn;
 const RuntimeSymbol = value_mod.Symbol;
 const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
 const var_mod = @import("../runtime/var.zig");
 const Var = var_mod.Var;
 const err = @import("../base/error.zig");
+const context_mod = @import("../runtime/context.zig");
+const Context = context_mod.Context;
+const evaluator = @import("../runtime/evaluator.zig");
+const core = @import("../lib/core.zig");
 
 /// ローカルバインディング情報
 const LocalBinding = struct {
@@ -140,7 +145,14 @@ pub const Analyzer = struct {
                 return self.analyzeLoop(items);
             } else if (std.mem.eql(u8, sym_name, "recur")) {
                 return self.analyzeRecur(items);
+            } else if (std.mem.eql(u8, sym_name, "defmacro")) {
+                return self.analyzeDefmacro(items);
             }
+        }
+
+        // マクロ展開をチェック
+        if (try self.tryMacroExpand(items)) |expanded_node| {
+            return expanded_node;
         }
 
         // 関数呼び出し
@@ -634,6 +646,142 @@ pub const Analyzer = struct {
                 vec.* = .{ .items = vals };
                 break :blk .{ .vector = vec };
             },
+        };
+    }
+
+    // === defmacro ===
+
+    fn analyzeDefmacro(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (defmacro name [params] body...)
+        // 内部的には (def name (fn [params] body...)) を生成し、マクロフラグを設定
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "defmacro requires at least name and params", .{});
+        }
+
+        if (items[1] != .symbol) {
+            return err.parseError(.invalid_binding, "defmacro name must be a symbol", .{});
+        }
+
+        const macro_name = items[1].symbol.name;
+
+        // fn 形式を構築して解析
+        // (defmacro name [params] body...) → (fn name [params] body...)
+        // items: [defmacro, name, params, body...]   (len = N)
+        // fn_items: [fn, name, params, body...]      (len = N)
+        var fn_items = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
+        fn_items[0] = .{ .symbol = FormSymbol.init("fn") };
+        fn_items[1] = items[1]; // name
+        for (items[2..], 0..) |item, i| {
+            fn_items[i + 2] = item;
+        }
+
+        const fn_node = try self.analyzeFn(fn_items);
+
+        // DefmacroNode を作成（DefNode と同じ構造だが、evaluator でマクロフラグを設定）
+        const def_data = self.allocator.create(node_mod.DefNode) catch return error.OutOfMemory;
+        def_data.* = .{
+            .sym_name = macro_name,
+            .init = fn_node,
+            .is_macro = true,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .def_node = def_data };
+        return node;
+    }
+
+    // === マクロ展開 ===
+
+    /// マクロ呼び出しかどうかをチェックし、展開する
+    fn tryMacroExpand(self: *Analyzer, items: []const Form) err.Error!?*Node {
+        // 先頭がシンボルでなければマクロではない
+        if (items[0] != .symbol) return null;
+
+        const sym = items[0].symbol;
+        if (sym.namespace != null) return null; // 名前空間付きは後で対応
+
+        // シンボルを解決
+        const runtime_sym = RuntimeSymbol.init(sym.name);
+        const v = self.env.resolve(runtime_sym) orelse return null;
+
+        // マクロでなければ通常の関数呼び出し
+        if (!v.isMacro()) return null;
+
+        // マクロの値を取得
+        const macro_val = v.deref();
+        if (macro_val != .fn_val) return null;
+
+        const macro_fn = macro_val.fn_val;
+
+        // 引数を quote して Value に変換（マクロは引数を評価せずに受け取る）
+        var macro_args = self.allocator.alloc(Value, items.len - 1) catch return error.OutOfMemory;
+        for (items[1..], 0..) |item, i| {
+            macro_args[i] = try self.formToValue(item);
+        }
+
+        // マクロを実行
+        const expanded_value = try self.callMacro(macro_fn, macro_args);
+
+        // 展開結果を Form に変換して再解析
+        const expanded_form = try self.valueToForm(expanded_value);
+        return self.analyze(expanded_form);
+    }
+
+    /// マクロ関数を呼び出す
+    fn callMacro(self: *Analyzer, macro_fn: *Fn, args: []const Value) err.Error!Value {
+        // 組み込み関数（BuiltinFn）としてのマクロはサポートしない
+        // ユーザー定義マクロのみ
+        const arity = macro_fn.findArity(args.len) orelse
+            return err.parseError(.invalid_arity, "Macro arity mismatch", .{});
+
+        // 新しいコンテキストを作成
+        var ctx = Context.init(self.allocator, self.env);
+
+        // クロージャ環境をバインド
+        if (macro_fn.closure_bindings) |bindings| {
+            ctx = ctx.withBindings(bindings) catch return error.OutOfMemory;
+        }
+
+        // 引数をバインド
+        ctx = ctx.withBindings(args) catch return error.OutOfMemory;
+
+        // ボディを評価
+        const body: *const Node = @ptrCast(@alignCast(arity.body));
+        return evaluator.run(body, &ctx) catch return err.parseError(.macro_error, "Macro expansion failed", .{});
+    }
+
+    /// Value を Form に変換（マクロ展開結果の再解析用）
+    fn valueToForm(self: *Analyzer, val: Value) err.Error!Form {
+        return switch (val) {
+            .nil => Form.nil,
+            .bool_val => |b| if (b) Form.bool_true else Form.bool_false,
+            .int => |n| Form{ .int = n },
+            .float => |f| Form{ .float = f },
+            .string => |s| Form{ .string = s.data },
+            .keyword => |k| Form{ .keyword = if (k.namespace) |ns|
+                FormSymbol.initNs(ns, k.name)
+            else
+                FormSymbol.init(k.name) },
+            .symbol => |s| Form{ .symbol = if (s.namespace) |ns|
+                FormSymbol.initNs(ns, s.name)
+            else
+                FormSymbol.init(s.name) },
+            .list => |l| blk: {
+                var forms = self.allocator.alloc(Form, l.items.len) catch return error.OutOfMemory;
+                for (l.items, 0..) |item, i| {
+                    forms[i] = try self.valueToForm(item);
+                }
+                break :blk Form{ .list = forms };
+            },
+            .vector => |v| blk: {
+                var forms = self.allocator.alloc(Form, v.items.len) catch return error.OutOfMemory;
+                for (v.items, 0..) |item, i| {
+                    forms[i] = try self.valueToForm(item);
+                }
+                break :blk Form{ .vector = forms };
+            },
+            .char_val, .map, .set, .fn_val, .fn_proto, .var_val => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

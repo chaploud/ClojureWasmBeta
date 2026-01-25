@@ -90,6 +90,7 @@ pub const CallNode = struct {
 pub const DefNode = struct {
     sym_name: []const u8,
     init: ?*Node,
+    is_macro: bool = false, // defmacro の場合は true
     stack: SourceInfo,
 };
 

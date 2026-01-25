@@ -66,6 +66,11 @@ pub const Var = struct {
         return self.macro;
     }
 
+    /// macro フラグを設定
+    pub fn setMacro(self: *Var, is_macro: bool) void {
+        self.macro = is_macro;
+    }
+
     /// private かどうか
     pub fn isPrivate(self: *const Var) bool {
         return self.private;

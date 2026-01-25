@@ -204,6 +204,11 @@ fn runDef(node: *const node_mod.DefNode, ctx: *Context) EvalError!Value {
         v.bindRoot(val);
     }
 
+    // マクロフラグを設定
+    if (node.is_macro) {
+        v.setMacro(true);
+    }
+
     // Var を返す（#'var 形式）
     // TODO: Var を Value に含める
     return value_mod.nil;
