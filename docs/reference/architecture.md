@@ -203,15 +203,15 @@ reader ←── analyzer ←── compiler ←── vm               │
 - [x] special forms（if, let, fn, def, do, quote, loop, recur）
 - [x] シンボル解決
 
-### Phase 4: ツリーウォーク評価器 ← 現在
-- [ ] Context（ローカルバインディング管理）
-- [ ] Evaluator 実装
-- [ ] 組み込み関数
+### Phase 4: ツリーウォーク評価器 ✓
+- [x] Context（ローカルバインディング管理）
+- [x] Evaluator 実装
+- [x] 組み込み関数（算術、比較、述語、コレクション、出力）
 
-### Phase 5: clojure.core 基本関数
-- [ ] 算術: +, -, *, /
-- [ ] コレクション: first, rest, cons, conj
-- [ ] 述語: nil?, number?, etc.
+### Phase 5: E2E テスト ← 現在
+- [ ] 統合テスト（Reader → Analyzer → Evaluator）
+- [ ] ユーザー定義関数（fn クロージャ完全実装）
+- [ ] def された関数の呼び出し
 
 ### Phase 6: マクロシステム
 - [ ] defmacro
