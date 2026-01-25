@@ -29,6 +29,9 @@
 - [x] **3フェーズアーキテクチャ設計** - `docs/reference/type_design.md`
   - Form (Reader) → Node (Analyzer) → Value (Runtime)
   - スタブ: node.zig, value.zig, var.zig, namespace.zig, env.zig, context.zig
+- [x] **ディレクトリ構造設計** - `docs/reference/architecture.md`
+  - base/, reader/, analyzer/, runtime/, lib/ を整理
+  - 将来用スタブ: compiler/, vm/, gc/, wasm/
 
 ---
 
@@ -41,13 +44,29 @@
 
 ## 将来TODO（バックログ）
 
+詳細: `docs/reference/architecture.md`
+
+### Phase 1-2: 基盤
 - [ ] Reader（S式構築）
-- [ ] Eval（評価器）
+- [ ] Runtime（value, var, namespace 実装）
+- [ ] 簡易評価器（インタプリタ）
+
+### Phase 3-4: 言語機能
+- [ ] Analyzer（node, analyze, macroexpand）
+- [ ] マクロシステム
 - [ ] clojure.core 関数群
 - [ ] clojure.string, clojure.set 等
-- [ ] マクロシステム
 - [ ] REPL
-- [ ] Wasm対応
+
+### Phase 5-6: 高速化
+- [ ] Compiler（bytecode, emit, optimize）
+- [ ] VM（バイトコード実行）
+- [ ] GC（Mark-Sweep）
+
+### Phase 7: Wasm連携
+- [ ] Wasm Component Model 対応
+- [ ] .wasm ロード・呼び出し
+- [ ] 型マッピング（Clojure ↔ Wasm）
 
 ---
 
