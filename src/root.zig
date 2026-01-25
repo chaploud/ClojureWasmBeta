@@ -34,9 +34,9 @@ pub const reader = @import("reader/reader.zig");
 pub const Reader = reader.Reader;
 
 // === Phase 2: Analyzer ===
-// TODO: 実装時にコメント解除
-// pub const node = @import("analyzer/node.zig");
-// pub const Node = node.Node;
+pub const node = @import("analyzer/node.zig");
+pub const Node = node.Node;
+pub const SourceInfo = node.SourceInfo;
 
 // === Phase 3: Runtime ===
 pub const value = @import("runtime/value.zig");

@@ -7,43 +7,34 @@
 
 ## 前回完了
 
-- Value 型 (`src/runtime/value.zig`)
-  - 基本型: nil, bool, int, float, char
-  - 文字列・識別子: String, Symbol, Keyword
-  - コレクション: PersistentList, PersistentVector, PersistentMap, PersistentSet
-  - 関数: Fn (組み込み関数対応)
-  - 等価性判定、format 出力
-- Var 型 (`src/runtime/var.zig`)
-  - root バインディング
-  - dynamic, macro, private フラグ
-- Namespace 型 (`src/runtime/namespace.zig`)
-  - intern, resolve, alias, refer
-- Env 型 (`src/runtime/env.zig`)
-  - 名前空間管理
-  - シンボル解決
+- Node 型 (`src/analyzer/node.zig`)
+  - ConstantNode: リテラル値
+  - VarRefNode, LocalRefNode: 変数参照
+  - IfNode, DoNode, LetNode: 制御構造
+  - LoopNode, RecurNode: ループ
+  - FnNode, CallNode: 関数
+  - DefNode, QuoteNode, ThrowNode
 
 ---
 
 ## 次回タスク
 
-### Phase 3: Analyzer
+### Phase 3 続き: Analyzer
 
-1. **Node 型** (`src/analyzer/node.zig`)
-   - ConstantNode: リテラル値
-   - VarRefNode: Var参照
-   - IfNode, DoNode, LetNode
-   - FnNode, CallNode
-   - DefNode
-
-2. **Analyzer** (`src/analyzer/analyze.zig`)
+1. **Analyzer** (`src/analyzer/analyze.zig`)
    - Form → Node 変換
-   - special forms の解析
-   - シンボル解決
+   - special forms の解析 (if, do, let, fn, def, quote)
+   - シンボル解決（ローカル変数 vs Var）
 
 ### Phase 4: ツリーウォーク評価器
 
-- Node.run() で Value を返す
-- Context: ローカルバインディング管理
+1. **Context** (`src/runtime/context.zig`)
+   - ローカルバインディング管理
+   - recur ターゲット
+
+2. **Evaluator**
+   - Node を実行して Value を返す
+   - 組み込み関数の実装
 
 ---
 

@@ -199,7 +199,7 @@ reader ←── analyzer ←── compiler ←── vm               │
 - [x] Env（グローバル環境）
 
 ### Phase 3: Analyzer ← 現在
-- [ ] Node 型
+- [x] Node 型
 - [ ] special forms（if, let, fn, def, do, quote）
 - [ ] シンボル解決
 
