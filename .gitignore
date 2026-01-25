@@ -1,0 +1,18 @@
+# Zig
+zig-out/
+zig-cache/
+.zig-cache/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/settings.local.json
