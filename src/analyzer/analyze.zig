@@ -332,6 +332,9 @@ pub const Analyzer = struct {
         var params = std.ArrayListUnmanaged([]const u8).empty;
         var variadic = false;
 
+        // fn 本体では新しいスコープを開始
+        // クロージャ環境は現在のローカル数を保存して評価時に復元
+        const closure_size = self.locals.items.len;
         const start_locals = self.locals.items.len;
 
         for (params_form) |p| {
@@ -349,9 +352,11 @@ pub const Analyzer = struct {
             params.append(self.allocator, param_name) catch return error.OutOfMemory;
 
             // ローカルに追加
+            // パラメータのインデックスはクロージャ環境のサイズから開始
             const idx: u32 = @intCast(self.locals.items.len);
             self.locals.append(self.allocator, .{ .name = param_name, .idx = idx }) catch return error.OutOfMemory;
         }
+        _ = closure_size;
 
         // ボディを解析
         const body = if (body_forms.len == 0)

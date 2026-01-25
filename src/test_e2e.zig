@@ -237,3 +237,62 @@ test "e2e: quote" {
     try std.testing.expect(list_result == .list);
     try std.testing.expectEqual(@as(usize, 3), list_result.list.items.len);
 }
+
+test "e2e: ユーザー定義関数" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 即時実行の無名関数
+    try expectInt(allocator, &env, "((fn [x] x) 42)", 42);
+    try expectInt(allocator, &env, "((fn [x y] (+ x y)) 1 2)", 3);
+
+    // 式の中で関数を使う
+    try expectInt(allocator, &env, "(+ ((fn [x] (* x x)) 3) 1)", 10);
+}
+
+test "e2e: クロージャ" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // let で束縛された変数をキャプチャ
+    try expectInt(allocator, &env,
+        \\(let [x 10]
+        \\  ((fn [y] (+ x y)) 5))
+    , 15);
+
+    // ネストしたクロージャ
+    try expectInt(allocator, &env,
+        \\(let [a 1]
+        \\  (let [b 2]
+        \\    ((fn [c] (+ a b c)) 3)))
+    , 6);
+}
+
+test "e2e: def された関数" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 関数を定義して呼び出し
+    _ = try evalExpr(allocator, &env, "(def inc (fn [x] (+ x 1)))");
+    try expectInt(allocator, &env, "(inc 5)", 6);
+
+    // 複数引数の関数
+    _ = try evalExpr(allocator, &env, "(def add3 (fn [a b c] (+ a b c)))");
+    try expectInt(allocator, &env, "(add3 1 2 3)", 6);
+
+    // 関数を使った複雑な式
+    _ = try evalExpr(allocator, &env, "(def square (fn [x] (* x x)))");
+    try expectInt(allocator, &env, "(+ (square 3) (square 4))", 25);
+}

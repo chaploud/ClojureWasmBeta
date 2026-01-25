@@ -127,17 +127,27 @@ fn runRecur(node: *const node_mod.RecurNode, ctx: *Context) EvalError!Value {
 
 /// fn 評価（クロージャ作成）
 fn runFn(node: *const node_mod.FnNode, ctx: *Context) EvalError!Value {
-    _ = ctx;
-    // TODO: クロージャを作成
-    // 現時点では FnNode をそのまま保持する簡易実装
-    const fn_obj = value_mod.Fn{
-        .name = if (node.name) |n| value_mod.Symbol.init(n) else null,
-        // TODO: arities とクロージャ環境を保持
-    };
-    _ = fn_obj;
+    // FnNode の arities を FnArityRuntime に変換
+    const runtime_arities = ctx.allocator.alloc(value_mod.FnArityRuntime, node.arities.len) catch return error.OutOfMemory;
+    for (node.arities, 0..) |arity, i| {
+        runtime_arities[i] = .{
+            .params = arity.params,
+            .variadic = arity.variadic,
+            .body = @ptrCast(@constCast(arity.body)),
+        };
+    }
 
-    // 仮実装: nil を返す
-    return value_mod.nil;
+    // クロージャ環境をキャプチャ
+    const closure_bindings = if (ctx.bindings.len > 0)
+        ctx.allocator.dupe(Value, ctx.bindings) catch return error.OutOfMemory
+    else
+        null;
+
+    // Fn オブジェクトを作成
+    const fn_obj = ctx.allocator.create(value_mod.Fn) catch return error.OutOfMemory;
+    fn_obj.* = value_mod.Fn.initUser(node.name, runtime_arities, closure_bindings);
+
+    return Value{ .fn_val = fn_obj };
 }
 
 /// call 評価
@@ -146,7 +156,7 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
     const fn_val = try run(node.fn_node, ctx);
 
     // 引数を評価
-    var args = ctx.allocator.alloc(Value, node.args.len) catch return error.OutOfMemory;
+    const args = ctx.allocator.alloc(Value, node.args.len) catch return error.OutOfMemory;
     for (node.args, 0..) |arg, i| {
         args[i] = try run(arg, ctx);
     }
@@ -154,11 +164,28 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
     // 関数を呼び出し
     return switch (fn_val) {
         .fn_val => |f| blk: {
+            // 組み込み関数
             if (f.builtin) |builtin| {
                 break :blk builtin(ctx.allocator, args) catch return error.TypeError;
             }
-            // TODO: ユーザー定義関数
-            break :blk value_mod.nil;
+
+            // ユーザー定義関数
+            const arity = f.findArity(args.len) orelse return error.ArityError;
+
+            // 新しいコンテキストを作成
+            var fn_ctx = Context.init(ctx.allocator, ctx.env);
+
+            // クロージャ環境をバインド
+            if (f.closure_bindings) |bindings| {
+                fn_ctx = fn_ctx.withBindings(bindings) catch return error.OutOfMemory;
+            }
+
+            // 引数をバインド
+            fn_ctx = fn_ctx.withBindings(args) catch return error.OutOfMemory;
+
+            // ボディを評価
+            const body: *const Node = @ptrCast(@alignCast(arity.body));
+            break :blk run(body, &fn_ctx);
         },
         else => error.TypeError,
     };

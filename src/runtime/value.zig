@@ -248,14 +248,20 @@ pub const PersistentSet = struct {
 /// 組み込み関数の型
 pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
 
+/// ユーザー定義関数のアリティ
+pub const FnArityRuntime = struct {
+    params: []const []const u8,
+    variadic: bool,
+    body: *anyopaque, // *Node（循環依存を避けるため anyopaque）
+};
+
 /// 関数オブジェクト
 pub const Fn = struct {
     name: ?Symbol = null,
     builtin: ?BuiltinFn = null,
-    // TODO: ユーザー定義関数用のフィールド
-    // body: *Node,
-    // env: *Context,
-    // params: []Symbol,
+    // ユーザー定義関数用
+    arities: ?[]const FnArityRuntime = null,
+    closure_bindings: ?[]const Value = null, // クロージャ環境
     meta: ?*const Value = null,
 
     pub fn initBuiltin(name: []const u8, f: BuiltinFn) Fn {
@@ -263,6 +269,45 @@ pub const Fn = struct {
             .name = Symbol.init(name),
             .builtin = f,
         };
+    }
+
+    /// ユーザー定義関数を作成
+    pub fn initUser(
+        name: ?[]const u8,
+        arities: []const FnArityRuntime,
+        closure_bindings: ?[]const Value,
+    ) Fn {
+        return .{
+            .name = if (name) |n| Symbol.init(n) else null,
+            .arities = arities,
+            .closure_bindings = closure_bindings,
+        };
+    }
+
+    /// 組み込み関数かどうか
+    pub fn isBuiltin(self: *const Fn) bool {
+        return self.builtin != null;
+    }
+
+    /// 引数の数に合ったアリティを検索
+    pub fn findArity(self: *const Fn, arg_count: usize) ?*const FnArityRuntime {
+        const arities = self.arities orelse return null;
+
+        // 固定アリティを優先検索
+        for (arities) |*arity| {
+            if (!arity.variadic and arity.params.len == arg_count) {
+                return arity;
+            }
+        }
+
+        // 可変長アリティを検索
+        for (arities) |*arity| {
+            if (arity.variadic and arg_count >= arity.params.len - 1) {
+                return arity;
+            }
+        }
+
+        return null;
     }
 };
 
