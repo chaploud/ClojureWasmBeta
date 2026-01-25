@@ -14,16 +14,33 @@
   - Value に fn_proto, var_val を追加
   - E2E テスト追加（VM 経由の評価）
 
+- OpCode 完全設計 ✓
+  - 本家 Clojure Compiler.java 調査（JVM bytecode 生成方式）
+  - Clojure 意味論ベースの OpCode セット設計（約50個）
+  - カテゴリ別に範囲予約（0x00-0xFF）
+  - architecture.md に VM 設計セクション追加
+  - bytecode.zig に完全版 OpCode 定義
+  - vm.zig に全 OpCode のスタブ実装
+
 ---
 
 ## 次回タスク
 
-### Phase 8 続き: VM 完全化
+### Phase 8.1: クロージャ完成
 
-- eval インターフェースを抽象化（TreeWalk / VM 切り替え）
+- upvalue_load, upvalue_store の実装
+- クロージャキャプチャ処理
 - ユーザー定義関数の VM 実行
-- クロージャのキャプチャ処理
-- recur/loop の VM 実装
+
+### Phase 8.2: コレクションリテラル
+
+- vec_new, map_new, set_new, list_new
+- Reader → Compiler → VM の連携
+
+### Phase 8.3: 末尾呼び出し最適化
+
+- tail_call 実装
+- apply 実装
 
 ---
 

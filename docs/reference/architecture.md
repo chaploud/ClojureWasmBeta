@@ -275,6 +275,95 @@ clj -M -e "(do (println \"hello\") 42)"
 - 副作用（println 等）は発生時に出力
 - 複数 `-e` 間で状態保持
 
+---
+
+## VM 設計
+
+### 設計方針
+
+**スタックベース VM** を採用（レジスタマシンではない）。
+
+| 選択 | 理由 |
+|-----|------|
+| スタックベース | GC ルート追跡が容易、Wasm と親和性あり |
+| 固定命令サイズ | OpCode(u8) + operand(u16) = 3バイト |
+| JVM 非互換 | Clojure 意味論のみ実装、JVM 詳細は不要 |
+
+**参考にしたもの:**
+- Lua 5.x（スタックベース、シンプル）
+- "Crafting Interpreters"（Chunk 構造、ジャンプパッチング）
+- Python bytecode（定数テーブル）
+
+**参考にしないもの:**
+- JVM bytecode（複雑、クラスベース OOP 前提）
+- LuaJIT（レジスタマシン、JIT 前提）
+- V8（JIT 前提、hidden class など不要）
+
+### OpCode カテゴリ
+
+| 範囲 | カテゴリ | 用途 |
+|-----|---------|------|
+| 0x00-0x0F | 定数・リテラル | nil, true, false, 定数ロード |
+| 0x10-0x1F | スタック操作 | pop, dup, swap |
+| 0x20-0x2F | ローカル変数 | let バインディング |
+| 0x30-0x3F | クロージャ変数 | upvalue（外側スコープ参照） |
+| 0x40-0x4F | Var 操作 | def, Var 参照、動的バインディング |
+| 0x50-0x5F | 制御フロー | jump, 条件分岐 |
+| 0x60-0x6F | 関数 | call, ret, closure, tail_call |
+| 0x70-0x7F | loop/recur | Clojure 特有のループ |
+| 0x80-0x8F | コレクション生成 | [], {}, #{} リテラル |
+| 0x90-0x9F | コレクション操作 | nth, get, conj 等（将来最適化） |
+| 0xA0-0xAF | 例外処理 | try/catch/finally |
+| 0xC0-0xCF | メタデータ | with-meta, meta |
+| 0xF0-0xFF | 予約・デバッグ | nop, debug |
+
+### 実装ロードマップ
+
+```
+Phase 8.0 (完了): 基本 OpCode（20個）
+  - 定数、スタック、ローカル、Var、制御フロー、関数基本
+
+Phase 8.1: クロージャ完成
+  - upvalue_load, upvalue_store
+  - クロージャキャプチャ処理
+
+Phase 8.2: コレクションリテラル
+  - vec_new, map_new, set_new, list_new
+
+Phase 8.3: 末尾呼び出し最適化
+  - tail_call, apply
+
+Phase 9 (GC 後): 例外処理
+  - try_begin, catch_begin, finally_begin, throw_ex
+
+Phase 10: メタデータ
+  - with_meta, meta
+```
+
+### Wasm 連携との親和性
+
+Wasm もスタックベース VM のため、設計上の親和性が高い。
+
+```
+Clojure Value ←→ Wasm 型変換レイヤー ←→ Wasm Component
+```
+
+- OpCode 追加なし: Wasm 関数は組み込み関数として登録
+- `call` OpCode で統一的に呼び出し可能
+
+### 組み込み関数 vs OpCode
+
+頻出操作は OpCode 化を検討するが、基本は組み込み関数で実装。
+
+| 操作 | 方針 | 理由 |
+|-----|------|------|
+| +, -, *, / | 組み込み関数 | 多態性（数値型ごと）が必要 |
+| nth, get | 将来 OpCode 化 | 頻出だが、まず組み込みで |
+| first, rest | 将来 OpCode 化 | シーケンス操作の中核 |
+| conj, assoc | 組み込み関数 | コレクション型で振る舞いが異なる |
+
+---
+
 ## 参考資料
 
 - 型設計: `docs/reference/type_design.md`

@@ -102,7 +102,9 @@ pub const VM = struct {
             frame.ip += 1;
 
             switch (instr.op) {
-                // === スタック操作 ===
+                // ═══════════════════════════════════════════════════════
+                // [A] 定数・リテラル
+                // ═══════════════════════════════════════════════════════
                 .const_load => {
                     const val = constants[instr.operand];
                     try self.push(val);
@@ -110,21 +112,30 @@ pub const VM = struct {
                 .nil => try self.push(value_mod.nil),
                 .true_val => try self.push(value_mod.true_val),
                 .false_val => try self.push(value_mod.false_val),
+                .int_0 => try self.push(value_mod.intVal(0)),
+                .int_1 => try self.push(value_mod.intVal(1)),
+                .int_neg1 => try self.push(value_mod.intVal(-1)),
+
+                // ═══════════════════════════════════════════════════════
+                // [B] スタック操作
+                // ═══════════════════════════════════════════════════════
+                .pop => {
+                    _ = self.pop();
+                },
                 .dup => {
                     const val = try self.peek(0);
                     try self.push(val);
                 },
-                .pop => {
-                    _ = self.pop();
+                .swap => {
+                    if (self.sp < 2) return error.StackUnderflow;
+                    const tmp = self.stack[self.sp - 1];
+                    self.stack[self.sp - 1] = self.stack[self.sp - 2];
+                    self.stack[self.sp - 2] = tmp;
                 },
 
-                // === 変数参照 ===
-                .var_load => {
-                    const var_val = constants[instr.operand];
-                    if (var_val != .var_val) return error.InvalidInstruction;
-                    const v: *Var = @ptrCast(@alignCast(var_val.var_val));
-                    try self.push(v.deref());
-                },
+                // ═══════════════════════════════════════════════════════
+                // [C] ローカル変数
+                // ═══════════════════════════════════════════════════════
                 .local_load => {
                     const idx = frame.base + instr.operand;
                     if (idx >= self.sp) return error.StackUnderflow;
@@ -135,8 +146,58 @@ pub const VM = struct {
                     const val = self.pop();
                     self.stack[idx] = val;
                 },
+                .local_load_0 => {
+                    if (frame.base >= self.sp) return error.StackUnderflow;
+                    try self.push(self.stack[frame.base]);
+                },
+                .local_load_1 => {
+                    if (frame.base + 1 >= self.sp) return error.StackUnderflow;
+                    try self.push(self.stack[frame.base + 1]);
+                },
+                .local_load_2 => {
+                    if (frame.base + 2 >= self.sp) return error.StackUnderflow;
+                    try self.push(self.stack[frame.base + 2]);
+                },
+                .local_load_3 => {
+                    if (frame.base + 3 >= self.sp) return error.StackUnderflow;
+                    try self.push(self.stack[frame.base + 3]);
+                },
 
-                // === 制御フロー ===
+                // ═══════════════════════════════════════════════════════
+                // [D] クロージャ変数（未実装）
+                // ═══════════════════════════════════════════════════════
+                .upvalue_load, .upvalue_store => {
+                    // TODO: Phase 8.1 で実装
+                    return error.InvalidInstruction;
+                },
+
+                // ═══════════════════════════════════════════════════════
+                // [E] Var 操作
+                // ═══════════════════════════════════════════════════════
+                .var_load => {
+                    const var_val = constants[instr.operand];
+                    if (var_val != .var_val) return error.InvalidInstruction;
+                    const v: *Var = @ptrCast(@alignCast(var_val.var_val));
+                    try self.push(v.deref());
+                },
+                .var_load_dynamic => {
+                    // TODO: 動的バインディング対応
+                    // 現時点では var_load と同じ
+                    const var_val = constants[instr.operand];
+                    if (var_val != .var_val) return error.InvalidInstruction;
+                    const v: *Var = @ptrCast(@alignCast(var_val.var_val));
+                    try self.push(v.deref());
+                },
+                .def => {
+                    try self.runDef(constants[instr.operand], false);
+                },
+                .def_macro => {
+                    try self.runDef(constants[instr.operand], true);
+                },
+
+                // ═══════════════════════════════════════════════════════
+                // [F] 制御フロー
+                // ═══════════════════════════════════════════════════════
                 .jump => {
                     const offset = instr.signedOperand();
                     if (offset < 0) {
@@ -157,11 +218,36 @@ pub const VM = struct {
                         frame.ip += instr.operand;
                     }
                 },
+                .jump_if_nil => {
+                    const val = self.pop();
+                    if (val.isNil()) {
+                        frame.ip += instr.operand;
+                    }
+                },
+                .jump_back => {
+                    // 後方ジャンプ（loop 用）
+                    frame.ip -= instr.operand;
+                },
 
-                // === 関数 ===
+                // ═══════════════════════════════════════════════════════
+                // [G] 関数
+                // ═══════════════════════════════════════════════════════
                 .call => {
                     const arg_count = instr.operand;
                     try self.callValue(@intCast(arg_count));
+                },
+                .call_0 => try self.callValue(0),
+                .call_1 => try self.callValue(1),
+                .call_2 => try self.callValue(2),
+                .call_3 => try self.callValue(3),
+                .tail_call => {
+                    // TODO: 末尾呼び出し最適化
+                    const arg_count = instr.operand;
+                    try self.callValue(@intCast(arg_count));
+                },
+                .apply => {
+                    // TODO: apply 実装
+                    return error.InvalidInstruction;
                 },
                 .ret => {
                     const result = self.pop();
@@ -188,15 +274,9 @@ pub const VM = struct {
                     try self.createClosure(proto_val);
                 },
 
-                // === 定義 ===
-                .def => {
-                    try self.runDef(constants[instr.operand], false);
-                },
-                .def_macro => {
-                    try self.runDef(constants[instr.operand], true);
-                },
-
-                // === recur/loop ===
+                // ═══════════════════════════════════════════════════════
+                // [H] loop/recur
+                // ═══════════════════════════════════════════════════════
                 .loop_start => {
                     // マーカーのみ、何もしない
                 },
@@ -205,7 +285,46 @@ pub const VM = struct {
                     // 実際の処理は emitLoop で生成された jump で行われる
                 },
 
+                // ═══════════════════════════════════════════════════════
+                // [I] コレクション生成（未実装）
+                // ═══════════════════════════════════════════════════════
+                .list_new, .vec_new, .map_new, .set_new => {
+                    // TODO: Phase 8.2 で実装
+                    return error.InvalidInstruction;
+                },
+
+                // ═══════════════════════════════════════════════════════
+                // [J] コレクション操作（未実装）
+                // ═══════════════════════════════════════════════════════
+                .nth, .get, .first, .rest, .conj, .assoc, .count => {
+                    // TODO: 将来最適化で実装
+                    return error.InvalidInstruction;
+                },
+
+                // ═══════════════════════════════════════════════════════
+                // [K] 例外処理（未実装）
+                // ═══════════════════════════════════════════════════════
+                .try_begin, .catch_begin, .finally_begin, .try_end, .throw_ex => {
+                    // TODO: Phase 9 で実装
+                    return error.InvalidInstruction;
+                },
+
+                // ═══════════════════════════════════════════════════════
+                // [L] メタデータ（未実装）
+                // ═══════════════════════════════════════════════════════
+                .with_meta, .meta => {
+                    // TODO: Phase 10 で実装
+                    return error.InvalidInstruction;
+                },
+
+                // ═══════════════════════════════════════════════════════
+                // [Z] 予約・デバッグ
+                // ═══════════════════════════════════════════════════════
                 .nop => {},
+                .debug_print => {
+                    // デバッグ用: スタックトップを表示（現時点では何もしない）
+                    // TODO: デバッグ出力の実装
+                },
             }
         }
     }
