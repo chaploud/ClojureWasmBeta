@@ -7,12 +7,11 @@
 
 ## 前回完了
 
-- Phase 4-5: ツリーウォーク評価器 ✓
-  - Context: ローカルバインディング管理、recur機能
-  - Evaluator: Node → Value 評価
-  - clojure.core 組み込み関数
-  - E2E 統合テスト
-  - ユーザー定義関数とクロージャ
+- Phase 7: CLI ✓
+  - `-e` オプション（式評価）
+  - 複数式の連続評価
+  - 状態保持（def の値を次の -e で使用可能）
+  - BuiltinFn の循環依存を anyopaque で解決
 
 ---
 
@@ -24,11 +23,12 @@
 - macroexpand
 - Analyzer 拡張（マクロ展開）
 
-### Phase 7: CLI
+### Phase 8: Compiler + VM
 
-- `-e` オプション（式評価）
-- 複数式の連続評価
-- 状態保持（def の値を次の -e で使用可能）
+- バイトコード定義
+- Emit（Node → Bytecode）
+- VM 実装
+- eval インターフェースを VMEval に差し替え
 
 ---
 
@@ -39,3 +39,4 @@
 - コレクションは配列ベースの簡易実装（永続データ構造は将来）
 - 複数アリティ fn は未実装（単一アリティのみ）
 - 可変長引数（& rest）は解析のみ、評価は未実装
+- BuiltinFn は value.zig では anyopaque、core.zig で型定義、evaluator.zig でキャスト

@@ -11,9 +11,11 @@ const std = @import("std");
 const value_mod = @import("../runtime/value.zig");
 const Value = value_mod.Value;
 const Fn = value_mod.Fn;
-const BuiltinFn = value_mod.BuiltinFn;
 const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
+
+/// 組み込み関数の型（value.zig との循環依存を避けるためここで定義）
+pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
 
 /// 組み込み関数エラー
 pub const CoreError = error{

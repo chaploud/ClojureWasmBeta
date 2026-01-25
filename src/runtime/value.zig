@@ -245,9 +245,6 @@ pub const PersistentSet = struct {
 
 // === 関数 ===
 
-/// 組み込み関数の型
-pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
-
 /// ユーザー定義関数のアリティ
 pub const FnArityRuntime = struct {
     params: []const []const u8,
@@ -258,13 +255,15 @@ pub const FnArityRuntime = struct {
 /// 関数オブジェクト
 pub const Fn = struct {
     name: ?Symbol = null,
-    builtin: ?BuiltinFn = null,
+    /// 組み込み関数へのポインタ（型安全性のため anyopaque を使用、
+    /// 実際の型は lib/core.zig の BuiltinFn）
+    builtin: ?*const anyopaque = null,
     // ユーザー定義関数用
     arities: ?[]const FnArityRuntime = null,
-    closure_bindings: ?[]const Value = null, // クロージャ環境
+    closure_bindings: ?[]const Value = null, // クロージャ環境（遅延解決）
     meta: ?*const Value = null,
 
-    pub fn initBuiltin(name: []const u8, f: BuiltinFn) Fn {
+    pub fn initBuiltin(name: []const u8, f: *const anyopaque) Fn {
         return .{
             .name = Symbol.init(name),
             .builtin = f,
@@ -274,13 +273,13 @@ pub const Fn = struct {
     /// ユーザー定義関数を作成
     pub fn initUser(
         name: ?[]const u8,
-        arities: []const FnArityRuntime,
-        closure_bindings: ?[]const Value,
+        fn_arities: []const FnArityRuntime,
+        closure_binds: ?[]const Value,
     ) Fn {
         return .{
             .name = if (name) |n| Symbol.init(n) else null,
-            .arities = arities,
-            .closure_bindings = closure_bindings,
+            .arities = fn_arities,
+            .closure_bindings = closure_binds,
         };
     }
 
@@ -291,17 +290,17 @@ pub const Fn = struct {
 
     /// 引数の数に合ったアリティを検索
     pub fn findArity(self: *const Fn, arg_count: usize) ?*const FnArityRuntime {
-        const arities = self.arities orelse return null;
+        const fn_arities = self.arities orelse return null;
 
         // 固定アリティを優先検索
-        for (arities) |*arity| {
+        for (fn_arities) |*arity| {
             if (!arity.variadic and arity.params.len == arg_count) {
                 return arity;
             }
         }
 
         // 可変長アリティを検索
-        for (arities) |*arity| {
+        for (fn_arities) |*arity| {
             if (arity.variadic and arg_count >= arity.params.len - 1) {
                 return arity;
             }
@@ -315,6 +314,7 @@ pub const Fn = struct {
 
 /// Runtime値
 pub const Value = union(enum) {
+
     // === 基本型 ===
     nil,
     bool_val: bool,

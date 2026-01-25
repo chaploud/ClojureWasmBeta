@@ -213,15 +213,15 @@ reader ←── analyzer ←── compiler ←── vm               │
 - [x] ユーザー定義関数（fn クロージャ実装）
 - [x] def された関数の呼び出し
 
-### Phase 6: マクロシステム ← 現在（後回し可）
+### Phase 6: マクロシステム（後回し可）
 - [ ] defmacro
 - [ ] macroexpand
 - [ ] Analyzer 拡張（マクロ展開）
 
-### Phase 7: CLI
-- [ ] `-e` オプション（式評価）
-- [ ] 複数式の連続評価
-- [ ] 状態保持（def の値を次の -e で使用可能）
+### Phase 7: CLI ✓
+- [x] `-e` オプション（式評価）
+- [x] 複数式の連続評価
+- [x] 状態保持（def の値を次の -e で使用可能）
 
 ### Phase 8: Compiler + VM
 - [ ] バイトコード定義

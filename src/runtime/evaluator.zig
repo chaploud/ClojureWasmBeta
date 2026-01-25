@@ -19,6 +19,7 @@ const Env = env_mod.Env;
 const var_mod = @import("var.zig");
 const Var = var_mod.Var;
 const err = @import("../base/error.zig");
+const core = @import("../lib/core.zig");
 
 /// 評価エラー
 pub const EvalError = error{
@@ -165,7 +166,9 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
     return switch (fn_val) {
         .fn_val => |f| blk: {
             // 組み込み関数
-            if (f.builtin) |builtin| {
+            if (f.builtin) |builtin_ptr| {
+                // anyopaque から BuiltinFn にキャスト
+                const builtin: core.BuiltinFn = @ptrCast(@alignCast(builtin_ptr));
                 break :blk builtin(ctx.allocator, args) catch return error.TypeError;
             }
 
