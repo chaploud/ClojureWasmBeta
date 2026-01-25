@@ -3,8 +3,10 @@
 //! Clojure式を評価するコマンドラインツール。
 //!
 //! 使用法:
-//!   clj-wasm -e "(+ 1 2)"              # 式を評価
-//!   clj-wasm -e "(def x 10)" -e "(+ x 5)"  # 複数式を連続評価
+//!   clj-wasm -e "(+ 1 2)"                     # 式を評価
+//!   clj-wasm -e "(def x 10)" -e "(+ x 5)"     # 複数式を連続評価
+//!   clj-wasm --backend=vm -e "(+ 1 2)"        # VMバックエンドで評価
+//!   clj-wasm --compare -e "(+ 1 2)"           # 両バックエンドで評価して比較
 
 const std = @import("std");
 const clj = @import("ClojureWasmBeta");
@@ -14,13 +16,16 @@ const Analyzer = clj.Analyzer;
 const Context = clj.Context;
 const Env = clj.Env;
 const Value = clj.Value;
-const evaluator = clj.evaluator;
+const EvalEngine = clj.EvalEngine;
+const Backend = clj.Backend;
 const core = clj.core;
+const engine_mod = clj.engine;
 
 /// CLI エラー
 const CliError = error{
     NoExpression,
     EmptyInput,
+    InvalidBackend,
 };
 
 pub fn main() !void {
@@ -42,9 +47,11 @@ pub fn main() !void {
     const stdout = &stdout_writer.interface;
     const stderr = &stderr_writer.interface;
 
-    // -e オプションの式を収集
+    // オプション解析
     var expressions: std.ArrayListUnmanaged([]const u8) = .empty;
     defer expressions.deinit(allocator);
+    var backend: Backend = .tree_walk; // デフォルト
+    var compare_mode = false;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -57,6 +64,19 @@ pub fn main() !void {
                 stderr.flush() catch {};
                 std.process.exit(1);
             }
+        } else if (std.mem.startsWith(u8, args[i], "--backend=")) {
+            const backend_str = args[i]["--backend=".len..];
+            if (std.mem.eql(u8, backend_str, "tree_walk") or std.mem.eql(u8, backend_str, "tw")) {
+                backend = .tree_walk;
+            } else if (std.mem.eql(u8, backend_str, "vm")) {
+                backend = .vm;
+            } else {
+                stderr.print("Error: Invalid backend: {s} (use 'tree_walk' or 'vm')\n", .{backend_str}) catch {};
+                stderr.flush() catch {};
+                std.process.exit(1);
+            }
+        } else if (std.mem.eql(u8, args[i], "--compare")) {
+            compare_mode = true;
         } else if (std.mem.eql(u8, args[i], "-h") or std.mem.eql(u8, args[i], "--help")) {
             try printHelp(stdout);
             stdout.flush() catch {};
@@ -86,20 +106,29 @@ pub fn main() !void {
 
     // 各式を評価
     for (expressions.items) |expr| {
-        evalAndPrint(allocator, &env, expr, stdout) catch |err| {
-            stderr.print("Error: {any}\n", .{err}) catch {};
-            stderr.flush() catch {};
-            std.process.exit(1);
-        };
+        if (compare_mode) {
+            runCompare(allocator, &env, expr, stdout, stderr) catch |err| {
+                stderr.print("Error: {any}\n", .{err}) catch {};
+                stderr.flush() catch {};
+                std.process.exit(1);
+            };
+        } else {
+            runWithBackend(allocator, &env, expr, backend, stdout) catch |err| {
+                stderr.print("Error: {any}\n", .{err}) catch {};
+                stderr.flush() catch {};
+                std.process.exit(1);
+            };
+        }
         stdout.flush() catch {};
     }
 }
 
-/// 式を評価して結果を出力
-fn evalAndPrint(
+/// 指定バックエンドで式を評価して結果を出力
+fn runWithBackend(
     allocator: std.mem.Allocator,
     env: *Env,
     source: []const u8,
+    backend: Backend,
     writer: *std.Io.Writer,
 ) !void {
     // Reader
@@ -110,13 +139,51 @@ fn evalAndPrint(
     var analyzer = Analyzer.init(allocator, env);
     const node = try analyzer.analyze(form);
 
-    // Evaluator
-    var ctx = Context.init(allocator, env);
-    const result = try evaluator.run(node, &ctx);
+    // Engine で評価
+    var eng = EvalEngine.init(allocator, env, backend);
+    const result = try eng.run(node);
 
     // 結果を出力
     try printValue(writer, result);
     try writer.writeByte('\n');
+}
+
+/// 両バックエンドで評価して比較
+fn runCompare(
+    allocator: std.mem.Allocator,
+    env: *Env,
+    source: []const u8,
+    writer: *std.Io.Writer,
+    err_writer: *std.Io.Writer,
+) !void {
+    // Reader
+    var reader = Reader.init(allocator, source);
+    const form = try reader.read() orelse return error.EmptyInput;
+
+    // Analyzer
+    var analyzer = Analyzer.init(allocator, env);
+    const node = try analyzer.analyze(form);
+
+    // 両バックエンドで評価
+    const result = try engine_mod.runAndCompare(allocator, env, node);
+
+    // TreeWalk の結果を出力
+    try writer.writeAll("tree_walk: ");
+    try printValue(writer, result.tree_walk);
+    try writer.writeByte('\n');
+
+    // VM の結果を出力
+    try writer.writeAll("vm:        ");
+    try printValue(writer, result.vm);
+    try writer.writeByte('\n');
+
+    // 一致判定
+    if (result.match) {
+        try writer.writeAll("=> MATCH\n");
+    } else {
+        try err_writer.writeAll("=> MISMATCH!\n");
+        err_writer.flush() catch {};
+    }
 }
 
 /// 値を出力
@@ -201,6 +268,8 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
             }
             try writer.writeByte('>');
         },
+        .fn_proto => try writer.writeAll("#<fn-proto>"),
+        .var_val => try writer.writeAll("#<var>"),
     }
 }
 
@@ -213,14 +282,17 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\  clj-wasm [options]
         \\
         \\Options:
-        \\  -e <expr>    Evaluate the expression
-        \\  -h, --help   Show this help message
-        \\  --version    Show version information
+        \\  -e <expr>              Evaluate the expression
+        \\  --backend=<backend>    Select backend: tree_walk (default), vm
+        \\  --compare              Run both backends and compare results
+        \\  -h, --help             Show this help message
+        \\  --version              Show version information
         \\
         \\Examples:
         \\  clj-wasm -e "(+ 1 2 3)"
         \\  clj-wasm -e "(def x 10)" -e "(+ x 5)"
-        \\  clj-wasm -e "(println \"Hello, World!\")"
+        \\  clj-wasm --backend=vm -e "(+ 1 2)"
+        \\  clj-wasm --compare -e "(if true 1 2)"
         \\
     );
 }

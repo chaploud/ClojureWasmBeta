@@ -22,65 +22,16 @@
   - bytecode.zig に完全版 OpCode 定義
   - vm.zig に全 OpCode のスタブ実装
 
+- Phase 8.0.5: 評価エンジン抽象化 ✓
+  - engine.zig 新設（Backend enum, EvalEngine struct）
+  - CLI --backend=tree_walk|vm オプション
+  - CLI --compare オプション（両バックエンドで実行して比較）
+  - test_e2e.zig 統合（evalWithBackend, evalBothAndCompare）
+  - 両バックエンド比較テスト追加
+
 ---
 
 ## 次回タスク
-
-### Phase 8.0.5: 評価エンジン抽象化レイヤー（優先）
-
-**目的**: TreeWalk と VM の並行開発を可能にする
-
-**背景**:
-- 現状は evaluator.zig (TreeWalk) と vm.zig (VM) が独立
-- main.zig は TreeWalk にハードコード
-- テストも別関数で分離
-- 片方だけ修正してバグが不一致になるリスク
-
-**実装内容**:
-
-1. **engine.zig 新設** (~50行)
-   - Backend enum: tree_walk, vm
-   - EvalEngine struct: バックエンド切り替え
-
-2. **main.zig 修正** (~20行)
-   - `--backend=tree_walk|vm` オプション追加
-   - デフォルトは tree_walk（安定版）
-
-3. **test_e2e.zig 統合** (~100行)
-   - 同じテストを両バックエンドで実行
-   - 結果の一致を検証
-
-4. **ベンチマーク対応**
-   - build.zig に benchmark ステップ追加
-   - リリースビルド済みバイナリを直接実行
-   - 注: zig build run はコンパイル時間が加算されるため使わない
-
-**CLI オプション設計**:
-```bash
-# 通常実行（デフォルト: tree_walk）
-clj-wasm -e "(+ 1 2)"
-
-# バックエンド指定
-clj-wasm --backend=vm -e "(+ 1 2)"
-clj-wasm --backend=tree_walk -e "(+ 1 2)"
-
-# 両方で実行して比較（開発用）
-clj-wasm --compare -e "(+ 1 2)"
-```
-
-**ベンチマーク考慮**:
-- `zig build run` はコンパイル時間が含まれる → 使わない
-- リリースビルド済みバイナリを直接実行
-- `zig build -Doptimize=ReleaseFast` でビルド
-- `./zig-out/bin/clj-wasm` を hyperfine 等で計測
-
-**完了条件**:
-- [ ] engine.zig が両バックエンドを切り替え可能
-- [ ] main.zig が --backend オプションを受け付ける
-- [ ] test_e2e.zig が両バックエンドでテスト実行
-- [ ] 既存テストがすべて通る
-
----
 
 ### Phase 8.1: クロージャ完成
 

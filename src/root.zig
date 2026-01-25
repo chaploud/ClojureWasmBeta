@@ -66,6 +66,10 @@ pub const Context = context.Context;
 
 pub const evaluator = @import("runtime/evaluator.zig");
 
+pub const engine = @import("runtime/engine.zig");
+pub const EvalEngine = engine.EvalEngine;
+pub const Backend = engine.Backend;
+
 // === 標準ライブラリ ===
 pub const core = @import("lib/core.zig");
 

@@ -229,11 +229,11 @@ reader ←── analyzer ←── compiler ←── vm               │
 - [x] VM 実装（基盤）- スタックベース、フレーム管理
 - [x] OpCode 完全設計（約50個、カテゴリ別予約）
 
-#### Phase 8.0.5: 評価エンジン抽象化（次）
-- [ ] engine.zig 新設（Backend切り替え）
-- [ ] CLI --backend オプション
-- [ ] テスト統合（両バックエンドで実行・比較）
-- [ ] ベンチマーク対応（リリースビルド直接実行）
+#### Phase 8.0.5: 評価エンジン抽象化 ✓
+- [x] engine.zig 新設（Backend切り替え）
+- [x] CLI --backend オプション
+- [x] テスト統合（両バックエンドで実行・比較）
+- [ ] ベンチマーク対応（リリースビルド直接実行）- 将来
 
 #### Phase 8.1: クロージャ完成
 - [ ] upvalue_load, upvalue_store

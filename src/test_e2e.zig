@@ -2,6 +2,8 @@
 //!
 //! Reader → Analyzer → Evaluator の統合テスト。
 //! 文字列から式を評価して結果を検証。
+//!
+//! 両バックエンド（TreeWalk / VM）でのテスト実行をサポート。
 
 const std = @import("std");
 const reader_mod = @import("reader/reader.zig");
@@ -16,9 +18,21 @@ const Env = env_mod.Env;
 const context_mod = @import("runtime/context.zig");
 const Context = context_mod.Context;
 const core = @import("lib/core.zig");
+const engine_mod = @import("runtime/engine.zig");
+const EvalEngine = engine_mod.EvalEngine;
+const Backend = engine_mod.Backend;
 
-/// 式を文字列から評価
+// ============================================================
+// 評価ヘルパー
+// ============================================================
+
+/// 式を文字列から評価（TreeWalk）
 fn evalExpr(allocator: std.mem.Allocator, env: *Env, source: []const u8) !Value {
+    return evalWithBackend(allocator, env, source, .tree_walk);
+}
+
+/// 指定バックエンドで式を評価
+fn evalWithBackend(allocator: std.mem.Allocator, env: *Env, source: []const u8, backend: Backend) !Value {
     // Reader
     var rdr = Reader.init(allocator, source);
     const form = try rdr.read() orelse return error.EmptyInput;
@@ -27,9 +41,30 @@ fn evalExpr(allocator: std.mem.Allocator, env: *Env, source: []const u8) !Value 
     var analyzer = Analyzer.init(allocator, env);
     const node = try analyzer.analyze(form);
 
-    // Evaluator
-    var ctx = Context.init(allocator, env);
-    return evaluator_mod.run(node, &ctx);
+    // Engine
+    var eng = EvalEngine.init(allocator, env, backend);
+    return eng.run(node);
+}
+
+/// 両バックエンドで評価して一致を検証
+fn evalBothAndCompare(allocator: std.mem.Allocator, env: *Env, source: []const u8) !Value {
+    // Reader
+    var rdr = Reader.init(allocator, source);
+    const form = try rdr.read() orelse return error.EmptyInput;
+
+    // Analyzer
+    var analyzer = Analyzer.init(allocator, env);
+    const node = try analyzer.analyze(form);
+
+    // 両バックエンドで実行
+    const result = try engine_mod.runAndCompare(allocator, env, node);
+
+    // 一致を検証（VM が動作する場合のみ）
+    if (result.vm != .nil or result.tree_walk == .nil) {
+        try std.testing.expect(result.match);
+    }
+
+    return result.tree_walk;
 }
 
 /// 式を評価して整数を期待
@@ -47,6 +82,24 @@ fn expectBool(allocator: std.mem.Allocator, env: *Env, source: []const u8, expec
 /// 式を評価して nil を期待
 fn expectNil(allocator: std.mem.Allocator, env: *Env, source: []const u8) !void {
     const result = try evalExpr(allocator, env, source);
+    try std.testing.expectEqual(Value.nil, result);
+}
+
+/// 両バックエンドで整数を期待
+fn expectIntBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8, expected: i64) !void {
+    const result = try evalBothAndCompare(allocator, env, source);
+    try std.testing.expectEqual(Value{ .int = expected }, result);
+}
+
+/// 両バックエンドで真偽値を期待
+fn expectBoolBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8, expected: bool) !void {
+    const result = try evalBothAndCompare(allocator, env, source);
+    try std.testing.expectEqual(Value{ .bool_val = expected }, result);
+}
+
+/// 両バックエンドで nil を期待
+fn expectNilBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8) !void {
+    const result = try evalBothAndCompare(allocator, env, source);
     try std.testing.expectEqual(Value.nil, result);
 }
 
@@ -321,36 +374,8 @@ test "e2e: マクロ" {
 }
 
 // ============================================================
-// VM テスト
+// VM テスト（engine 経由）
 // ============================================================
-
-const emit_mod = @import("compiler/emit.zig");
-const Compiler = emit_mod.Compiler;
-const bytecode_mod = @import("compiler/bytecode.zig");
-const OpCode = bytecode_mod.OpCode;
-const vm_mod = @import("vm/vm.zig");
-const VM = vm_mod.VM;
-
-/// Node をコンパイルして VM で実行
-fn vmEval(allocator: std.mem.Allocator, env: *Env, source: []const u8) !Value {
-    // Reader
-    var rdr = Reader.init(allocator, source);
-    const form = try rdr.read() orelse return error.EmptyInput;
-
-    // Analyzer
-    var analyzer = Analyzer.init(allocator, env);
-    const node = try analyzer.analyze(form);
-
-    // Compiler
-    var compiler = Compiler.init(allocator);
-    defer compiler.deinit();
-    try compiler.compile(node);
-    try compiler.chunk.emitOp(OpCode.ret);
-
-    // VM
-    var vm = VM.init(allocator, env);
-    return vm.run(&compiler.chunk);
-}
 
 test "vm: 定数" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -361,18 +386,18 @@ test "vm: 定数" {
     defer env.deinit();
 
     // 整数
-    const result1 = try vmEval(allocator, &env, "42");
+    const result1 = try evalWithBackend(allocator, &env, "42", .vm);
     try std.testing.expect(result1.eql(Value{ .int = 42 }));
 
     // nil
-    const result2 = try vmEval(allocator, &env, "nil");
+    const result2 = try evalWithBackend(allocator, &env, "nil", .vm);
     try std.testing.expect(result2.isNil());
 
     // true/false
-    const result3 = try vmEval(allocator, &env, "true");
+    const result3 = try evalWithBackend(allocator, &env, "true", .vm);
     try std.testing.expect(result3.eql(Value{ .bool_val = true }));
 
-    const result4 = try vmEval(allocator, &env, "false");
+    const result4 = try evalWithBackend(allocator, &env, "false", .vm);
     try std.testing.expect(result4.eql(Value{ .bool_val = false }));
 }
 
@@ -385,15 +410,15 @@ test "vm: if" {
     defer env.deinit();
 
     // true ブランチ
-    const result1 = try vmEval(allocator, &env, "(if true 1 2)");
+    const result1 = try evalWithBackend(allocator, &env, "(if true 1 2)", .vm);
     try std.testing.expect(result1.eql(Value{ .int = 1 }));
 
     // false ブランチ
-    const result2 = try vmEval(allocator, &env, "(if false 1 2)");
+    const result2 = try evalWithBackend(allocator, &env, "(if false 1 2)", .vm);
     try std.testing.expect(result2.eql(Value{ .int = 2 }));
 
     // else なし
-    const result3 = try vmEval(allocator, &env, "(if false 1)");
+    const result3 = try evalWithBackend(allocator, &env, "(if false 1)", .vm);
     try std.testing.expect(result3.isNil());
 }
 
@@ -406,9 +431,53 @@ test "vm: 関数呼び出し（組み込み）" {
     defer env.deinit();
 
     // 算術演算
-    const result1 = try vmEval(allocator, &env, "(+ 1 2)");
+    const result1 = try evalWithBackend(allocator, &env, "(+ 1 2)", .vm);
     try std.testing.expect(result1.eql(Value{ .int = 3 }));
 
-    const result2 = try vmEval(allocator, &env, "(* 3 4)");
+    const result2 = try evalWithBackend(allocator, &env, "(* 3 4)", .vm);
     try std.testing.expect(result2.eql(Value{ .int = 12 }));
+}
+
+// ============================================================
+// 両バックエンド比較テスト
+// ============================================================
+
+test "compare: 定数" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectIntBoth(allocator, &env, "42", 42);
+    try expectBoolBoth(allocator, &env, "true", true);
+    try expectBoolBoth(allocator, &env, "false", false);
+    try expectNilBoth(allocator, &env, "nil");
+}
+
+test "compare: if" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectIntBoth(allocator, &env, "(if true 1 2)", 1);
+    try expectIntBoth(allocator, &env, "(if false 1 2)", 2);
+    try expectNilBoth(allocator, &env, "(if false 1)");
+}
+
+test "compare: 関数呼び出し（組み込み）" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectIntBoth(allocator, &env, "(+ 1 2)", 3);
+    try expectIntBoth(allocator, &env, "(* 3 4)", 12);
+    try expectIntBoth(allocator, &env, "(- 10 3)", 7);
 }
