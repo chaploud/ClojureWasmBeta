@@ -227,9 +227,23 @@ reader ←── analyzer ←── compiler ←── vm               │
 - [x] バイトコード定義（OpCode, Instruction, Chunk, FnProto）
 - [x] Emit（Node → Bytecode）- Compiler 構造体
 - [x] VM 実装（基盤）- スタックベース、フレーム管理
-- [ ] eval インターフェースを VMEval に差し替え
-- [ ] ユーザー定義関数の完全対応
-- [ ] クロージャのキャプチャ処理
+- [x] OpCode 完全設計（約50個、カテゴリ別予約）
+
+#### Phase 8.0.5: 評価エンジン抽象化（次）
+- [ ] engine.zig 新設（Backend切り替え）
+- [ ] CLI --backend オプション
+- [ ] テスト統合（両バックエンドで実行・比較）
+- [ ] ベンチマーク対応（リリースビルド直接実行）
+
+#### Phase 8.1: クロージャ完成
+- [ ] upvalue_load, upvalue_store
+- [ ] ユーザー定義関数の VM 実行
+
+#### Phase 8.2: コレクションリテラル
+- [ ] vec_new, map_new, set_new, list_new
+
+#### Phase 8.3: 末尾呼び出し最適化
+- [ ] tail_call, apply
 
 ### Phase 9: GC
 - [ ] Mark-Sweep GC
