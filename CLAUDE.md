@@ -21,9 +21,8 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 
 | パス | 内容 | 参照タイミング |
 |-----|------|--------------|
-| `.claude/tracking/memo.md` | 申し送り・次回タスク | 毎セッション（必須） |
-| `ITERATION.md` | バックログ・完了履歴 | フェーズ移行時 |
-| `docs/reference/architecture.md` | 全体アーキテクチャ | 必要時のみ |
+| `.claude/tracking/memo.md` | 前回完了・次回タスク・注意点 | 毎セッション（必須） |
+| `docs/reference/architecture.md` | ロードマップ・全体設計 | フェーズ移行時・設計確認時 |
 | `docs/reference/type_design.md` | 3フェーズ型設計 | 必要時のみ |
 | `docs/reference/zig_guide.md` | Zig高速化テクニック | 必要時のみ |
 | `status/tokens.yaml` | トークン対応状況 | Reader実装時 |

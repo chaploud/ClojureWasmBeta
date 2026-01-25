@@ -1,7 +1,7 @@
 # アーキテクチャ設計
 
 ClojureWasmBeta の全体アーキテクチャ。
-3フェーズ処理、バイトコードVM、GC、Wasm連携を含む。
+ツリーウォーク評価器から始め、将来的にバイトコードVM、GC、Wasm連携へ拡張。
 
 ## 処理フロー
 
@@ -21,15 +21,9 @@ Source Code
 └──────────────────────────────────────────────────────────────┘
      ↓ Node
 ┌──────────────────────────────────────────────────────────────┐
-│ src/compiler/ (将来)                                          │
-│   Emit → Optimize → Bytecode                                  │
-│   バイトコード生成と最適化                                    │
-└──────────────────────────────────────────────────────────────┘
-     ↓ Bytecode
-┌──────────────────────────────────────────────────────────────┐
-│ src/vm/ (将来)                                                │
-│   VM → Value                                                  │
-│   バイトコード実行                                            │
+│ src/runtime/                                                  │
+│   TreeWalkEval (Phase 4) または VMEval (Phase 8)              │
+│   Node を評価して Value を生成                                │
 └──────────────────────────────────────────────────────────────┘
      ↓ Value
 ┌──────────────────────────────────────────────────────────────┐
@@ -38,6 +32,28 @@ Source Code
 │   .wasm ロード、関数呼び出し、型変換                          │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+## 設計方針: ツリーウォーク → バイトコードVM
+
+最初はツリーウォーク型インタプリタで実装し、後にバイトコードVMへ移行する。
+
+**ツリーウォークを先にする理由:**
+- 実装がシンプルでデバッグしやすい
+- Clojure の正しい振る舞いを確認しやすい
+- sci（Small Clojure Interpreter）も同様のアプローチ
+
+**二度手間を避ける設計:**
+```
+Form → Analyzer → Node → [eval インターフェース] → Value
+                              ↑
+                    ┌─────────┴─────────┐
+                    │                   │
+              TreeWalkEval          VMEval
+              (Phase 4)            (Phase 8)
+```
+
+- Analyzer (Form → Node) は共通
+- eval を抽象化し、後から差し替え可能に
 
 ## ディレクトリ構成
 
@@ -50,7 +66,7 @@ src/
 │
 ├── reader/             # Phase 1: Source → Form
 │   ├── tokenizer.zig   # トークン化
-│   ├── reader.zig      # S式構築 (将来)
+│   ├── reader.zig      # S式構築
 │   └── form.zig        # Form型定義
 │
 ├── analyzer/           # Phase 2: Form → Node
@@ -170,15 +186,91 @@ reader ←── analyzer ←── compiler ←── vm               │
                        lib
 ```
 
-## 実装優先順位
+## ロードマップ
 
-1. **Phase 1**: Reader (tokenizer, reader, form) ← 現在
-2. **Phase 2**: Runtime (value, var, namespace) + 簡易評価器
-3. **Phase 3**: Analyzer (node, analyze, macroexpand)
-4. **Phase 4**: lib/core.zig (基本関数)
-5. **Phase 5**: VM (bytecode, vm)
-6. **Phase 6**: GC (mark-sweep)
-7. **Phase 7**: Wasm Component Model
+### Phase 1: Reader ← 現在
+- [x] Tokenizer
+- [x] Form 設計
+- [ ] Reader（S式構築）
+
+### Phase 2: Runtime 基盤
+- [ ] Value 型
+- [ ] Var, Namespace
+- [ ] Env（グローバル環境）
+
+### Phase 3: Analyzer
+- [ ] Node 型
+- [ ] special forms（if, let, fn, def, do, quote）
+- [ ] シンボル解決
+
+### Phase 4: ツリーウォーク評価器
+- [ ] eval インターフェース
+- [ ] TreeWalkEval 実装
+
+### Phase 5: clojure.core 基本関数
+- [ ] 算術: +, -, *, /
+- [ ] コレクション: first, rest, cons, conj
+- [ ] 述語: nil?, number?, etc.
+
+### Phase 6: マクロシステム
+- [ ] defmacro
+- [ ] macroexpand
+- [ ] Analyzer 拡張（マクロ展開）
+
+### Phase 7: CLI
+- [ ] `-e` オプション（式評価）
+- [ ] 複数式の連続評価
+- [ ] 状態保持（def の値を次の -e で使用可能）
+
+### Phase 8: Compiler + VM
+- [ ] バイトコード定義
+- [ ] Emit（Node → Bytecode）
+- [ ] VM 実装
+- [ ] eval インターフェースを VMEval に差し替え
+
+### Phase 9: GC
+- [ ] Mark-Sweep GC
+- [ ] Arena から移行
+
+### Phase 10: Wasm 連携
+- [ ] Component Model 対応
+- [ ] .wasm ロード・呼び出し
+- [ ] 型マッピング（Clojure ↔ Wasm）
+
+### 後回し
+- **互換性テスト基盤** - 本家 Clojure との入出力比較
+- **REPL** - Phase 7 以降、必要に応じて
+
+---
+
+## マクロシステムについて
+
+マクロ展開には循環依存がある:
+- `macroexpand` にはマクロ関数の **eval** が必要
+- `analyze` には `macroexpand` が必要
+
+**解決策:** Phase 3 では special forms のみ対応し、Phase 6 でマクロを追加。
+基本的な eval が動いてからマクロシステムを導入する。
+
+---
+
+## CLI について
+
+本家 `clj` コマンドの挙動を参考にする:
+
+```bash
+clj -M -e "(def x 10)" -e "(+ x 5)"
+# => #'user/x
+# => 15
+
+clj -M -e "(do (println \"hello\") 42)"
+# => hello
+# => 42
+```
+
+- 各 `-e` の評価値を出力
+- 副作用（println 等）は発生時に出力
+- 複数 `-e` 間で状態保持
 
 ## 参考資料
 

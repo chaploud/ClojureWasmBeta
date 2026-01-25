@@ -1,7 +1,16 @@
-# 作業メモ
+# セッションメモ
 
-> セッション間の申し送り + 次回タスク計画
-> 古い申し送りは削除して肥大化を防ぐ
+> 前回完了・次回タスク・技術メモ
+> 古い内容は削除して肥大化を防ぐ
+
+---
+
+## 前回完了
+
+- Tokenizer 実装完了
+- Form 設計完了
+- ディレクトリ構造設計（3フェーズアーキテクチャ）
+- Claude Code 基盤整備
 
 ---
 
@@ -31,30 +40,11 @@
 
 ---
 
-## 申し送り
+## 注意点
 
-### 完了した設計（2025-01-25）
+### Zig 0.15.2 落とし穴
 
-- **3フェーズアーキテクチャ**: Form → Node → Value
-- **ディレクトリ構造**: base/, reader/, analyzer/, runtime/, lib/ + 将来用スタブ
-- **Tokenizer**: 完了（tokens.yaml の partial 項目は Reader で検証）
-
-### Zig 0.15.2 注意点
-
-CLAUDE.md の「落とし穴」セクション参照:
+CLAUDE.md の「Zig 0.15.2 ガイド」参照:
 - stdout はバッファ付き writer 必須
 - format メソッド持ち型の `{}` は ambiguous
 - tagged union の `==` 比較は switch で
-
-### 技術的負債
-
-（現時点ではなし）
-
----
-
-## 参照ドキュメント
-
-必要時のみ参照（コンテキスト節約）:
-- `ITERATION.md` - バックログ全体
-- `docs/reference/architecture.md` - アーキテクチャ詳細
-- `docs/reference/type_design.md` - 型設計

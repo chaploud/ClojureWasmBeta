@@ -23,11 +23,10 @@ git status
 ```
 
 Read ツールで読む:
-- `.claude/tracking/memo.md` - 申し送り・次回タスク
+- `.claude/tracking/memo.md` - 前回完了・次回タスク・注意点
 
 > **必要時のみ参照**（コンテキスト節約）:
-> - `ITERATION.md` - バックログ全体
-> - `docs/reference/architecture.md` - アーキテクチャ詳細
+> - `docs/reference/architecture.md` - アーキテクチャ・ロードマップ
 
 ## 2. イテレーション実行
 
@@ -41,7 +40,7 @@ Read ツールで読む:
    - 新しい警告やエラーがないか
 5. **記録更新**:
    - `status/*.yaml` を更新（todo → done）
-   - memo.md に完了記録と次回タスクを更新
+   - memo.md の「前回完了」「次回タスク」を更新
 6. **コミット**: 意味のある単位で `git commit`
 7. **次へ**: 次のタスクに進む
 
@@ -63,7 +62,7 @@ Read ツールで読む:
 
 現フェーズのタスクが完了したら:
 
-1. ITERATION.md のバックログから次フェーズを確認
+1. architecture.md のロードマップで次フェーズを確認
 2. memo.md に次フェーズの最初のタスクを記載
 3. ユーザーに報告
 
