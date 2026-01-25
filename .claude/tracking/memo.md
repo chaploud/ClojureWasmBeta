@@ -7,31 +7,24 @@
 
 ## 前回完了
 
-- Phase 4: ツリーウォーク評価器
+- Phase 4: ツリーウォーク評価器 ✓
   - Context: ローカルバインディング管理、recur機能
   - Evaluator: Node → Value 評価
   - clojure.core 組み込み関数
-    - 算術: +, -, *, /
-    - 比較: =, <, >, <=, >=
-    - 述語: nil?, number?, integer?, float?, string?, keyword?, symbol?, fn?, coll?, list?, vector?, map?, set?, empty?
-    - コレクション: first, rest, cons, conj, count, nth
-    - 出力: println, pr-str
+  - E2E 統合テスト
 
 ---
 
 ## 次回タスク
 
-### Phase 5: E2E テスト
+### Phase 5: ユーザー定義関数
 
-1. **統合テスト**
-   - Reader → Analyzer → Evaluator の一連の流れをテスト
-   - `(+ 1 2 3)` → `6` のような式を文字列から評価
+1. **fn クロージャ完全実装**
+   - 現在は nil を返す仮実装
+   - クロージャ環境のキャプチャ
+   - ユーザー定義関数の呼び出し
 
-2. **ユーザー定義関数**
-   - fn のクロージャ完全実装
-   - 関数呼び出しでのローカルバインディング
-
-3. **def された関数の呼び出し**
+2. **def された関数の呼び出し**
    - `(def inc (fn [x] (+ x 1)))` → `(inc 5)` → `6`
 
 ### Phase 6: マクロシステム（後回し可）
@@ -54,4 +47,4 @@
 - マップ/セットは Reader で nil を返す仮実装
 - コレクションは配列ベースの簡易実装（永続データ構造は将来）
 - 複数アリティ fn は未実装
-- fn のクロージャは仮実装（nil を返す）
+- fn のクロージャは仮実装（nil を返す）← 次のタスク
