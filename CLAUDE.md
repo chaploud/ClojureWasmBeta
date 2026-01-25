@@ -104,6 +104,36 @@ return self == .nil;
 return switch (self) { .nil => true, else => false };
 ```
 
+## 評価エンジン（並行開発）
+
+**2つのバックエンドを並行開発**:
+- **TreeWalk** (`evaluator.zig`): 安定版、デバッグしやすい
+- **BytecodeVM** (`vm.zig` + `compiler/`): 高速化目標
+
+**engine.zig** で抽象化し、切り替え可能:
+```zig
+var eng = EvalEngine.init(allocator, env, .tree_walk);  // or .vm
+const result = try eng.run(node);
+```
+
+**CLI オプション**:
+```bash
+# デフォルト（tree_walk）
+./zig-out/bin/ClojureWasmBeta -e "(+ 1 2)"
+
+# VM バックエンド
+./zig-out/bin/ClojureWasmBeta --backend=vm -e "(+ 1 2)"
+
+# 両方で実行して比較（開発時に有用）
+./zig-out/bin/ClojureWasmBeta --compare -e "(+ 1 2)"
+```
+
+**開発指針**:
+- 新機能は**まず TreeWalk で実装**（動作確認しやすい）
+- TreeWalk で動いたら VM にも実装
+- `--compare` で両バックエンドの結果一致を検証
+- ベンチマークは `zig build -Doptimize=ReleaseFast` 後、バイナリ直接実行
+
 ## 設計原則
 
 - **comptime**: テーブル類はコンパイル時構築
