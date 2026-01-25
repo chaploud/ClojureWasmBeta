@@ -296,3 +296,119 @@ test "e2e: def された関数" {
     _ = try evalExpr(allocator, &env, "(def square (fn [x] (* x x)))");
     try expectInt(allocator, &env, "(+ (square 3) (square 4))", 25);
 }
+
+test "e2e: マクロ" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // when マクロ
+    _ = try evalExpr(allocator, &env, "(defmacro when [test body] (list 'if test body nil))");
+    try expectInt(allocator, &env, "(when true 42)", 42);
+    try expectNil(allocator, &env, "(when false 42)");
+
+    // unless マクロ
+    _ = try evalExpr(allocator, &env, "(defmacro unless [test body] (list 'if test nil body))");
+    try expectInt(allocator, &env, "(unless false 100)", 100);
+    try expectNil(allocator, &env, "(unless true 100)");
+
+    // マクロ内で変数を使用
+    _ = try evalExpr(allocator, &env, "(def x 10)");
+    try expectInt(allocator, &env, "(when true x)", 10);
+}
+
+// ============================================================
+// VM テスト
+// ============================================================
+
+const emit_mod = @import("compiler/emit.zig");
+const Compiler = emit_mod.Compiler;
+const bytecode_mod = @import("compiler/bytecode.zig");
+const OpCode = bytecode_mod.OpCode;
+const vm_mod = @import("vm/vm.zig");
+const VM = vm_mod.VM;
+
+/// Node をコンパイルして VM で実行
+fn vmEval(allocator: std.mem.Allocator, env: *Env, source: []const u8) !Value {
+    // Reader
+    var rdr = Reader.init(allocator, source);
+    const form = try rdr.read() orelse return error.EmptyInput;
+
+    // Analyzer
+    var analyzer = Analyzer.init(allocator, env);
+    const node = try analyzer.analyze(form);
+
+    // Compiler
+    var compiler = Compiler.init(allocator);
+    defer compiler.deinit();
+    try compiler.compile(node);
+    try compiler.chunk.emitOp(OpCode.ret);
+
+    // VM
+    var vm = VM.init(allocator, env);
+    return vm.run(&compiler.chunk);
+}
+
+test "vm: 定数" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 整数
+    const result1 = try vmEval(allocator, &env, "42");
+    try std.testing.expect(result1.eql(Value{ .int = 42 }));
+
+    // nil
+    const result2 = try vmEval(allocator, &env, "nil");
+    try std.testing.expect(result2.isNil());
+
+    // true/false
+    const result3 = try vmEval(allocator, &env, "true");
+    try std.testing.expect(result3.eql(Value{ .bool_val = true }));
+
+    const result4 = try vmEval(allocator, &env, "false");
+    try std.testing.expect(result4.eql(Value{ .bool_val = false }));
+}
+
+test "vm: if" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // true ブランチ
+    const result1 = try vmEval(allocator, &env, "(if true 1 2)");
+    try std.testing.expect(result1.eql(Value{ .int = 1 }));
+
+    // false ブランチ
+    const result2 = try vmEval(allocator, &env, "(if false 1 2)");
+    try std.testing.expect(result2.eql(Value{ .int = 2 }));
+
+    // else なし
+    const result3 = try vmEval(allocator, &env, "(if false 1)");
+    try std.testing.expect(result3.isNil());
+}
+
+test "vm: 関数呼び出し（組み込み）" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 算術演算
+    const result1 = try vmEval(allocator, &env, "(+ 1 2)");
+    try std.testing.expect(result1.eql(Value{ .int = 3 }));
+
+    const result2 = try vmEval(allocator, &env, "(* 3 4)");
+    try std.testing.expect(result2.eql(Value{ .int = 12 }));
+}

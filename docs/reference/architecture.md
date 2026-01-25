@@ -213,21 +213,23 @@ reader ←── analyzer ←── compiler ←── vm               │
 - [x] ユーザー定義関数（fn クロージャ実装）
 - [x] def された関数の呼び出し
 
-### Phase 6: マクロシステム（後回し可）
-- [ ] defmacro
-- [ ] macroexpand
-- [ ] Analyzer 拡張（マクロ展開）
+### Phase 6: マクロシステム ✓
+- [x] defmacro
+- [x] macroexpand（Analyzer内で自動展開）
+- [x] Analyzer 拡張（マクロ展開）
 
 ### Phase 7: CLI ✓
 - [x] `-e` オプション（式評価）
 - [x] 複数式の連続評価
 - [x] 状態保持（def の値を次の -e で使用可能）
 
-### Phase 8: Compiler + VM
-- [ ] バイトコード定義
-- [ ] Emit（Node → Bytecode）
-- [ ] VM 実装
+### Phase 8: Compiler + VM (進行中)
+- [x] バイトコード定義（OpCode, Instruction, Chunk, FnProto）
+- [x] Emit（Node → Bytecode）- Compiler 構造体
+- [x] VM 実装（基盤）- スタックベース、フレーム管理
 - [ ] eval インターフェースを VMEval に差し替え
+- [ ] ユーザー定義関数の完全対応
+- [ ] クロージャのキャプチャ処理
 
 ### Phase 9: GC
 - [ ] Mark-Sweep GC

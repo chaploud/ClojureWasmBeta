@@ -7,28 +7,23 @@
 
 ## 前回完了
 
-- Phase 7: CLI ✓
-  - `-e` オプション（式評価）
-  - 複数式の連続評価
-  - 状態保持（def の値を次の -e で使用可能）
-  - BuiltinFn の循環依存を anyopaque で解決
+- Phase 8: Compiler + VM（基盤）✓
+  - バイトコード定義（OpCode, Instruction, Chunk, FnProto）
+  - Emit（Node → Bytecode）- Compiler 構造体
+  - VM 実装 - スタックベース、フレーム管理
+  - Value に fn_proto, var_val を追加
+  - E2E テスト追加（VM 経由の評価）
 
 ---
 
 ## 次回タスク
 
-### Phase 6: マクロシステム（後回し可）
+### Phase 8 続き: VM 完全化
 
-- defmacro
-- macroexpand
-- Analyzer 拡張（マクロ展開）
-
-### Phase 8: Compiler + VM
-
-- バイトコード定義
-- Emit（Node → Bytecode）
-- VM 実装
-- eval インターフェースを VMEval に差し替え
+- eval インターフェースを抽象化（TreeWalk / VM 切り替え）
+- ユーザー定義関数の VM 実行
+- クロージャのキャプチャ処理
+- recur/loop の VM 実装
 
 ---
 
@@ -40,3 +35,5 @@
 - 複数アリティ fn は未実装（単一アリティのみ）
 - 可変長引数（& rest）は解析のみ、評価は未実装
 - BuiltinFn は value.zig では anyopaque、core.zig で型定義、evaluator.zig でキャスト
+- char_val は Form に対応していない（valueToForm でエラー）
+- VM でのユーザー定義関数実行は未完成（組み込み関数のみ動作）
