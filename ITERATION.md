@@ -42,5 +42,7 @@
 ## イテレーション終了チェックリスト
 
 - [ ] このファイルを更新した
+- [ ] 実装したら `status/*.yaml` を更新した（todo → wip → done）
 - [ ] CLAUDE.md の変更があれば更新した
 - [ ] `git add` → `git commit` した（意味のある単位で）
+- [ ] `yamllint status/*.yaml` でエラーなし確認

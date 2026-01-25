@@ -3,9 +3,11 @@ zig-out/
 zig-cache/
 .zig-cache/
 
-# Editor
+# Editor/IDE
 .vscode/
 .idea/
+.clj-kondo/
+.lsp/
 *.swp
 *.swo
 *~
