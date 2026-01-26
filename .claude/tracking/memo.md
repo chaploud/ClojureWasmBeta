@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.13 バグ修正・安定化 完了**
+**Phase 8.14 マルチメソッド (defmulti/defmethod) 完了**
 
 ### 完了した機能
 
@@ -31,6 +31,7 @@
 | 8.11 | キーワードを関数として使用: `(:a {:a 1})` → `1` |
 | 8.12 | every?/some/not-every?/not-any? + VMスタック管理修正 |
 | 8.13 | バグ修正・安定化（エラー型保全, VM try/catch, comp, finally） |
+| 8.14 | マルチメソッド (defmulti, defmethod) + :default フォールバック |
 
 ### 組み込み関数
 
@@ -65,6 +66,7 @@ Atom: atom, deref, reset!, swap!
 高階: apply, partial, comp, reduce, map, filter
 例外: try, throw
 Atom: swap!
+マルチメソッド: defmulti, defmethod
 ```
 
 ### 組み込みマクロ
@@ -93,7 +95,6 @@ Atom: swap!
 - プロトコル (defprotocol, extend-type)
 - LazySeq（真の遅延シーケンス）
 - 正規表現
-- マルチメソッド (defmulti, defmethod)
 - letfn（相互再帰ローカル関数）
 
 ---
@@ -175,6 +176,12 @@ Atom: swap!
 - condp: `(pred test-val expr)` の順で呼び出し（Clojure互換）
 - some->/some->>: 再帰的に let+if+nil? チェーンに展開
 - as->: 連続 let バインディングに展開
+
+### マルチメソッド
+- MultiFn 型: dispatch_fn + methods (PersistentMap) + default_method
+- defmulti/defmethod は専用 Node 型 (DefmultiNode, DefmethodNode) + 専用 OpCode (0x44, 0x45)
+- :default キーワードのディスパッチ値は default_method フィールドに格納
+- compare モードの E2E テストでは defmulti/defmethod と呼び出しを同一 do ブロック内に記述（バックエンド毎に独自の MultiFn が必要なため）
 
 ### CLI テスト時の注意
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

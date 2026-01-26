@@ -238,6 +238,12 @@ pub const VM = struct {
                 .def_macro => {
                     try self.runDef(constants[instr.operand], true);
                 },
+                .defmulti => {
+                    try self.runDefmulti(constants[instr.operand]);
+                },
+                .defmethod => {
+                    try self.runDefmethod(constants[instr.operand]);
+                },
 
                 // ═══════════════════════════════════════════════════════
                 // [F] 制御フロー
@@ -674,6 +680,38 @@ pub const VM = struct {
                 self.sp = fn_idx;
                 try self.push(result);
             },
+            .multi_fn => |mf| {
+                // マルチメソッド呼び出し
+                // 引数をローカルコピー
+                const args = self.stack[fn_idx + 1 .. self.sp];
+                const args_copy = self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
+                defer self.allocator.free(args_copy);
+                @memcpy(args_copy, args);
+
+                // スタックを巻き戻し
+                self.sp = fn_idx;
+
+                // ディスパッチ関数を呼び出し
+                try self.push(mf.dispatch_fn);
+                for (args_copy) |arg| {
+                    try self.push(arg);
+                }
+                try self.callValue(arg_count);
+
+                // ディスパッチ結果を取得
+                const dispatch_result = self.pop();
+
+                // メソッドを検索
+                const method = mf.methods.get(dispatch_result) orelse
+                    mf.default_method orelse return error.TypeError;
+
+                // メソッドを呼び出し
+                try self.push(method);
+                for (args_copy) |arg| {
+                    try self.push(arg);
+                }
+                try self.callValue(arg_count);
+            },
             else => return error.TypeError,
         }
     }
@@ -977,6 +1015,72 @@ pub const VM = struct {
         }
 
         // nil を push（戻り値）
+        try self.push(value_mod.nil);
+    }
+
+    /// defmulti を実行
+    /// スタック: [dispatch_fn] → [nil]
+    fn runDefmulti(self: *VM, name_val: Value) VMError!void {
+        const dispatch_fn = self.pop();
+
+        const name = switch (name_val) {
+            .symbol => |s| s.name,
+            else => return error.InvalidInstruction,
+        };
+
+        // MultiFn を作成
+        const empty_map = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+        empty_map.* = value_mod.PersistentMap.empty();
+
+        const mf = self.allocator.create(value_mod.MultiFn) catch return error.OutOfMemory;
+        mf.* = .{
+            .name = value_mod.Symbol.init(name),
+            .dispatch_fn = dispatch_fn,
+            .methods = empty_map,
+            .default_method = null,
+        };
+
+        // Var にバインド
+        const ns = self.env.getCurrentNs() orelse return error.UndefinedVar;
+        const v = ns.intern(name) catch return error.OutOfMemory;
+        v.bindRoot(Value{ .multi_fn = mf });
+
+        try self.push(value_mod.nil);
+    }
+
+    /// defmethod を実行
+    /// スタック: [dispatch_val, method_fn] → [nil]
+    fn runDefmethod(self: *VM, name_val: Value) VMError!void {
+        const method_fn = self.pop();
+        const dispatch_val = self.pop();
+
+        const name = switch (name_val) {
+            .symbol => |s| s.name,
+            else => return error.InvalidInstruction,
+        };
+
+        // Var から MultiFn を取得
+        const ns = self.env.getCurrentNs() orelse return error.UndefinedVar;
+        const v = ns.intern(name) catch return error.OutOfMemory;
+        const mf_val = v.deref();
+        if (mf_val != .multi_fn) return error.InvalidInstruction;
+        const mf = mf_val.multi_fn;
+
+        // :default キーワードかチェック
+        const is_default = switch (dispatch_val) {
+            .keyword => |k| std.mem.eql(u8, k.name, "default"),
+            else => false,
+        };
+
+        if (is_default) {
+            mf.default_method = method_fn;
+        } else {
+            // methods マップに追加
+            const new_map = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+            new_map.* = mf.methods.assoc(self.allocator, dispatch_val, method_fn) catch return error.OutOfMemory;
+            mf.methods = new_map;
+        }
+
         try self.push(value_mod.nil);
     }
 

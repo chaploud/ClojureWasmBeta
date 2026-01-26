@@ -99,7 +99,13 @@ pub const OpCode = enum(u8) {
     def = 0x42,
     /// defmacro（オペランド: 定数インデックス u16 → シンボル名）
     def_macro = 0x43,
-    // 0x44-0x4F: 予約
+    /// defmulti（オペランド: 定数インデックス u16 → シンボル名）
+    /// スタック: [dispatch_fn] → [nil]
+    defmulti = 0x44,
+    /// defmethod（オペランド: 定数インデックス u16 → シンボル名）
+    /// スタック: [dispatch_val, method_fn] → [nil]
+    defmethod = 0x45,
+    // 0x46-0x4F: 予約
 
     // ═══════════════════════════════════════════════════════
     // [F] 制御フロー (0x50-0x5F)

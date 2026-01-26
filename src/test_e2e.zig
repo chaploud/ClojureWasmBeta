@@ -1363,3 +1363,141 @@ test "compare: comp identity" {
         \\((comp) "hello")
     , "hello");
 }
+
+// ============================================================
+// マルチメソッド (defmulti / defmethod)
+// ============================================================
+
+test "compare: defmulti/defmethod keyword dispatch" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // defmulti + defmethod 基本（do で一括評価して各バックエンドが自前の MultiFn を持つ）
+    try expectIntBoth(allocator, &env,
+        \\(do (defmulti f (fn [x] (:t x)))
+        \\    (defmethod f :a [x] 1)
+        \\    (defmethod f :b [x] 2)
+        \\    (f {:t :a}))
+    , 1);
+}
+
+test "compare: defmulti/defmethod second dispatch" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectIntBoth(allocator, &env,
+        \\(do (defmulti f2 (fn [x] (:t x)))
+        \\    (defmethod f2 :a [x] 1)
+        \\    (defmethod f2 :b [x] 2)
+        \\    (f2 {:t :b}))
+    , 2);
+}
+
+test "compare: defmulti/defmethod default" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // :default メソッドにフォールバック
+    try expectIntBoth(allocator, &env,
+        \\(do (defmulti g (fn [x] (:t x)))
+        \\    (defmethod g :a [x] 10)
+        \\    (defmethod g :default [x] 99)
+        \\    (g {:t :z}))
+    , 99);
+}
+
+test "compare: defmulti/defmethod default match" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // :default がある場合でも通常マッチが優先
+    try expectIntBoth(allocator, &env,
+        \\(do (defmulti g2 (fn [x] (:t x)))
+        \\    (defmethod g2 :a [x] 10)
+        \\    (defmethod g2 :default [x] 99)
+        \\    (g2 {:t :a}))
+    , 10);
+}
+
+test "compare: defmulti/defmethod with str" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 文字列を返すマルチメソッド
+    try expectStrBoth(allocator, &env,
+        \\(do (defmulti greet (fn [p] (:lang p)))
+        \\    (defmethod greet :english [p] (str "Hello, " (:name p)))
+        \\    (defmethod greet :default [p] (str "Hi, " (:name p)))
+        \\    (greet {:name "Alice" :lang :english}))
+    , "Hello, Alice");
+}
+
+test "compare: defmulti/defmethod default str" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // :default にフォールバック
+    try expectStrBoth(allocator, &env,
+        \\(do (defmulti greet2 (fn [p] (:lang p)))
+        \\    (defmethod greet2 :english [p] (str "Hello, " (:name p)))
+        \\    (defmethod greet2 :default [p] (str "Hi, " (:name p)))
+        \\    (greet2 {:name "Bob" :lang :french}))
+    , "Hi, Bob");
+}
+
+test "compare: defmulti/defmethod multiple dispatch values" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 複数のディスパッチ値を持つマルチメソッド
+    try expectIntBoth(allocator, &env,
+        \\(do (defmulti area (fn [shape] (:type shape)))
+        \\    (defmethod area :circle [s] (* 3 (* (:r s) (:r s))))
+        \\    (defmethod area :rect [s] (* (:w s) (:h s)))
+        \\    (area {:type :circle :r 2}))
+    , 12);
+}
+
+test "compare: defmulti/defmethod rect" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectIntBoth(allocator, &env,
+        \\(do (defmulti area2 (fn [shape] (:type shape)))
+        \\    (defmethod area2 :circle [s] (* 3 (* (:r s) (:r s))))
+        \\    (defmethod area2 :rect [s] (* (:w s) (:h s)))
+        \\    (area2 {:type :rect :w 3 :h 4}))
+    , 12);
+}

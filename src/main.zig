@@ -291,6 +291,15 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
         },
         .partial_fn => try writer.writeAll("#<partial-fn>"),
         .comp_fn => try writer.writeAll("#<comp-fn>"),
+        .multi_fn => |mf| {
+            if (mf.name) |name| {
+                try writer.writeAll("#<multi-fn ");
+                try writer.writeAll(name.name);
+                try writer.writeByte('>');
+            } else {
+                try writer.writeAll("#<multi-fn>");
+            }
+        },
         .fn_proto => try writer.writeAll("#<fn-proto>"),
         .var_val => try writer.writeAll("#<var>"),
         .atom => |a| {

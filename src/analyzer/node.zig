@@ -191,6 +191,23 @@ pub const SwapNode = struct {
     stack: SourceInfo,
 };
 
+/// defmulti ノード
+/// (defmulti name dispatch-fn)
+pub const DefmultiNode = struct {
+    name: []const u8,
+    dispatch_fn: *Node,
+    stack: SourceInfo,
+};
+
+/// defmethod ノード
+/// (defmethod name dispatch-val [params] body...)
+pub const DefmethodNode = struct {
+    multi_name: []const u8,
+    dispatch_val: *Node, // ディスパッチ値（定数ノード）
+    method_fn: *Node, // メソッド関数ノード
+    stack: SourceInfo,
+};
+
 // === Node 本体 ===
 
 /// 実行可能ノード
@@ -234,6 +251,10 @@ pub const Node = union(enum) {
     // Atom
     swap_node: *SwapNode,
 
+    // マルチメソッド
+    defmulti_node: *DefmultiNode,
+    defmethod_node: *DefmethodNode,
+
     /// スタック情報を取得
     pub fn stack(self: Node) SourceInfo {
         return switch (self) {
@@ -258,6 +279,8 @@ pub const Node = union(enum) {
             .map_node => |n| n.stack,
             .filter_node => |n| n.stack,
             .swap_node => |n| n.stack,
+            .defmulti_node => |n| n.stack,
+            .defmethod_node => |n| n.stack,
         };
     }
 
@@ -285,6 +308,8 @@ pub const Node = union(enum) {
             .map_node => "map",
             .filter_node => "filter",
             .swap_node => "swap!",
+            .defmulti_node => "defmulti",
+            .defmethod_node => "defmethod",
         };
     }
 
@@ -454,6 +479,25 @@ pub const Node = union(enum) {
                     .stack = n.stack,
                 };
                 break :blk .{ .swap_node = d };
+            },
+            .defmulti_node => |n| blk: {
+                const d = try allocator.create(DefmultiNode);
+                d.* = .{
+                    .name = n.name,
+                    .dispatch_fn = try n.dispatch_fn.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .defmulti_node = d };
+            },
+            .defmethod_node => |n| blk: {
+                const d = try allocator.create(DefmethodNode);
+                d.* = .{
+                    .multi_name = n.multi_name,
+                    .dispatch_val = try n.dispatch_val.deepClone(allocator),
+                    .method_fn = try n.method_fn.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .defmethod_node = d };
             },
         };
         return new_node;

@@ -56,6 +56,8 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .map_node => |n| runMap(n, ctx),
         .filter_node => |n| runFilter(n, ctx),
         .swap_node => |n| runSwap(n, ctx),
+        .defmulti_node => |n| runDefmulti(n, ctx),
+        .defmethod_node => |n| runDefmethod(n, ctx),
     };
 }
 
@@ -276,6 +278,23 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
 
             break :blk result;
         },
+        .multi_fn => |mf| blk: {
+            // マルチメソッド呼び出し: dispatch_fn で値を取得 → methods からメソッドを検索
+            const dispatch_result = try callWithArgs(mf.dispatch_fn, args, ctx);
+
+            // ディスパッチ値でメソッドを検索
+            if (mf.methods.get(dispatch_result)) |method| {
+                break :blk callWithArgs(method, args, ctx);
+            }
+
+            // :default メソッドを試す
+            if (mf.default_method) |default| {
+                break :blk callWithArgs(default, args, ctx);
+            }
+
+            // メソッドが見つからない
+            break :blk error.TypeError;
+        },
         .keyword => |k| blk: {
             // キーワードを関数として使用: (:key map) or (:key map default)
             if (args.len < 1 or args.len > 2) return error.ArityError;
@@ -427,6 +446,68 @@ fn runDef(node: *const node_mod.DefNode, ctx: *Context) EvalError!Value {
 
     // Var を返す（#'var 形式）
     // TODO: Var を Value に含める
+    return value_mod.nil;
+}
+
+/// defmulti 評価
+/// (defmulti name dispatch-fn)
+fn runDefmulti(node: *const node_mod.DefmultiNode, ctx: *Context) EvalError!Value {
+    const ns = ctx.env.getCurrentNs() orelse return error.UndefinedSymbol;
+    const v = ns.intern(node.name) catch return error.OutOfMemory;
+
+    // ディスパッチ関数を評価
+    const dispatch_fn = try run(node.dispatch_fn, ctx);
+
+    // MultiFn を作成
+    const empty_map = ctx.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+    empty_map.* = value_mod.PersistentMap.empty();
+
+    const mf = ctx.allocator.create(value_mod.MultiFn) catch return error.OutOfMemory;
+    mf.* = .{
+        .name = value_mod.Symbol.init(node.name),
+        .dispatch_fn = dispatch_fn,
+        .methods = empty_map,
+        .default_method = null,
+    };
+
+    v.bindRoot(Value{ .multi_fn = mf });
+    return value_mod.nil;
+}
+
+/// defmethod 評価
+/// (defmethod name dispatch-val [params] body...)
+fn runDefmethod(node: *const node_mod.DefmethodNode, ctx: *Context) EvalError!Value {
+    const ns = ctx.env.getCurrentNs() orelse return error.UndefinedSymbol;
+    const v = ns.intern(node.multi_name) catch return error.OutOfMemory;
+
+    // Var から MultiFn を取得
+    const mf_val = v.deref();
+    if (mf_val != .multi_fn) return error.TypeError;
+    const mf = mf_val.multi_fn;
+
+    // ディスパッチ値を評価
+    const dispatch_val = try run(node.dispatch_val, ctx);
+
+    // メソッド関数を評価
+    const method_fn = try run(node.method_fn, ctx);
+    const cloned_method = method_fn.deepClone(ctx.allocator) catch return error.OutOfMemory;
+
+    // :default キーワードかチェック
+    const is_default = switch (dispatch_val) {
+        .keyword => |k| std.mem.eql(u8, k.name, "default"),
+        else => false,
+    };
+
+    if (is_default) {
+        mf.default_method = cloned_method;
+    } else {
+        // methods マップに追加
+        const cloned_key = dispatch_val.deepClone(ctx.allocator) catch return error.OutOfMemory;
+        const new_map = ctx.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+        new_map.* = mf.methods.assoc(ctx.allocator, cloned_key, cloned_method) catch return error.OutOfMemory;
+        mf.methods = new_map;
+    }
+
     return value_mod.nil;
 }
 

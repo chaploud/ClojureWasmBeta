@@ -97,6 +97,8 @@ pub const Compiler = struct {
             .map_node => |node| try self.emitMap(node),
             .filter_node => |node| try self.emitFilter(node),
             .swap_node => |node| try self.emitSwap(node),
+            .defmulti_node => |node| try self.emitDefmulti(node),
+            .defmethod_node => |node| try self.emitDefmethod(node),
         }
     }
 
@@ -397,6 +399,41 @@ pub const Compiler = struct {
         } else {
             try self.chunk.emit(.def, idx);
         }
+    }
+
+    /// defmulti
+    /// (defmulti name dispatch-fn) → dispatch_fn をコンパイル → defmulti 命令
+    fn emitDefmulti(self: *Compiler, node: *const node_mod.DefmultiNode) CompileError!void {
+        // ディスパッチ関数をコンパイル
+        try self.compile(node.dispatch_fn);
+
+        // シンボル名を定数に追加
+        const sym = self.allocator.create(value_mod.Symbol) catch return error.OutOfMemory;
+        sym.* = value_mod.Symbol.init(node.name);
+        const name_val = Value{ .symbol = sym };
+        const idx = self.chunk.addConstant(name_val) catch return error.TooManyConstants;
+
+        // defmulti 命令（dispatch_fn をポップ → nil をプッシュ → sp_depth 変化なし）
+        try self.chunk.emit(.defmulti, idx);
+    }
+
+    /// defmethod
+    /// (defmethod name dispatch-val method-fn)
+    fn emitDefmethod(self: *Compiler, node: *const node_mod.DefmethodNode) CompileError!void {
+        // ディスパッチ値をコンパイル
+        try self.compile(node.dispatch_val);
+        // メソッド関数をコンパイル
+        try self.compile(node.method_fn);
+
+        // シンボル名を定数に追加
+        const sym = self.allocator.create(value_mod.Symbol) catch return error.OutOfMemory;
+        sym.* = value_mod.Symbol.init(node.multi_name);
+        const name_val = Value{ .symbol = sym };
+        const idx = self.chunk.addConstant(name_val) catch return error.TooManyConstants;
+
+        // defmethod 命令（dispatch_val, method_fn をポップ → nil をプッシュ → sp_depth -1）
+        try self.chunk.emit(.defmethod, idx);
+        self.sp_depth -= 1; // 2つポップして1つプッシュ = net -1
     }
 
     /// quote

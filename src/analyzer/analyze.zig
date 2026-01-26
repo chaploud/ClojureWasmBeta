@@ -173,6 +173,10 @@ pub const Analyzer = struct {
                 return self.analyzeTry(items);
             } else if (std.mem.eql(u8, sym_name, "swap!")) {
                 return self.analyzeSwap(items);
+            } else if (std.mem.eql(u8, sym_name, "defmulti")) {
+                return self.analyzeDefmulti(items);
+            } else if (std.mem.eql(u8, sym_name, "defmethod")) {
+                return self.analyzeDefmethod(items);
             }
 
             // 組み込みマクロ展開（Form→Form 変換して再解析）
@@ -2104,6 +2108,85 @@ pub const Analyzer = struct {
         return node;
     }
 
+    // === マルチメソッド解析 ===
+
+    /// (defmulti name dispatch-fn)
+    fn analyzeDefmulti(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "defmulti requires name and dispatch-fn", .{});
+        }
+
+        if (items[1] != .symbol) {
+            return err.parseError(.invalid_binding, "defmulti name must be a symbol", .{});
+        }
+
+        const name = items[1].symbol.name;
+
+        // Var を先に作成（後で defmethod が参照できるように）
+        if (self.env.getCurrentNs()) |ns| {
+            _ = ns.intern(name) catch return error.OutOfMemory;
+        }
+
+        // ディスパッチ関数を解析
+        const dispatch_fn = try self.analyze(items[2]);
+
+        const data = self.allocator.create(node_mod.DefmultiNode) catch return error.OutOfMemory;
+        data.* = .{
+            .name = name,
+            .dispatch_fn = dispatch_fn,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .defmulti_node = data };
+        return node;
+    }
+
+    /// (defmethod name dispatch-val fn-expr)
+    /// または (defmethod name dispatch-val [params] body...)
+    fn analyzeDefmethod(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // 最低4要素: defmethod name dispatch-val [params]
+        if (items.len < 4) {
+            return err.parseError(.invalid_arity, "defmethod requires name, dispatch-val, and method body", .{});
+        }
+
+        if (items[1] != .symbol) {
+            return err.parseError(.invalid_binding, "defmethod name must be a symbol", .{});
+        }
+
+        const multi_name = items[1].symbol.name;
+
+        // ディスパッチ値を解析
+        const dispatch_val = try self.analyze(items[2]);
+
+        // メソッド関数を解析
+        // (defmethod name dispatch-val [params] body...) → fn として解析
+        const method_fn = if (items[3] == .vector) blk: {
+            // [params] body... 形式 → (fn [params] body...) を構築
+            var fn_items = self.allocator.alloc(Form, items.len - 2) catch return error.OutOfMemory;
+            fn_items[0] = .{ .symbol = FormSymbol.init("fn") };
+            for (items[3..], 0..) |item, i| {
+                fn_items[i + 1] = item;
+            }
+            break :blk try self.analyzeFn(fn_items);
+        } else blk: {
+            // fn 式がそのまま与えられた場合
+            break :blk try self.analyze(items[3]);
+        };
+
+        const data = self.allocator.create(node_mod.DefmethodNode) catch return error.OutOfMemory;
+        data.* = .{
+            .multi_name = multi_name,
+            .dispatch_val = dispatch_val,
+            .method_fn = method_fn,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .defmethod_node = data };
+        return node;
+    }
+
     // === マクロ展開 ===
 
     /// マクロ呼び出しかどうかをチェックし、展開する
@@ -2607,7 +2690,7 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .vector = forms };
             },
-            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .fn_proto, .var_val, .atom => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

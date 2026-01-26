@@ -262,6 +262,16 @@ pub const PersistentSet = struct {
     }
 };
 
+// === マルチメソッド ===
+
+/// マルチメソッド（defmulti/defmethod）
+pub const MultiFn = struct {
+    name: ?Symbol,
+    dispatch_fn: Value, // ディスパッチ関数
+    methods: *PersistentMap, // dispatch-value → fn のマップ
+    default_method: ?Value, // :default メソッド
+};
+
 // === 参照型 ===
 
 /// Atom（ミュータブルな参照）
@@ -385,6 +395,7 @@ pub const Value = union(enum) {
     fn_val: *Fn,
     partial_fn: *PartialFn, // 部分適用された関数
     comp_fn: *CompFn, // 合成された関数
+    multi_fn: *MultiFn, // マルチメソッド
 
     // === VM用 ===
     fn_proto: FnProtoPtr, // コンパイル済み関数プロトタイプ
@@ -469,6 +480,7 @@ pub const Value = union(enum) {
             .fn_val => |a| a == other.fn_val, // 関数は参照等価
             .partial_fn => |a| a == other.partial_fn, // 参照等価
             .comp_fn => |a| a == other.comp_fn, // 参照等価
+            .multi_fn => |a| a == other.multi_fn, // 参照等価
             .fn_proto => |a| a == other.fn_proto, // 参照等価
             .var_val => |a| a == other.var_val, // 参照等価
             .atom => |a| a == other.atom, // 参照等価
@@ -493,6 +505,7 @@ pub const Value = union(enum) {
             .fn_val => "function",
             .partial_fn => "function", // partial も関数として表示
             .comp_fn => "function", // comp も関数として表示
+            .multi_fn => "multi-fn",
             .fn_proto => "fn-proto",
             .var_val => "var",
             .atom => "atom",
@@ -590,6 +603,13 @@ pub const Value = union(enum) {
             },
             .partial_fn => try writer.writeAll("#<partial-fn>"),
             .comp_fn => try writer.writeAll("#<comp-fn>"),
+            .multi_fn => |mf| {
+                if (mf.name) |name| {
+                    try writer.print("#<multi-fn {s}>", .{name.name});
+                } else {
+                    try writer.writeAll("#<multi-fn>");
+                }
+            },
             .fn_proto => try writer.writeAll("#<fn-proto>"),
             .var_val => try writer.writeAll("#<var>"),
             .atom => |a| {
@@ -664,6 +684,8 @@ pub const Value = union(enum) {
                 new_a.* = .{ .value = try a.value.deepClone(allocator) };
                 break :blk .{ .atom = new_a };
             },
+            // MultiFn は参照をそのまま保持（persistent で作成済み）
+            .multi_fn => self,
             // 他のランタイムオブジェクトはそのまま（persistent で作成済み）
             .fn_val, .partial_fn, .comp_fn, .fn_proto, .var_val => self,
         };
