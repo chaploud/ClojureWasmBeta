@@ -36,6 +36,7 @@
 | 8.19 | 実用関数・マクロ大量追加（~83関数/マクロ） |
 | 8.20 | 動的コレクションリテラル（変数を含む [x y], {:a x} 等） |
 | 9 | LazySeq — 真の遅延シーケンス（無限シーケンス対応） |
+| 9.1 | Lazy map/filter/concat — 遅延変換・連結 |
 
 実装状況の詳細: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -43,9 +44,9 @@
 
 ## 次回タスク候補
 
-- lazy map/filter（現在は eager、lazy 化で無限シーケンスとの合成が可能に）
 - `iterate`, `repeat`, `cycle` 関数（lazy-seq ベース）
 - `(range)` 引数なし（無限シーケンス、lazy-seq ベース）
+- `mapcat` の lazy 化
 - 正規表現
 - defrecord（プロトコルと組み合わせ）
 

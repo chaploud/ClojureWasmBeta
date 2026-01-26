@@ -46,6 +46,18 @@ fn vmForce(fn_val: Value, allocator: std.mem.Allocator) anyerror!Value {
     return vm.pop();
 }
 
+fn vmCall(fn_val: Value, args: []const Value, allocator: std.mem.Allocator) anyerror!Value {
+    _ = allocator;
+    const vm = current_vm orelse return error.TypeError;
+    // スタックに関数と引数をプッシュ
+    try vm.push(fn_val);
+    for (args) |arg| {
+        try vm.push(arg);
+    }
+    try vm.callValue(args.len);
+    return vm.pop();
+}
+
 /// スタックサイズ
 const STACK_MAX: usize = 256 * 64;
 
@@ -135,9 +147,10 @@ pub const VM = struct {
 
     /// 命令を実行
     fn execute(self: *VM, code: []const Instruction, constants: []const Value) VMError!Value {
-        // VM 用 LazySeq force コールバックを設定
+        // VM 用 LazySeq コールバックを設定
         current_vm = self;
         core.force_lazy_seq_fn = &vmForce;
+        core.call_fn = &vmCall;
 
         // この execute が開始した時点の frame_count を記録
         // ret でこのレベルに戻ったら、この execute から return する
@@ -1090,6 +1103,14 @@ pub const VM = struct {
         const coll_val = self.pop();
         const fn_val = self.pop();
 
+        // lazy-seq の場合: lazy map を返す
+        if (coll_val == .lazy_seq) {
+            const ls = self.allocator.create(value_mod.LazySeq) catch return error.OutOfMemory;
+            ls.* = value_mod.LazySeq.initTransform(.map, fn_val, coll_val);
+            try self.push(Value{ .lazy_seq = ls });
+            return;
+        }
+
         const items: []const Value = switch (coll_val) {
             .list => |l| l.items,
             .vector => |v| v.items,
@@ -1116,6 +1137,14 @@ pub const VM = struct {
     fn executeFilter(self: *VM) VMError!void {
         const coll_val = self.pop();
         const fn_val = self.pop();
+
+        // lazy-seq の場合: lazy filter を返す
+        if (coll_val == .lazy_seq) {
+            const ls = self.allocator.create(value_mod.LazySeq) catch return error.OutOfMemory;
+            ls.* = value_mod.LazySeq.initTransform(.filter, fn_val, coll_val);
+            try self.push(Value{ .lazy_seq = ls });
+            return;
+        }
 
         const items: []const Value = switch (coll_val) {
             .list => |l| l.items,

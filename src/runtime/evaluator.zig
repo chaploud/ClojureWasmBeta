@@ -34,8 +34,9 @@ pub const EvalError = error{
 
 /// Node を評価
 pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
-    // TreeWalk 用 LazySeq force コールバックを設定
+    // TreeWalk 用 LazySeq コールバックを設定
     core.force_lazy_seq_fn = &treeWalkForce;
+    core.call_fn = &treeWalkCall;
     current_env = ctx.env;
 
     return switch (node.*) {
@@ -242,10 +243,18 @@ fn treeWalkForce(fn_val: Value, allocator: std.mem.Allocator) anyerror!Value {
     return callWithArgs(fn_val, &[_]Value{}, &ctx);
 }
 
+fn treeWalkCall(fn_val: Value, args: []const Value, allocator: std.mem.Allocator) anyerror!Value {
+    // fn を引数付きで呼び出す
+    const env = current_env orelse return error.TypeError;
+    var ctx = Context.init(allocator, env);
+    return callWithArgs(fn_val, args, &ctx);
+}
+
 /// 関数を引数付きで呼び出し（partial_fn サポート付き）
 fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Value {
-    // LazySeq force コールバックを設定
+    // LazySeq コールバックを設定
     core.force_lazy_seq_fn = &treeWalkForce;
+    core.call_fn = &treeWalkCall;
     current_env = ctx.env;
 
     return switch (fn_val) {
@@ -839,6 +848,13 @@ fn runMap(node: *const node_mod.MapNode, ctx: *Context) EvalError!Value {
     const fn_val = try run(node.fn_node, ctx);
     const coll_val = try run(node.coll_node, ctx);
 
+    // lazy-seq の場合: lazy map を返す
+    if (coll_val == .lazy_seq) {
+        const ls = ctx.allocator.create(value_mod.LazySeq) catch return error.OutOfMemory;
+        ls.* = value_mod.LazySeq.initTransform(.map, fn_val, coll_val);
+        return Value{ .lazy_seq = ls };
+    }
+
     const items: []const Value = switch (coll_val) {
         .list => |l| l.items,
         .vector => |v| v.items,
@@ -864,6 +880,13 @@ fn runMap(node: *const node_mod.MapNode, ctx: *Context) EvalError!Value {
 fn runFilter(node: *const node_mod.FilterNode, ctx: *Context) EvalError!Value {
     const fn_val = try run(node.fn_node, ctx);
     const coll_val = try run(node.coll_node, ctx);
+
+    // lazy-seq の場合: lazy filter を返す
+    if (coll_val == .lazy_seq) {
+        const ls = ctx.allocator.create(value_mod.LazySeq) catch return error.OutOfMemory;
+        ls.* = value_mod.LazySeq.initTransform(.filter, fn_val, coll_val);
+        return Value{ .lazy_seq = ls };
+    }
 
     const items: []const Value = switch (coll_val) {
         .list => |l| l.items,

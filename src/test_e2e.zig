@@ -2010,3 +2010,94 @@ test "compare: lazy-seq rest preserves laziness" {
         \\  (first (rest (rest (rng3 0)))))
     , 2);
 }
+
+test "compare: lazy map on infinite sequence" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // (map inc (lazy-range 0)) → 無限に inc した lazy-seq を take
+    try expectStrBoth(allocator, &env,
+        \\(do
+        \\  (def lm-range (fn [n] (lazy-seq (cons n (lm-range (+ n 1))))))
+        \\  (pr-str (take 5 (map inc (lm-range 0)))))
+    , "(1 2 3 4 5)");
+
+    // map は lazy のまま伝播する
+    try expectBoolBoth(allocator, &env,
+        \\(do
+        \\  (def lm-r2 (fn [n] (lazy-seq (cons n (lm-r2 (+ n 1))))))
+        \\  (lazy-seq? (map inc (lm-r2 0))))
+    , true);
+
+    // 合成: map on map
+    try expectStrBoth(allocator, &env,
+        \\(do
+        \\  (def lm-r3 (fn [n] (lazy-seq (cons n (lm-r3 (+ n 1))))))
+        \\  (pr-str (take 4 (map inc (map inc (lm-r3 0))))))
+    , "(2 3 4 5)");
+}
+
+test "compare: lazy filter on infinite sequence" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // (filter even? (lazy-range 0)) → 偶数のみ
+    try expectStrBoth(allocator, &env,
+        \\(do
+        \\  (def lf-range (fn [n] (lazy-seq (cons n (lf-range (+ n 1))))))
+        \\  (pr-str (take 5 (filter even? (lf-range 0)))))
+    , "(0 2 4 6 8)");
+
+    // filter は lazy のまま伝播する
+    try expectBoolBoth(allocator, &env,
+        \\(do
+        \\  (def lf-r2 (fn [n] (lazy-seq (cons n (lf-r2 (+ n 1))))))
+        \\  (lazy-seq? (filter even? (lf-r2 0))))
+    , true);
+
+    // map + filter 合成
+    try expectStrBoth(allocator, &env,
+        \\(do
+        \\  (def lf-r3 (fn [n] (lazy-seq (cons n (lf-r3 (+ n 1))))))
+        \\  (pr-str (take 5 (map inc (filter even? (lf-r3 0))))))
+    , "(1 3 5 7 9)");
+}
+
+test "compare: lazy concat" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // concat with lazy-seq returns lazy
+    try expectBoolBoth(allocator, &env,
+        \\(lazy-seq? (concat (lazy-seq (cons 1 nil)) (list 2 3)))
+    , true);
+
+    // concat with mixed collections including lazy-seq
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (concat (list 1 2) (lazy-seq (cons 3 (lazy-seq (cons 4 nil)))) (list 5 6)))
+    , "(1 2 3 4 5 6)");
+
+    // take from concat of infinite + finite
+    try expectStrBoth(allocator, &env,
+        \\(do
+        \\  (def lc-range (fn [n] (lazy-seq (cons n (lc-range (+ n 1))))))
+        \\  (pr-str (take 7 (concat (lc-range 0) (list 100 200)))))
+    , "(0 1 2 3 4 5 6)");
+
+    // concat of two finite lazy-seqs
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (concat (lazy-seq (cons 1 (lazy-seq (cons 2 nil)))) (lazy-seq (cons 3 (lazy-seq (cons 4 nil))))))
+    , "(1 2 3 4)");
+}

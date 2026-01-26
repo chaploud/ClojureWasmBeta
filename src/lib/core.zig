@@ -20,10 +20,13 @@ pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Val
 /// LazySeq force コールバック型
 /// 引数なし fn を呼び出して結果を返す。evaluator/VM がそれぞれ設定する。
 pub const ForceFn = *const fn (fn_val: Value, allocator: std.mem.Allocator) anyerror!Value;
+pub const CallFn = *const fn (fn_val: Value, args: []const Value, allocator: std.mem.Allocator) anyerror!Value;
 
 /// 現在の force コールバック（threadlocal）
 /// evaluator/VM が builtin 呼び出し前に設定する
 pub threadlocal var force_lazy_seq_fn: ?ForceFn = null;
+/// 関数呼び出しコールバック（lazy map/filter 用）
+pub threadlocal var call_fn: ?CallFn = null;
 
 /// LazySeq を実体化する（force）
 /// サンク関数を呼び出し、結果を cached realized に格納して返す
@@ -32,6 +35,18 @@ pub threadlocal var force_lazy_seq_fn: ?ForceFn = null;
 pub fn forceLazySeqOneStep(allocator: std.mem.Allocator, ls: *value_mod.LazySeq) anyerror!void {
     // 既に実体化済み or cons形式
     if (ls.realized != null or ls.cons_head != null) return;
+
+    // 遅延変換（lazy map/filter）の場合
+    if (ls.transform) |t| {
+        try forceTransformOneStep(allocator, ls, t);
+        return;
+    }
+
+    // 遅延 concat の場合
+    if (ls.concat_sources) |sources| {
+        try forceConcatOneStep(allocator, ls, sources);
+        return;
+    }
 
     // サンク形式の場合: body_fn を呼んで結果を取得
     const body_fn = ls.body_fn orelse {
@@ -50,12 +65,188 @@ pub fn forceLazySeqOneStep(allocator: std.mem.Allocator, ls: *value_mod.LazySeq)
         ls.realized = inner.realized;
         ls.cons_head = inner.cons_head;
         ls.cons_tail = inner.cons_tail;
+        ls.transform = inner.transform;
+        ls.concat_sources = inner.concat_sources;
         // 再帰的に一段 force（内側もサンク形式かもしれない）
         return forceLazySeqOneStep(allocator, ls);
     }
 
     // 具体値（nil, list, vector）の場合
     ls.realized = result;
+}
+
+/// 遅延変換（lazy map/filter）を一段 force する
+fn forceTransformOneStep(
+    allocator: std.mem.Allocator,
+    ls: *value_mod.LazySeq,
+    t: value_mod.LazySeq.Transform,
+) anyerror!void {
+    const call = call_fn orelse return error.TypeError;
+
+    switch (t.kind) {
+        .map => {
+            // source の first を取得
+            const src_first = try seqFirst(allocator, t.source);
+            if (src_first == .nil) {
+                // source が空 → 結果も空
+                ls.transform = null;
+                ls.realized = value_mod.nil;
+                return;
+            }
+            // f(first) を計算
+            const mapped = try call(t.fn_val, &[_]Value{src_first}, allocator);
+            // rest(source) を取得
+            const src_rest = try seqRest(allocator, t.source);
+            // cons(mapped, lazy-map(f, rest))
+            ls.transform = null;
+            ls.cons_head = mapped;
+            // tail: empty なら nil、そうでなければ lazy-map
+            if (isSeqEmpty(src_rest)) {
+                ls.cons_tail = value_mod.nil;
+            } else {
+                const tail_ls = try allocator.create(value_mod.LazySeq);
+                tail_ls.* = value_mod.LazySeq.initTransform(.map, t.fn_val, src_rest);
+                ls.cons_tail = Value{ .lazy_seq = tail_ls };
+            }
+        },
+        .filter => {
+            // source を走査して pred が真の要素を見つける
+            var current = t.source;
+            while (true) {
+                const elem = try seqFirst(allocator, current);
+                if (elem == .nil) {
+                    // source を使い切った → 結果も空
+                    ls.transform = null;
+                    ls.realized = value_mod.nil;
+                    return;
+                }
+                // pred(elem)
+                const pred_result = try call(t.fn_val, &[_]Value{elem}, allocator);
+                const rest_val = try seqRest(allocator, current);
+                if (pred_result.isTruthy()) {
+                    // マッチ → cons(elem, lazy-filter(pred, rest))
+                    ls.transform = null;
+                    ls.cons_head = elem;
+                    if (isSeqEmpty(rest_val)) {
+                        ls.cons_tail = value_mod.nil;
+                    } else {
+                        const tail_ls = try allocator.create(value_mod.LazySeq);
+                        tail_ls.* = value_mod.LazySeq.initTransform(.filter, t.fn_val, rest_val);
+                        ls.cons_tail = Value{ .lazy_seq = tail_ls };
+                    }
+                    return;
+                }
+                // マッチしない → 次の要素へ
+                current = rest_val;
+            }
+        },
+    }
+}
+
+/// 遅延 concat を一段 force する
+/// sources 配列の先頭コレクションから要素を取り出し、cons 形式にする
+fn forceConcatOneStep(
+    allocator: std.mem.Allocator,
+    ls: *value_mod.LazySeq,
+    sources: []const Value,
+) anyerror!void {
+    // 空でない source を探す
+    var idx: usize = 0;
+    while (idx < sources.len) {
+        const src = sources[idx];
+        // source が nil/空リスト/空ベクターなら次へ
+        if (isSeqEmpty(src)) {
+            idx += 1;
+            continue;
+        }
+        // lazy-seq の場合: first を取ってみる
+        const elem = try seqFirst(allocator, src);
+        if (elem == .nil and src == .lazy_seq) {
+            // lazy-seq を force したら空だった
+            idx += 1;
+            continue;
+        }
+        if (elem == .nil) {
+            idx += 1;
+            continue;
+        }
+        // 要素が見つかった: cons(elem, lazy-concat(rest(src), remaining_sources))
+        const src_rest = try seqRest(allocator, src);
+        ls.concat_sources = null;
+        ls.cons_head = elem;
+
+        // 残り: rest(current_source) + remaining_sources
+        const remaining_count = sources.len - idx - 1;
+        if (isSeqEmpty(src_rest) and remaining_count == 0) {
+            // 残りなし
+            ls.cons_tail = value_mod.nil;
+        } else {
+            // 新しい sources 配列を作成: [rest(src)] ++ sources[idx+1..]
+            var new_sources_count: usize = 0;
+            if (!isSeqEmpty(src_rest)) new_sources_count += 1;
+            new_sources_count += remaining_count;
+
+            if (new_sources_count == 0) {
+                ls.cons_tail = value_mod.nil;
+            } else {
+                const new_sources = try allocator.alloc(Value, new_sources_count);
+                var j: usize = 0;
+                if (!isSeqEmpty(src_rest)) {
+                    new_sources[j] = src_rest;
+                    j += 1;
+                }
+                if (remaining_count > 0) {
+                    @memcpy(new_sources[j..], sources[idx + 1 ..]);
+                }
+                const tail_ls = try allocator.create(value_mod.LazySeq);
+                tail_ls.* = value_mod.LazySeq.initConcat(new_sources);
+                ls.cons_tail = Value{ .lazy_seq = tail_ls };
+            }
+        }
+        return;
+    }
+
+    // 全ての source が空 → 結果も空
+    ls.concat_sources = null;
+    ls.realized = value_mod.nil;
+}
+
+/// シーケンスの first を取得（lazy-seq/list/vector/nil 対応）
+fn seqFirst(allocator: std.mem.Allocator, val: Value) anyerror!Value {
+    return switch (val) {
+        .lazy_seq => |ls| lazyFirst(allocator, ls),
+        .list => |l| if (l.items.len > 0) l.items[0] else value_mod.nil,
+        .vector => |v| if (v.items.len > 0) v.items[0] else value_mod.nil,
+        .nil => value_mod.nil,
+        else => value_mod.nil,
+    };
+}
+
+/// シーケンスの rest を取得（lazy-seq/list/vector/nil 対応）
+fn seqRest(allocator: std.mem.Allocator, val: Value) anyerror!Value {
+    return switch (val) {
+        .lazy_seq => |ls| lazyRest(allocator, ls),
+        .list => |l| {
+            if (l.items.len <= 1) return Value{ .list = try value_mod.PersistentList.empty(allocator) };
+            return Value{ .list = try value_mod.PersistentList.fromSlice(allocator, l.items[1..]) };
+        },
+        .vector => |v| {
+            if (v.items.len <= 1) return Value{ .list = try value_mod.PersistentList.empty(allocator) };
+            return Value{ .list = try value_mod.PersistentList.fromSlice(allocator, v.items[1..]) };
+        },
+        .nil => Value{ .list = try value_mod.PersistentList.empty(allocator) },
+        else => Value{ .list = try value_mod.PersistentList.empty(allocator) },
+    };
+}
+
+/// シーケンスが空かどうか
+fn isSeqEmpty(val: Value) bool {
+    return switch (val) {
+        .nil => true,
+        .list => |l| l.items.len == 0,
+        .vector => |v| v.items.len == 0,
+        else => false, // lazy-seq は空かわからない
+    };
 }
 
 /// LazySeq の最初の要素を取得（全体を force しない）
@@ -1013,13 +1204,15 @@ fn printValueForPrint(writer: anytype, val: Value) !void {
 }
 
 /// pr-str : 文字列表現を返す（print 用）
+/// lazy-seq は自動的に realize してから出力
 pub fn prStr(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     defer buf.deinit(allocator);
 
     for (args, 0..) |arg, i| {
         if (i > 0) try buf.append(allocator, ' ');
-        try printValueToBuf(allocator, &buf, arg);
+        const realized = try ensureRealized(allocator, arg);
+        try printValueToBuf(allocator, &buf, realized);
     }
 
     const str = try allocator.create(value_mod.String);
@@ -1178,12 +1371,14 @@ fn printValueToBuf(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8
 // ============================================================
 
 /// str : 引数を連結して文字列を返す
+/// lazy-seq は自動的に realize してから出力
 pub fn strFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     defer buf.deinit(allocator);
 
     for (args) |arg| {
-        try valueToString(allocator, &buf, arg);
+        const realized = ensureRealized(allocator, arg) catch arg;
+        try valueToString(allocator, &buf, realized);
     }
 
     const str_obj = try allocator.create(value_mod.String);
@@ -1587,7 +1782,22 @@ pub fn range(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 
 /// concat : 複数のコレクションを連結
 pub fn concat(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    // 全要素数を計算
+    // lazy-seq が含まれる場合: 遅延 concat を返す
+    var has_lazy = false;
+    for (args) |arg| {
+        if (arg == .lazy_seq) {
+            has_lazy = true;
+            break;
+        }
+    }
+    if (has_lazy) {
+        const sources = try allocator.dupe(Value, args);
+        const ls = try allocator.create(value_mod.LazySeq);
+        ls.* = value_mod.LazySeq.initConcat(sources);
+        return Value{ .lazy_seq = ls };
+    }
+
+    // 全要素数を計算（eager 版）
     var total: usize = 0;
     for (args) |arg| {
         const items = (try getItemsRealized(allocator, arg)) orelse return error.TypeError;

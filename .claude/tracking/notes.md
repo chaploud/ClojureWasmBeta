@@ -69,7 +69,14 @@
   - `forceLazySeqOneStep`: サンク → cons/具体値に一段変換
 - **完全 force**: `forceLazySeq` は全要素を収集（無限シーケンスでは無限ループ）
   - `ensureRealized`, `doall`, `count` が使用
-- **深コピー**: cons_head/cons_tail も deepClone 対象
+- **遅延変換 (Phase 9.1)**:
+  - `Transform` 構造体: kind (map/filter) + fn_val + source
+  - `forceTransformOneStep`: map は first→call→cons、filter は pred 真まで走査→cons
+  - `CallFn` threadlocal（evaluator: `treeWalkCall`, VM: `vmCall`）
+  - `concat_sources` フィールド: 遅延 concat（複数コレクション連結を lazy に）
+  - `forceConcatOneStep`: sources 配列の先頭から要素を取り出して cons 化
+- **pr-str/str での自動 realize**: `prStr`, `strFn` が lazy-seq を ensureRealized してから出力
+- **深コピー**: cons_head/cons_tail/transform/concat_sources も deepClone 対象
 - **compare モード**: engine.zig で各バックエンドの force callback が有効な間に ensureRealized
 
 ## 例外処理

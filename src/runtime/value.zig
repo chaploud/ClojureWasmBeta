@@ -276,16 +276,44 @@ pub const LazySeq = struct {
     cons_head: ?Value,
     /// cons 構造の tail（lazy-seq または nil/list）
     cons_tail: ?Value,
+    /// 遅延変換: map/filter の lazy 版
+    transform: ?Transform,
+    /// 遅延 concat: 残りのコレクション列
+    concat_sources: ?[]const Value,
+
+    pub const TransformKind = enum { map, filter };
+    pub const Transform = struct {
+        kind: TransformKind,
+        fn_val: Value,    // 変換関数（map の f、filter の pred）
+        source: Value,    // 変換元シーケンス（lazy-seq or list/vector）
+    };
 
     /// 未実体化の LazySeq を作成（サンク形式）
     pub fn init(body_fn: Value) LazySeq {
-        return .{ .body_fn = body_fn, .realized = null, .cons_head = null, .cons_tail = null };
+        return .{ .body_fn = body_fn, .realized = null, .cons_head = null, .cons_tail = null, .transform = null, .concat_sources = null };
     }
 
     /// cons 形式の LazySeq を作成: (cons head lazy-tail)
     /// head は即値、tail は遅延のまま
     pub fn initCons(head: Value, tail: Value) LazySeq {
-        return .{ .body_fn = null, .realized = null, .cons_head = head, .cons_tail = tail };
+        return .{ .body_fn = null, .realized = null, .cons_head = head, .cons_tail = tail, .transform = null, .concat_sources = null };
+    }
+
+    /// 遅延変換の LazySeq を作成（lazy map/filter）
+    pub fn initTransform(kind: TransformKind, fn_val: Value, source: Value) LazySeq {
+        return .{
+            .body_fn = null, .realized = null, .cons_head = null, .cons_tail = null,
+            .transform = .{ .kind = kind, .fn_val = fn_val, .source = source }, .concat_sources = null,
+        };
+    }
+
+    /// 遅延 concat の LazySeq を作成
+    /// sources は結合するコレクション列（lazy-seq, list, vector, nil のいずれか）
+    pub fn initConcat(sources: []const Value) LazySeq {
+        return .{
+            .body_fn = null, .realized = null, .cons_head = null, .cons_tail = null,
+            .transform = null, .concat_sources = sources,
+        };
     }
 
     /// 既に実体化済みかどうか
@@ -799,6 +827,12 @@ pub const Value = union(enum) {
                     .realized = if (ls.realized) |r| try r.deepClone(allocator) else null,
                     .cons_head = if (ls.cons_head) |ch| try ch.deepClone(allocator) else null,
                     .cons_tail = if (ls.cons_tail) |ct| try ct.deepClone(allocator) else null,
+                    .transform = if (ls.transform) |t| LazySeq.Transform{
+                        .kind = t.kind,
+                        .fn_val = try t.fn_val.deepClone(allocator),
+                        .source = try t.source.deepClone(allocator),
+                    } else null,
+                    .concat_sources = if (ls.concat_sources) |cs| try deepCloneValues(allocator, cs) else null,
                 };
                 break :blk .{ .lazy_seq = new_ls };
             },
