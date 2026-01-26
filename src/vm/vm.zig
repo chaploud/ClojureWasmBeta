@@ -632,6 +632,25 @@ pub const VM = struct {
                     try self.callValue(1);
                 }
             },
+            .keyword => |k| {
+                // キーワードを関数として使用: (:key map) or (:key map default)
+                if (arg_count < 1 or arg_count > 2) return error.ArityError;
+                const args = self.stack[fn_idx + 1 .. self.sp];
+                const not_found = if (arg_count == 2) args[1] else value_mod.nil;
+                const result = switch (args[0]) {
+                    .map => |m| m.get(Value{ .keyword = k }) orelse not_found,
+                    .set => |s| blk: {
+                        const kv = Value{ .keyword = k };
+                        for (s.items) |item| {
+                            if (kv.eql(item)) break :blk kv;
+                        }
+                        break :blk not_found;
+                    },
+                    else => not_found,
+                };
+                self.sp = fn_idx;
+                try self.push(result);
+            },
             else => return error.TypeError,
         }
     }

@@ -268,6 +268,22 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
 
             break :blk result;
         },
+        .keyword => |k| blk: {
+            // キーワードを関数として使用: (:key map) or (:key map default)
+            if (args.len < 1 or args.len > 2) return error.ArityError;
+            const not_found = if (args.len == 2) args[1] else value_mod.nil;
+            break :blk switch (args[0]) {
+                .map => |m| m.get(Value{ .keyword = k }) orelse not_found,
+                .set => |s| blk2: {
+                    const kv = Value{ .keyword = k };
+                    for (s.items) |item| {
+                        if (kv.eql(item)) break :blk2 kv;
+                    }
+                    break :blk2 not_found;
+                },
+                else => not_found,
+            };
+        },
         else => error.TypeError,
     };
 }
