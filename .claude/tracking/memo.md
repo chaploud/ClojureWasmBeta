@@ -26,11 +26,13 @@
 ### 組み込み関数
 
 ```
-算術: +, -, *, /
+算術: +, -, *, /, inc, dec
 比較: =, <, >, <=, >=
+論理: not
 述語: nil?, number?, integer?, float?, string?, keyword?,
       symbol?, fn?, coll?, list?, vector?, map?, set?, empty?
-コレクション: first, rest, cons, conj, count, nth, list, vector
+コレクション: first, rest, cons, conj, count, nth, get, list, vector
+文字列: str
 出力: println, pr-str
 ```
 

@@ -181,6 +181,30 @@ pub fn div(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     return Value{ .float = result };
 }
 
+/// inc : 1加算
+pub fn inc(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+
+    return switch (args[0]) {
+        .int => |n| Value{ .int = n + 1 },
+        .float => |f| Value{ .float = f + 1.0 },
+        else => error.TypeError,
+    };
+}
+
+/// dec : 1減算
+pub fn dec(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+
+    return switch (args[0]) {
+        .int => |n| Value{ .int = n - 1 },
+        .float => |f| Value{ .float = f - 1.0 },
+        else => error.TypeError,
+    };
+}
+
 // ============================================================
 // 比較演算
 // ============================================================
@@ -262,6 +286,23 @@ fn compareNumbers(a: Value, b: Value) CoreError!i8 {
     if (fa < fb) return -1;
     if (fa > fb) return 1;
     return 0;
+}
+
+// ============================================================
+// 論理演算
+// ============================================================
+
+/// not : 論理否定（nil と false が truthy でない）
+pub fn notFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+
+    // nil と false が falsy、それ以外は truthy
+    return switch (args[0]) {
+        .nil => value_mod.true_val,
+        .bool_val => |b| if (b) value_mod.false_val else value_mod.true_val,
+        else => value_mod.false_val,
+    };
 }
 
 // ============================================================
@@ -616,7 +657,7 @@ pub fn nth(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 // 出力
 // ============================================================
 
-/// println : 改行付き出力
+/// println : 改行付き出力（文字列はクォートなし）
 pub fn println_fn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     const stdout = std.fs.File.stdout();
@@ -626,13 +667,21 @@ pub fn println_fn(allocator: std.mem.Allocator, args: []const Value) anyerror!Va
 
     for (args, 0..) |arg, i| {
         if (i > 0) writer.writeByte(' ') catch {};
-        printValue(writer, arg) catch {};
+        printValueForPrint(writer, arg) catch {};
     }
     writer.writeByte('\n') catch {};
     // flush via interface
     writer.flush() catch {};
 
     return value_mod.nil;
+}
+
+/// 値を出力（print/println 用 - 文字列はクォートなし）
+fn printValueForPrint(writer: anytype, val: Value) !void {
+    switch (val) {
+        .string => |s| try writer.writeAll(s.data), // クォートなし
+        else => try printValue(writer, val),
+    }
 }
 
 /// pr-str : 文字列表現を返す（print 用）
@@ -765,6 +814,96 @@ fn printValueToBuf(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8
 }
 
 // ============================================================
+// 文字列操作
+// ============================================================
+
+/// str : 引数を連結して文字列を返す
+pub fn strFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(allocator);
+
+    for (args) |arg| {
+        try valueToString(allocator, &buf, arg);
+    }
+
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = try buf.toOwnedSlice(allocator) };
+    return Value{ .string = str_obj };
+}
+
+/// 値を文字列に変換（str 用 - pr-str と違ってクォートなし）
+fn valueToString(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), val: Value) !void {
+    switch (val) {
+        .nil => {}, // nil は空文字列
+        .bool_val => |b| try buf.appendSlice(allocator, if (b) "true" else "false"),
+        .int => |n| {
+            var local_buf: [32]u8 = undefined;
+            const s = std.fmt.bufPrint(&local_buf, "{d}", .{n}) catch return error.OutOfMemory;
+            try buf.appendSlice(allocator, s);
+        },
+        .float => |f| {
+            var local_buf: [32]u8 = undefined;
+            const s = std.fmt.bufPrint(&local_buf, "{d}", .{f}) catch return error.OutOfMemory;
+            try buf.appendSlice(allocator, s);
+        },
+        .string => |s| try buf.appendSlice(allocator, s.data),
+        .keyword => |k| {
+            try buf.append(allocator, ':');
+            if (k.namespace) |ns| {
+                try buf.appendSlice(allocator, ns);
+                try buf.append(allocator, '/');
+            }
+            try buf.appendSlice(allocator, k.name);
+        },
+        .symbol => |s| {
+            if (s.namespace) |ns| {
+                try buf.appendSlice(allocator, ns);
+                try buf.append(allocator, '/');
+            }
+            try buf.appendSlice(allocator, s.name);
+        },
+        else => {
+            // その他の型は pr-str と同じ表現
+            try printValueToBuf(allocator, buf, val);
+        },
+    }
+}
+
+// ============================================================
+// コレクションアクセス
+// ============================================================
+
+/// get : コレクションから値を取得（見つからない場合は nil または not-found）
+pub fn get(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+
+    const coll = args[0];
+    const key = args[1];
+    const not_found = if (args.len == 3) args[2] else value_mod.nil;
+
+    return switch (coll) {
+        .nil => not_found,
+        .vector => |vec| {
+            // ベクターはインデックスでアクセス
+            if (key != .int) return not_found;
+            const idx = key.int;
+            if (idx < 0 or idx >= vec.items.len) return not_found;
+            return vec.items[@intCast(idx)];
+        },
+        .list => |lst| {
+            // リストもインデックスでアクセス
+            if (key != .int) return not_found;
+            const idx = key.int;
+            if (idx < 0 or idx >= lst.items.len) return not_found;
+            return lst.items[@intCast(idx)];
+        },
+        // マップは未実装（現在 nil を返す仮実装）
+        else => not_found,
+    };
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -781,12 +920,16 @@ const builtins = [_]BuiltinDef{
     .{ .name = "-", .func = sub },
     .{ .name = "*", .func = mul },
     .{ .name = "/", .func = div },
+    .{ .name = "inc", .func = inc },
+    .{ .name = "dec", .func = dec },
     // 比較
     .{ .name = "=", .func = eq },
     .{ .name = "<", .func = lt },
     .{ .name = ">", .func = gt },
     .{ .name = "<=", .func = lte },
     .{ .name = ">=", .func = gte },
+    // 論理
+    .{ .name = "not", .func = notFn },
     // 述語
     .{ .name = "nil?", .func = isNil },
     .{ .name = "number?", .func = isNumber },
@@ -812,6 +955,9 @@ const builtins = [_]BuiltinDef{
     .{ .name = "conj", .func = conj },
     .{ .name = "count", .func = count },
     .{ .name = "nth", .func = nth },
+    .{ .name = "get", .func = get },
+    // 文字列
+    .{ .name = "str", .func = strFn },
     // 出力
     .{ .name = "println", .func = println_fn },
     .{ .name = "pr-str", .func = prStr },
