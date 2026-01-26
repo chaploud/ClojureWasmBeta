@@ -60,11 +60,11 @@ Form → Analyzer → Node → [Backend切り替え] → Value
 
 Clojureでは多くの「標準関数」が実際にはコア実装を要求する。
 
-| 区分 | 例 | 追加方法 |
-|------|-----|---------|
-| **純粋なlib追加** | println, str, subs | core.zig に関数追加のみ |
-| **コア改修必要** | map, filter, reduce | LazySeq型 + 新Node + VM対応 |
-| **新しい抽象** | defprotocol, defrecord | Value型拡張 + Analyzer + VM |
+| 区分              | 例                     | 追加方法                    |
+|-------------------|------------------------|-----------------------------|
+| **純粋なlib追加** | println, str, subs     | core.zig に関数追加のみ     |
+| **コア改修必要**  | map, filter, reduce    | LazySeq型 + 新Node + VM対応 |
+| **新しい抽象**    | defprotocol, defrecord | Value型拡張 + Analyzer + VM |
 
 ---
 
@@ -113,16 +113,16 @@ src/
 
 ### 完了フェーズ
 
-| Phase | 内容 |
-|-------|------|
-| 1-4 | Reader, Runtime基盤, Analyzer, TreeWalk評価器 |
-| 5 | ユーザー定義関数 (fn, クロージャ) |
-| 6 | マクロシステム (defmacro) |
-| 7 | CLI (-e, 複数式, 状態保持) |
-| 8.0 | VM基盤 (Bytecode, Compiler, VM, --compare) |
+| Phase    | 内容                                                                                                                      |
+|----------|---------------------------------------------------------------------------------------------------------------------------|
+| 1-4      | Reader, Runtime基盤, Analyzer, TreeWalk評価器                                                                             |
+| 5        | ユーザー定義関数 (fn, クロージャ)                                                                                         |
+| 6        | マクロシステム (defmacro)                                                                                                 |
+| 7        | CLI (-e, 複数式, 状態保持)                                                                                                |
+| 8.0      | VM基盤 (Bytecode, Compiler, VM, --compare)                                                                                |
 | 8.1-8.20 | VM機能拡充（クロージャ、HOF、シーケンス、マクロ、例外、Atom、文字列、マルチメソッド、プロトコル、letfn、動的リテラル 等） |
-| 9-9.2 | LazySeq — 遅延シーケンス基盤、遅延 map/filter/concat、遅延ジェネレータ |
-| 11 | PURE バッチ — 述語(23)+コレクション/ユーティリティ(17)+ビット演算/HOF(17) = +57関数 |
+| 9-9.2    | LazySeq — 遅延シーケンス基盤、遅延 map/filter/concat、遅延ジェネレータ                                                    |
+| 11       | PURE バッチ — 述語(23)+コレクション/ユーティリティ(17)+ビット演算/HOF(17) = +57関数                                       |
 
 > 詳細な完了フェーズ履歴: `.claude/tracking/memo.md`
 
@@ -150,25 +150,25 @@ GC は旧計画で Phase 10 だったが、ArenaAllocator でバッチ実行に�
 
 新しいデータ構造・パターンが要るが、サブシステムは不要。
 
-| Phase | 内容 |
-|-------|------|
-| 13 | delay/force, volatile, transient |
-| 14 | reduced/transduce 基盤（Reduced ラッパー型、completing, cat, eduction） |
-| 15 | Atom 拡張・Var 操作・メタデータ（watch, validator, var-get/set, alter-meta!） |
-| 16 | defrecord・deftype・defstruct |
-| 17 | 階層システム（derive, ancestors, descendants, isa?） |
-| 18 | 動的束縛（binding, with-bindings）, sorted コレクション（赤黒木）, promise |
+| Phase | 内容                                                                          |
+|-------|-------------------------------------------------------------------------------|
+| 13    | delay/force, volatile, transient                                              |
+| 14    | reduced/transduce 基盤（Reduced ラッパー型、completing, cat, eduction）       |
+| 15    | Atom 拡張・Var 操作・メタデータ（watch, validator, var-get/set, alter-meta!） |
+| 16    | defrecord・deftype・defstruct                                                 |
+| 17    | 階層システム（derive, ancestors, descendants, isa?）                          |
+| 18    | 動的束縛（binding, with-bindings）, sorted コレクション（赤黒木）, promise    |
 
 #### Phase 19-22: SUBSYSTEM（~100 件）
 
 新しいサブシステムの構築が必要。
 
-| Phase | 内容 |
-|-------|------|
-| 19 | 正規表現（re-find, re-matches, re-seq 等）— Zig に標準なし、要検討 |
-| 20 | 名前空間システム（ns, require, use, refer, load 等）— マルチファイル対応 |
-| 21 | I/O（slurp, spit, read-line, *in*/*out*/*err*, with-open 等） |
-| 22 | Reader/Eval（read, read-string, eval, macroexpand 等）— セルフホスティング基盤 |
+| Phase | 内容                                                                           |
+|-------|--------------------------------------------------------------------------------|
+| 19    | 正規表現（re-find, re-matches, re-seq 等）— Zig に標準なし、要検討             |
+| 20    | 名前空間システム（ns, require, use, refer, load 等）— マルチファイル対応       |
+| 21    | I/O（slurp, spit, read-line, *in*/*out*/*err*, with-open 等）                  |
+| 22    | Reader/Eval（read, read-string, eval, macroexpand 等）— セルフホスティング基盤 |
 
 #### Phase 23: GC
 
@@ -190,20 +190,20 @@ ArenaAllocator でバッチ実行は問題なし。長時間 REPL 対応時に�
 
 ### OpCodeカテゴリ
 
-| 範囲 | カテゴリ | 主なOpCode |
-|-----|---------|-----------|
-| 0x00-0x0F | 定数・リテラル | const_load, nil, true_val, false_val |
-| 0x10-0x1F | スタック操作 | pop, dup, swap |
-| 0x20-0x2F | ローカル変数 | local_load, local_store |
-| 0x30-0x3F | クロージャ変数 | upvalue_load, upvalue_store |
-| 0x40-0x4F | Var操作 | var_load, def, def_macro |
-| 0x50-0x5F | 制御フロー | jump, jump_if_false, jump_if_true |
-| 0x60-0x6F | 関数 | call, ret, closure, partial, comp, reduce |
-| 0x70-0x7F | loop/recur | loop_start, recur |
-| 0x80-0x8F | コレクション生成 | list_new, vec_new, map_new, set_new |
-| 0x90-0x9F | コレクション操作 | nth, get, first, rest, conj, assoc, count |
-| 0xA0-0xAF | 例外処理 | try_begin, catch_begin, finally_begin, throw_ex |
-| 0xC0-0xCF | メタデータ | with_meta, meta |
+| 範囲      | カテゴリ         | 主なOpCode                                      |
+|-----------|------------------|-------------------------------------------------|
+| 0x00-0x0F | 定数・リテラル   | const_load, nil, true_val, false_val            |
+| 0x10-0x1F | スタック操作     | pop, dup, swap                                  |
+| 0x20-0x2F | ローカル変数     | local_load, local_store                         |
+| 0x30-0x3F | クロージャ変数   | upvalue_load, upvalue_store                     |
+| 0x40-0x4F | Var操作          | var_load, def, def_macro                        |
+| 0x50-0x5F | 制御フロー       | jump, jump_if_false, jump_if_true               |
+| 0x60-0x6F | 関数             | call, ret, closure, partial, comp, reduce       |
+| 0x70-0x7F | loop/recur       | loop_start, recur                               |
+| 0x80-0x8F | コレクション生成 | list_new, vec_new, map_new, set_new             |
+| 0x90-0x9F | コレクション操作 | nth, get, first, rest, conj, assoc, count       |
+| 0xA0-0xAF | 例外処理         | try_begin, catch_begin, finally_begin, throw_ex |
+| 0xC0-0xCF | メタデータ       | with_meta, meta                                 |
 
 ---
 

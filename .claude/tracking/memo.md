@@ -10,37 +10,37 @@
 
 ### 完了フェーズ
 
-| Phase | 内容 |
-|-------|------|
-| 1-4 | Reader, Runtime基盤, Analyzer, TreeWalk評価器 |
-| 5 | ユーザー定義関数 (fn, クロージャ) |
-| 6 | マクロシステム (defmacro) |
-| 7 | CLI (-e, 複数式, 状態保持) |
-| 8.0 | VM基盤 (Bytecode, Compiler, VM, --compare) |
-| 8.1 | クロージャ完成, 複数アリティfn, 可変長引数 |
-| 8.2 | 高階関数 (apply, partial, comp, reduce) |
-| 8.3 | 分配束縛（シーケンシャル・マップ） |
-| 8.4 | シーケンス操作 (map, filter, take, drop, range 等) |
-| 8.5 | 制御フローマクロ・スレッディングマクロ |
-| 8.6 | try/catch/finally 例外処理 |
-| 8.7 | Atom 状態管理 (atom, deref, reset!, swap!) |
-| 8.8 | 文字列操作拡充 |
-| 8.9 | defn・dotimes・doseq・if-not・comment |
-| 8.10 | condp・case・some->・some->>・as->・mapv・filterv |
-| 8.11 | キーワードを関数として使用 |
-| 8.12 | every?/some/not-every?/not-any? |
-| 8.13 | バグ修正・安定化 |
-| 8.14 | マルチメソッド (defmulti, defmethod) |
-| 8.15 | プロトコル (defprotocol, extend-type, extend-protocol) |
-| 8.16 | ユーティリティ関数・HOF・マクロ拡充 |
-| 8.17 | VM let-closure バグ修正 |
-| 8.18 | letfn（相互再帰ローカル関数） |
-| 8.19 | 実用関数・マクロ大量追加（~83関数/マクロ） |
-| 8.20 | 動的コレクションリテラル（変数を含む [x y], {:a x} 等） |
-| 9 | LazySeq — 真の遅延シーケンス（無限シーケンス対応） |
-| 9.1 | Lazy map/filter/concat — 遅延変換・連結 |
-| 9.2 | iterate/repeat/cycle/range()/mapcat — 遅延ジェネレータ・lazy mapcat |
-| 11 | PURE述語(23)+コレクション/ユーティリティ(17)+ビット演算等(17) = +57関数 |
+| Phase | 内容                                                                    |
+|-------|-------------------------------------------------------------------------|
+| 1-4   | Reader, Runtime基盤, Analyzer, TreeWalk評価器                           |
+| 5     | ユーザー定義関数 (fn, クロージャ)                                       |
+| 6     | マクロシステム (defmacro)                                               |
+| 7     | CLI (-e, 複数式, 状態保持)                                              |
+| 8.0   | VM基盤 (Bytecode, Compiler, VM, --compare)                              |
+| 8.1   | クロージャ完成, 複数アリティfn, 可変長引数                              |
+| 8.2   | 高階関数 (apply, partial, comp, reduce)                                 |
+| 8.3   | 分配束縛 (シーケンシャル・マップ)                                       |
+| 8.4   | シーケンス操作 (map, filter, take, drop, range 等)                      |
+| 8.5   | 制御フローマクロ・スレッディングマクロ                                  |
+| 8.6   | try/catch/finally 例外処理                                              |
+| 8.7   | Atom 状態管理 (atom, deref, reset!, swap!)                              |
+| 8.8   | 文字列操作拡充                                                          |
+| 8.9   | defn・dotimes・doseq・if-not・comment                                   |
+| 8.10  | condp・case・some->・some->>・as->・mapv・filterv                       |
+| 8.11  | キーワードを関数として使用                                              |
+| 8.12  | every?/some/not-every?/not-any?                                         |
+| 8.13  | バグ修正・安定化                                                        |
+| 8.14  | マルチメソッド (defmulti, defmethod)                                    |
+| 8.15  | プロトコル (defprotocol, extend-type, extend-protocol)                  |
+| 8.16  | ユーティリティ関数・HOF・マクロ拡充                                     |
+| 8.17  | VM let-closure バグ修正                                                 |
+| 8.18  | letfn（相互再帰ローカル関数）                                           |
+| 8.19  | 実用関数・マクロ大量追加（~83関数/マクロ）                              |
+| 8.20  | 動的コレクションリテラル（変数を含む [x y], {:a x} 等）                 |
+| 9     | LazySeq — 真の遅延シーケンス（無限シーケンス対応）                      |
+| 9.1   | Lazy map/filter/concat — 遅延変換・連結                                 |
+| 9.2   | iterate/repeat/cycle/range()/mapcat — 遅延ジェネレータ・lazy mapcat     |
+| 11    | PURE述語(23)+コレクション/ユーティリティ(17)+ビット演算等(17) = +57関数 |
 
 ### 実装状況
 
@@ -56,12 +56,12 @@
 
 残り 243 todo は以下の 4 層に分かれる:
 
-| 層 | 推定数 | 性質 |
-|---|---|---|
-| **PURE** | ~55 | 既存基盤の組み合わせ。設計不要。述語・HOF・ユーティリティ |
-| **DESIGN** | ~75 | 新しいデータ構造・パターンが要るが、サブシステムは不要 |
-| **SUBSYSTEM** | ~100 | 新サブシステムが必要（正規表現、名前空間、I/O、動的Var） |
-| **JVM_ADAPT** | ~10 | JVM 概念を簡略化移植（型変換・型チェック） |
+| 層            | 推定数 | 性質                                                      |
+|---------------|--------|-----------------------------------------------------------|
+| **PURE**      | ~55    | 既存基盤の組み合わせ。設計不要。述語・HOF・ユーティリティ |
+| **DESIGN**    | ~75    | 新しいデータ構造・パターンが要るが、サブシステムは不要    |
+| **SUBSYSTEM** | ~100   | 新サブシステムが必要（正規表現、名前空間、I/O、動的Var）  |
+| **JVM_ADAPT** | ~10    | JVM 概念を簡略化移植（型変換・型チェック）                |
 
 > Phase 11 で PURE ~60件を一括実装し、バッチ方式の有効性を確認済み。
 > 残り PURE を片付けてから DESIGN → SUBSYSTEM へ進む。

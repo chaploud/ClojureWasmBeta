@@ -30,15 +30,15 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 
 ## ドキュメント構成
 
-| パス | 内容 | 参照タイミング |
-|-----|------|--------------|
-| `.claude/tracking/memo.md` | 現在地点・次回タスク | 毎セッション（必須） |
-| `.claude/tracking/notes.md` | 技術ノート・回避策・注意点 | 関連サブシステム作業時 |
-| `docs/reference/architecture.md` | ロードマップ・全体設計 | フェーズ移行時・設計確認時 |
-| `docs/reference/type_design.md` | 3フェーズ型設計 (Form→Node→Value) | 必要時のみ |
-| `docs/reference/zig_guide.md` | Zig 0.15.2 の落とし穴・パターン | 必要時のみ |
-| `status/vars.yaml` | 実装状況（yq で照会） | 関数追加時 |
-| `status/README.md` | status/ のスキーマ定義 | status/ 編集時 |
+| パス                             | 内容                              | 参照タイミング             |
+|----------------------------------|-----------------------------------|----------------------------|
+| `.claude/tracking/memo.md`       | 現在地点・次回タスク              | 毎セッション（必須）       |
+| `.claude/tracking/notes.md`      | 技術ノート・回避策・注意点        | 関連サブシステム作業時     |
+| `docs/reference/architecture.md` | ロードマップ・全体設計            | フェーズ移行時・設計確認時 |
+| `docs/reference/type_design.md`  | 3フェーズ型設計 (Form→Node→Value) | 必要時のみ                 |
+| `docs/reference/zig_guide.md`    | Zig 0.15.2 の落とし穴・パターン   | 必要時のみ                 |
+| `status/vars.yaml`               | 実装状況（yq で照会）             | 関数追加時                 |
+| `status/README.md`               | status/ のスキーマ定義            | status/ 編集時             |
 
 ## コーディング規約
 
@@ -85,11 +85,11 @@ Zig コードの探索・変更時は IDE 連携ツールを**積極的に活用
 
 ### 使えるツールと用途
 
-| ツール | 用途 | 使い方 |
-|--------|------|--------|
-| `imenu-list-symbols` | ファイル内の関数・構造体を一覧 | ファイルを全文読む前に構造を把握 |
-| `xref-find-references` | シンボルの全参照箇所を検索 | 型・関数の変更前に影響範囲を特定 |
-| `getDiagnostics` | コンパイルエラー・警告を取得 | 編集後、`zig build` 前にエラーを検出 |
+| ツール                 | 用途                           | 使い方                               |
+|------------------------|--------------------------------|--------------------------------------|
+| `imenu-list-symbols`   | ファイル内の関数・構造体を一覧 | ファイルを全文読む前に構造を把握     |
+| `xref-find-references` | シンボルの全参照箇所を検索     | 型・関数の変更前に影響範囲を特定     |
+| `getDiagnostics`       | コンパイルエラー・警告を取得   | 編集後、`zig build` 前にエラーを検出 |
 
 ### 活用パターン
 
