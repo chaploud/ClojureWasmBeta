@@ -1853,3 +1853,160 @@ test "compare: constantly macro" {
     try expectStrBoth(allocator, &env, "(pr-str (map (constantly 0) [1 2 3]))", "(0 0 0)");
     try expectIntBoth(allocator, &env, "((constantly 42) 1 2 3)", 42);
 }
+
+// ============================================================
+// LazySeq テスト
+// ============================================================
+
+test "compare: lazy-seq basic creation and forcing" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本: lazy-seq を作って first で force
+    try expectIntBoth(allocator, &env, "(first (lazy-seq (cons 1 nil)))", 1);
+
+    // rest
+    try expectStrBoth(allocator, &env, "(pr-str (rest (lazy-seq (cons 1 (cons 2 nil)))))", "(2)");
+
+    // doall: 全要素を force
+    try expectStrBoth(allocator, &env, "(pr-str (doall (lazy-seq (cons 1 (cons 2 (cons 3 nil))))))", "(1 2 3)");
+
+    // 空 lazy-seq
+    try expectNilBoth(allocator, &env, "(seq (lazy-seq nil))");
+
+    // count: 有限 lazy-seq
+    try expectIntBoth(allocator, &env, "(count (lazy-seq (cons 1 (cons 2 (cons 3 nil)))))", 3);
+}
+
+test "compare: lazy-seq realized? state transitions" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 作成直後は未実体化
+    try expectBoolBoth(allocator, &env,
+        "(do (def s1 (lazy-seq (cons 1 nil))) (realized? s1))", false);
+
+    // first で force 後は実体化済み
+    try expectBoolBoth(allocator, &env,
+        "(do (def s2 (lazy-seq (cons 42 nil))) (first s2) (realized? s2))", true);
+
+    // lazy-seq? 判定
+    try expectBoolBoth(allocator, &env,
+        "(lazy-seq? (lazy-seq nil))", true);
+
+    // 非 lazy-seq
+    try expectBoolBoth(allocator, &env,
+        "(lazy-seq? [1 2 3])", false);
+}
+
+test "compare: lazy-seq cons propagation" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // (cons x lazy-tail) は lazy-seq を返す（tail を force しない）
+    try expectBoolBoth(allocator, &env,
+        "(lazy-seq? (cons 1 (lazy-seq (cons 2 nil))))", true);
+
+    // cons 結果の first/rest
+    try expectIntBoth(allocator, &env,
+        "(first (cons 1 (lazy-seq (cons 2 nil))))", 1);
+
+    // rest は tail（lazy-seq のまま）
+    try expectBoolBoth(allocator, &env,
+        "(do (def cs (cons 0 (lazy-seq (cons 1 nil)))) (lazy-seq? (rest cs)))", true);
+}
+
+test "compare: lazy-seq infinite sequence with take/drop" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 無限遅延シーケンス: do ブロック内で定義して即使用（Var スナップショット回避）
+    // take で有限個取得
+    try expectStrBoth(allocator, &env,
+        \\(do
+        \\  (def lazy-range (fn [n] (lazy-seq (cons n (lazy-range (+ n 1))))))
+        \\  (pr-str (take 5 (lazy-range 0))))
+    , "(0 1 2 3 4)");
+
+    // drop + take
+    try expectStrBoth(allocator, &env,
+        \\(do
+        \\  (def lazy-range2 (fn [n] (lazy-seq (cons n (lazy-range2 (+ n 1))))))
+        \\  (pr-str (take 3 (drop 10 (lazy-range2 0)))))
+    , "(10 11 12)");
+
+    // first on infinite
+    try expectIntBoth(allocator, &env,
+        \\(do
+        \\  (def lazy-from (fn [n] (lazy-seq (cons n (lazy-from (+ n 1))))))
+        \\  (first (lazy-from 100)))
+    , 100);
+
+    // rest returns lazy (not infinite loop)
+    try expectBoolBoth(allocator, &env,
+        \\(do
+        \\  (def lr (fn [n] (lazy-seq (cons n (lr (+ n 1))))))
+        \\  (lazy-seq? (rest (lr 0))))
+    , true);
+
+    // empty? on infinite seq
+    try expectBoolBoth(allocator, &env,
+        \\(do
+        \\  (def lr2 (fn [n] (lazy-seq (cons n (lr2 (+ n 1))))))
+        \\  (empty? (lr2 0)))
+    , false);
+
+    // seq on non-empty lazy-seq returns truthy
+    try expectBoolBoth(allocator, &env,
+        \\(do
+        \\  (def lr3 (fn [n] (lazy-seq (cons n (lr3 (+ n 1))))))
+        \\  (not (nil? (seq (lr3 0)))))
+    , true);
+}
+
+test "compare: lazy-seq rest preserves laziness" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // rest の結果が lazy のまま（force していない）
+    try expectBoolBoth(allocator, &env,
+        \\(do
+        \\  (def rng (fn [n] (lazy-seq (cons n (rng (+ n 1))))))
+        \\  (def tail (rest (rng 0)))
+        \\  (realized? tail))
+    , false);
+
+    // first of rest: 一段だけ force
+    try expectIntBoth(allocator, &env,
+        \\(do
+        \\  (def rng2 (fn [n] (lazy-seq (cons n (rng2 (+ n 1))))))
+        \\  (first (rest (rng2 0))))
+    , 1);
+
+    // first of rest of rest
+    try expectIntBoth(allocator, &env,
+        \\(do
+        \\  (def rng3 (fn [n] (lazy-seq (cons n (rng3 (+ n 1))))))
+        \\  (first (rest (rest (rng3 0)))))
+    , 2);
+}
