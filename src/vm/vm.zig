@@ -425,6 +425,13 @@ pub const VM = struct {
                 },
 
                 // ═══════════════════════════════════════════════════════
+                // [K2] Atom 操作
+                // ═══════════════════════════════════════════════════════
+                .swap_atom => {
+                    try self.executeSwapAtomWithExceptionHandling(instr.operand);
+                },
+
+                // ═══════════════════════════════════════════════════════
                 // [L] メタデータ（未実装）
                 // ═══════════════════════════════════════════════════════
                 .with_meta, .meta => {
@@ -1055,6 +1062,51 @@ pub const VM = struct {
         }
 
         return false;
+    }
+
+    // === Atom 操作 ===
+
+    /// swap! を実行
+    /// スタック: [atom, fn, arg1, ..., argN] (argN がトップ)
+    fn executeSwapAtom(self: *VM, extra_arg_count: u16) VMError!void {
+        // 追加引数を取り出し
+        var extra_args = self.allocator.alloc(Value, extra_arg_count) catch return error.OutOfMemory;
+        var i: usize = extra_arg_count;
+        while (i > 0) {
+            i -= 1;
+            extra_args[i] = self.pop();
+        }
+
+        // 関数を取り出し
+        const fn_val = self.pop();
+
+        // Atom を取り出し
+        const atom_val = self.pop();
+        const atom_ptr = switch (atom_val) {
+            .atom => |a| a,
+            else => return error.TypeError,
+        };
+
+        // (f current-val extra-args...) を呼び出し
+        try self.push(fn_val);
+        try self.push(atom_ptr.value); // 現在の値
+        for (extra_args) |arg| {
+            try self.push(arg);
+        }
+        try self.callValue(1 + extra_arg_count);
+
+        // 結果を取得して Atom を更新
+        const new_val = self.pop();
+        atom_ptr.value = new_val;
+        try self.push(new_val);
+    }
+
+    /// executeSwapAtom のラッパー: UserException をハンドラに転送
+    fn executeSwapAtomWithExceptionHandling(self: *VM, extra_arg_count: u16) VMError!void {
+        self.executeSwapAtom(extra_arg_count) catch |e| {
+            if (e == error.UserException and self.handleThrowFromError()) return;
+            return e;
+        };
     }
 
     // === スタック操作 ===

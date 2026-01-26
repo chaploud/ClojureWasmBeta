@@ -89,6 +89,7 @@ pub const Compiler = struct {
             .reduce_node => |node| try self.emitReduce(node),
             .map_node => |node| try self.emitMap(node),
             .filter_node => |node| try self.emitFilter(node),
+            .swap_node => |node| try self.emitSwap(node),
         }
     }
 
@@ -428,6 +429,22 @@ pub const Compiler = struct {
         try self.compile(node.fn_node);
         try self.compile(node.coll_node);
         try self.chunk.emit(.filter_seq, 0);
+    }
+
+    // === Atom 操作 ===
+
+    /// swap! コンパイル: (swap! atom f arg1 arg2 ...)
+    fn emitSwap(self: *Compiler, node: *const node_mod.SwapNode) CompileError!void {
+        // atom 式をコンパイル
+        try self.compile(node.atom_node);
+        // 関数をコンパイル
+        try self.compile(node.fn_node);
+        // 追加引数をコンパイル
+        for (node.args) |arg| {
+            try self.compile(arg);
+        }
+        // swap_atom 命令（オペランド: 追加引数の数）
+        try self.chunk.emit(.swap_atom, @intCast(node.args.len));
     }
 
     // === 例外処理 ===

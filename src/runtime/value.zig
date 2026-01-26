@@ -262,6 +262,17 @@ pub const PersistentSet = struct {
     }
 };
 
+// === 参照型 ===
+
+/// Atom（ミュータブルな参照）
+pub const Atom = struct {
+    value: Value,
+
+    pub fn init(val: Value) Atom {
+        return .{ .value = val };
+    }
+};
+
 // === 関数プロトタイプ（コンパイル済み）===
 // 循環依存を避けるため、ここで前方宣言
 // 実際の定義は compiler/bytecode.zig
@@ -380,6 +391,7 @@ pub const Value = union(enum) {
 
     // === 参照 ===
     var_val: *anyopaque, // *Var（循環依存を避けるため anyopaque）
+    atom: *Atom, // Atom（ミュータブルな参照）
 
     // === ヘルパー関数 ===
 
@@ -459,6 +471,7 @@ pub const Value = union(enum) {
             .comp_fn => |a| a == other.comp_fn, // 参照等価
             .fn_proto => |a| a == other.fn_proto, // 参照等価
             .var_val => |a| a == other.var_val, // 参照等価
+            .atom => |a| a == other.atom, // 参照等価
         };
     }
 
@@ -482,6 +495,7 @@ pub const Value = union(enum) {
             .comp_fn => "function", // comp も関数として表示
             .fn_proto => "fn-proto",
             .var_val => "var",
+            .atom => "atom",
         };
     }
 
@@ -578,6 +592,11 @@ pub const Value = union(enum) {
             .comp_fn => try writer.writeAll("#<comp-fn>"),
             .fn_proto => try writer.writeAll("#<fn-proto>"),
             .var_val => try writer.writeAll("#<var>"),
+            .atom => |a| {
+                try writer.writeAll("#<atom ");
+                try a.value.format("", .{}, writer);
+                try writer.writeByte('>');
+            },
         }
     }
 };

@@ -930,6 +930,11 @@ fn printValue(writer: anytype, val: Value) !void {
         .comp_fn => try writer.writeAll("#<comp-fn>"),
         .fn_proto => try writer.writeAll("#<fn-proto>"),
         .var_val => try writer.writeAll("#<var>"),
+        .atom => |a| {
+            try writer.writeAll("#<atom ");
+            try printValue(writer, a.value);
+            try writer.writeByte('>');
+        },
     }
 }
 
@@ -1635,6 +1640,54 @@ pub fn exData(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
 }
 
 // ============================================================
+// Atom 操作
+// ============================================================
+
+/// atom: Atom を生成
+/// (atom val) → #<atom val>
+pub fn atomFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const a = try allocator.create(value_mod.Atom);
+    a.* = value_mod.Atom.init(args[0]);
+    return Value{ .atom = a };
+}
+
+/// deref: Atom の現在値を返す
+/// (deref atom) → val
+pub fn derefFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .atom => |a| a.value,
+        else => error.TypeError,
+    };
+}
+
+/// reset!: Atom の値を新しい値に置換
+/// (reset! atom new-val) → new-val
+pub fn resetBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    return switch (args[0]) {
+        .atom => |a| {
+            a.value = args[1];
+            return args[1];
+        },
+        else => error.TypeError,
+    };
+}
+
+/// atom?: Atom かどうか
+pub fn isAtom(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .atom => value_mod.true_val,
+        else => value_mod.false_val,
+    };
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -1727,6 +1780,11 @@ const builtins = [_]BuiltinDef{
     .{ .name = "ex-info", .func = exInfo },
     .{ .name = "ex-message", .func = exMessage },
     .{ .name = "ex-data", .func = exData },
+    // Atom
+    .{ .name = "atom", .func = atomFn },
+    .{ .name = "deref", .func = derefFn },
+    .{ .name = "reset!", .func = resetBang },
+    .{ .name = "atom?", .func = isAtom },
 };
 
 /// clojure.core の組み込み関数を Env に登録

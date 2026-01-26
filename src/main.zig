@@ -287,6 +287,11 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
         .comp_fn => try writer.writeAll("#<comp-fn>"),
         .fn_proto => try writer.writeAll("#<fn-proto>"),
         .var_val => try writer.writeAll("#<var>"),
+        .atom => |a| {
+            try writer.writeAll("#<atom ");
+            try printValue(writer, a.value);
+            try writer.writeByte('>');
+        },
     }
 }
 

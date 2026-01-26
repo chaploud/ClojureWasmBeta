@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.6 try/catch/finally 例外処理 完了**
+**Phase 8.7 Atom 状態管理 完了**
 
 ### 完了した機能
 
@@ -24,6 +24,7 @@
 | 8.4 | シーケンス操作 (map, filter, take, drop, range 等) |
 | 8.5 | 制御フローマクロ・スレッディングマクロ・ユーティリティ関数 |
 | 8.6 | try/catch/finally 例外処理 + ex-info/ex-message/ex-data |
+| 8.7 | Atom 状態管理 (atom, deref/@, reset!, swap!, atom?) |
 
 ### 組み込み関数
 
@@ -33,7 +34,7 @@
 論理: not, and, or
 述語: nil?, number?, integer?, float?, string?, keyword?,
       symbol?, fn?, coll?, list?, vector?, map?, set?, empty?, contains?,
-      some?, zero?, pos?, neg?, even?, odd?
+      some?, zero?, pos?, neg?, even?, odd?, atom?
 コレクション: first, rest, cons, conj, count, nth, get, list, vector
 マップ: hash-map, assoc, dissoc, keys, vals
 シーケンス: take, drop, range, concat, into, reverse, seq, vec,
@@ -42,6 +43,7 @@
 文字列: str
 出力: println, pr-str
 例外: ex-info, ex-message, ex-data
+Atom: atom, deref, reset!, swap!
 ユーティリティ: identity
 ```
 
@@ -52,6 +54,7 @@
 関数: fn, def, defmacro, quote
 高階: apply, partial, comp, reduce, map, filter
 例外: try, throw
+Atom: swap!
 ```
 
 ### 組み込みマクロ（8.5 で追加）
@@ -68,14 +71,14 @@
 
 ## 次回タスク
 
-### Phase 8.7 以降の候補
+### Phase 8.8 以降の候補
 
 候補:
-- Atom (状態管理)
 - プロトコル (defprotocol, extend-type)
 - LazySeq（真の遅延シーケンス）
 - 文字列操作拡充 (subs, str/join, etc.)
 - 正規表現
+- マルチメソッド (defmulti, defmethod)
 
 ---
 
@@ -83,7 +86,7 @@
 
 | Phase | 内容 | 依存 |
 |-------|------|------|
-| 8.7+ | 機能拡充 (Atom, プロトコル等) | - |
+| 8.8+ | 機能拡充 (プロトコル、文字列等) | - |
 | 9 | LazySeq（真の遅延シーケンス）| 無限シーケンスに必要 |
 | 10 | GC | LazySeq導入後に必須 |
 | 11 | Wasm連携 | 言語機能充実後 |
@@ -122,6 +125,11 @@
 - thrown_value は threadlocal に `*anyopaque` で格納（レイヤリング維持）
 - VM: ExceptionHandler スタックで try/catch の状態を管理、ネスト対応
 - Zig 0.15.2 で `catch` + `continue` パターンが LLVM IR エラーを引き起こすため、ラッパー関数で回避
+
+### Atom
+- `swap!` は特殊形式（関数呼び出しが必要なため通常の BuiltinFn では不可）
+- `atom`, `deref`, `reset!`, `atom?` は通常の組み込み関数
+- `--compare` モードではミュータブル状態が両バックエンドで共有されるため、Atom 操作の比較結果がずれる場合がある
 
 ### 組み込みマクロ
 - and/or は短絡評価（let + if に展開）

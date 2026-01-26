@@ -55,6 +55,7 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .reduce_node => |n| runReduce(n, ctx),
         .map_node => |n| runMap(n, ctx),
         .filter_node => |n| runFilter(n, ctx),
+        .swap_node => |n| runSwap(n, ctx),
     };
 }
 
@@ -581,6 +582,37 @@ fn runFilter(node: *const node_mod.FilterNode, ctx: *Context) EvalError!Value {
     const result_list = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
     result_list.* = .{ .items = result_buf.toOwnedSlice(ctx.allocator) catch return error.OutOfMemory };
     return Value{ .list = result_list };
+}
+
+/// (swap! atom f) または (swap! atom f x y ...)
+fn runSwap(node: *const node_mod.SwapNode, ctx: *Context) EvalError!Value {
+    const atom_val = try run(node.atom_node, ctx);
+    const fn_val = try run(node.fn_node, ctx);
+
+    // Atom チェック
+    const atom_ptr = switch (atom_val) {
+        .atom => |a| a,
+        else => return error.TypeError,
+    };
+
+    // 追加引数を評価
+    var extra_args = ctx.allocator.alloc(Value, node.args.len) catch return error.OutOfMemory;
+    for (node.args, 0..) |arg, i| {
+        extra_args[i] = try run(arg, ctx);
+    }
+
+    // (f current-val extra-args...) の引数を構築
+    const total_args = 1 + extra_args.len;
+    var all_args = ctx.allocator.alloc(Value, total_args) catch return error.OutOfMemory;
+    all_args[0] = atom_ptr.value; // 現在の値
+    @memcpy(all_args[1..], extra_args);
+
+    // 関数を適用
+    const new_val = try callWithArgs(fn_val, all_args, ctx);
+
+    // Atom を更新
+    atom_ptr.value = new_val;
+    return new_val;
 }
 
 // === テスト ===

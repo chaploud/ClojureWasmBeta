@@ -182,6 +182,15 @@ pub const FilterNode = struct {
     stack: SourceInfo,
 };
 
+/// swap! ノード
+/// (swap! atom f) または (swap! atom f x y ...)
+pub const SwapNode = struct {
+    atom_node: *Node, // Atom 式
+    fn_node: *Node, // 適用する関数
+    args: []const *Node, // 追加引数（0個以上）
+    stack: SourceInfo,
+};
+
 // === Node 本体 ===
 
 /// 実行可能ノード
@@ -222,6 +231,9 @@ pub const Node = union(enum) {
     map_node: *MapNode,
     filter_node: *FilterNode,
 
+    // Atom
+    swap_node: *SwapNode,
+
     /// スタック情報を取得
     pub fn stack(self: Node) SourceInfo {
         return switch (self) {
@@ -245,6 +257,7 @@ pub const Node = union(enum) {
             .reduce_node => |n| n.stack,
             .map_node => |n| n.stack,
             .filter_node => |n| n.stack,
+            .swap_node => |n| n.stack,
         };
     }
 
@@ -271,6 +284,7 @@ pub const Node = union(enum) {
             .reduce_node => "reduce",
             .map_node => "map",
             .filter_node => "filter",
+            .swap_node => "swap!",
         };
     }
 };

@@ -171,6 +171,8 @@ pub const Analyzer = struct {
                 return self.analyzeThrow(items);
             } else if (std.mem.eql(u8, sym_name, "try")) {
                 return self.analyzeTry(items);
+            } else if (std.mem.eql(u8, sym_name, "swap!")) {
+                return self.analyzeSwap(items);
             }
 
             // 組み込みマクロ展開（Form→Form 変換して再解析）
@@ -1215,6 +1217,40 @@ pub const Analyzer = struct {
     }
 
     // ============================================================
+    // Atom 操作
+    // ============================================================
+
+    /// (swap! atom f) または (swap! atom f x y ...) の解析
+    fn analyzeSwap(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // 最低3引数: swap!, atom, fn
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "swap! requires at least 2 arguments (swap! atom f)", .{});
+        }
+
+        const atom_node = try self.analyze(items[1]);
+        const fn_node = try self.analyze(items[2]);
+
+        // 追加引数（0個以上）
+        const extra_count = items.len - 3;
+        var extra_args = self.allocator.alloc(*Node, extra_count) catch return error.OutOfMemory;
+        for (0..extra_count) |i| {
+            extra_args[i] = try self.analyze(items[3 + i]);
+        }
+
+        const swap_data = self.allocator.create(node_mod.SwapNode) catch return error.OutOfMemory;
+        swap_data.* = .{
+            .atom_node = atom_node,
+            .fn_node = fn_node,
+            .args = extra_args,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .swap_node = swap_data };
+        return node;
+    }
+
+    // ============================================================
     // 例外処理
     // ============================================================
 
@@ -1921,7 +1957,7 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .vector = forms };
             },
-            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .fn_proto, .var_val => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .fn_proto, .var_val, .atom => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };
