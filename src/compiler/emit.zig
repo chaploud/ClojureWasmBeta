@@ -97,8 +97,13 @@ pub const Compiler = struct {
             .map_node => |node| try self.emitMap(node),
             .filter_node => |node| try self.emitFilter(node),
             .swap_node => |node| try self.emitSwap(node),
+            .take_while_node => |node| try self.emitTakeWhile(node),
+            .drop_while_node => |node| try self.emitDropWhile(node),
+            .map_indexed_node => |node| try self.emitMapIndexed(node),
             .defmulti_node => |node| try self.emitDefmulti(node),
             .defmethod_node => |node| try self.emitDefmethod(node),
+            .defprotocol_node => |node| try self.emitDefprotocol(node),
+            .extend_type_node => |node| try self.emitExtendType(node),
         }
     }
 
@@ -436,6 +441,73 @@ pub const Compiler = struct {
         self.sp_depth -= 1; // 2つポップして1つプッシュ = net -1
     }
 
+    /// defprotocol
+    /// プロトコル名とメソッドシグネチャ情報を定数に格納
+    fn emitDefprotocol(self: *Compiler, node: *const node_mod.DefprotocolNode) CompileError!void {
+        // プロトコル名を定数に追加
+        const sym = self.allocator.create(value_mod.Symbol) catch return error.OutOfMemory;
+        sym.* = value_mod.Symbol.init(node.name);
+        const name_val = Value{ .symbol = sym };
+        const idx = self.chunk.addConstant(name_val) catch return error.TooManyConstants;
+
+        // メソッドシグネチャ情報をベクターとして定数に追加
+        // [method_name_1, arity_1, method_name_2, arity_2, ...]
+        const sig_items = self.allocator.alloc(Value, node.method_sigs.len * 2) catch return error.OutOfMemory;
+        for (node.method_sigs, 0..) |sig, i| {
+            const ms = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+            ms.* = value_mod.String.init(sig.name);
+            sig_items[i * 2] = Value{ .string = ms };
+            sig_items[i * 2 + 1] = value_mod.intVal(@intCast(sig.arity));
+        }
+        const vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
+        vec.* = .{ .items = sig_items };
+        const sigs_idx = self.chunk.addConstant(Value{ .vector = vec }) catch return error.TooManyConstants;
+        _ = sigs_idx;
+
+        // defprotocol 命令（[] → [nil]）
+        try self.chunk.emit(.defprotocol, idx);
+        self.sp_depth += 1;
+    }
+
+    /// extend-type
+    /// 各メソッド fn をコンパイルし、extend_type_method 命令を emit
+    fn emitExtendType(self: *Compiler, node: *const node_mod.ExtendTypeNode) CompileError!void {
+        for (node.extensions) |ext| {
+            for (ext.methods) |method| {
+                // メソッド fn をコンパイル（スタックに push）
+                try self.compile(method.fn_node);
+
+                // メタデータ: [type_name, protocol_name, method_name] をベクターとして定数に格納
+                const meta_items = self.allocator.alloc(Value, 3) catch return error.OutOfMemory;
+                const ts = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+                ts.* = value_mod.String.init(node.type_name);
+                meta_items[0] = Value{ .string = ts };
+                const ps = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+                ps.* = value_mod.String.init(ext.protocol_name);
+                meta_items[1] = Value{ .string = ps };
+                const ms = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+                ms.* = value_mod.String.init(method.name);
+                meta_items[2] = Value{ .string = ms };
+
+                const meta_vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
+                meta_vec.* = .{ .items = meta_items };
+                const meta_idx = self.chunk.addConstant(Value{ .vector = meta_vec }) catch return error.TooManyConstants;
+
+                // extend_type_method 命令（[method_fn] → [nil]）
+                try self.chunk.emit(.extend_type_method, meta_idx);
+                // sp_depth: method_fn を pop して nil を push = 変化なし
+            }
+        }
+
+        // 最終結果として nil をプッシュ（extend-type 全体の戻り値）
+        // もしメソッドがある場合、最後の extend_type_method が nil を残すので
+        // 余分な nil は不要（メソッドが0個のケースのみ nil が必要）
+        if (node.extensions.len == 0) {
+            try self.chunk.emitOp(.nil);
+            self.sp_depth += 1;
+        }
+    }
+
     /// quote
     fn emitQuote(self: *Compiler, node: *const node_mod.QuoteNode) CompileError!void {
         try self.emitConstant(node.form);
@@ -520,6 +592,30 @@ pub const Compiler = struct {
         try self.compile(node.coll_node);
         // fn + coll をポップ、結果プッシュ → net -1
         try self.chunk.emit(.filter_seq, 0);
+        self.sp_depth -= 1;
+    }
+
+    /// take-while コンパイル: (take-while pred coll)
+    fn emitTakeWhile(self: *Compiler, node: *const node_mod.TakeWhileNode) CompileError!void {
+        try self.compile(node.fn_node);
+        try self.compile(node.coll_node);
+        try self.chunk.emit(.take_while_seq, 0);
+        self.sp_depth -= 1;
+    }
+
+    /// drop-while コンパイル: (drop-while pred coll)
+    fn emitDropWhile(self: *Compiler, node: *const node_mod.DropWhileNode) CompileError!void {
+        try self.compile(node.fn_node);
+        try self.compile(node.coll_node);
+        try self.chunk.emit(.drop_while_seq, 0);
+        self.sp_depth -= 1;
+    }
+
+    /// map-indexed コンパイル: (map-indexed f coll)
+    fn emitMapIndexed(self: *Compiler, node: *const node_mod.MapIndexedNode) CompileError!void {
+        try self.compile(node.fn_node);
+        try self.compile(node.coll_node);
+        try self.chunk.emit(.map_indexed_seq, 0);
         self.sp_depth -= 1;
     }
 

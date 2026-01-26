@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.14 マルチメソッド (defmulti/defmethod) 完了**
+**Phase 8.16 実用ユーティリティ関数・高階関数拡充 完了**
 
 ### 完了した機能
 
@@ -32,6 +32,8 @@
 | 8.12 | every?/some/not-every?/not-any? + VMスタック管理修正 |
 | 8.13 | バグ修正・安定化（エラー型保全, VM try/catch, comp, finally） |
 | 8.14 | マルチメソッド (defmulti, defmethod) + :default フォールバック |
+| 8.15 | プロトコル (defprotocol, extend-type, extend-protocol, satisfies?) |
+| 8.16 | ユーティリティ関数 (merge, get-in, assoc-in 等) + HOF (take-while, drop-while, map-indexed) + マクロ (update, complement, constantly) |
 
 ### 組み込み関数
 
@@ -55,7 +57,8 @@
 出力: println, pr-str
 例外: ex-info, ex-message, ex-data
 Atom: atom, deref, reset!, swap!
-ユーティリティ: identity
+プロトコル: satisfies?
+ユーティリティ: identity, merge, get-in, assoc-in, select-keys, zipmap, not-empty, type
 ```
 
 ### 特殊形式
@@ -63,10 +66,11 @@ Atom: atom, deref, reset!, swap!
 ```
 制御: if, do, let, loop, recur
 関数: fn, def, defmacro, quote
-高階: apply, partial, comp, reduce, map, filter
+高階: apply, partial, comp, reduce, map, filter, take-while, drop-while, map-indexed
 例外: try, throw
 Atom: swap!
 マルチメソッド: defmulti, defmethod
+プロトコル: defprotocol, extend-type
 ```
 
 ### 組み込みマクロ
@@ -80,6 +84,8 @@ Atom: swap!
 スレッディング: ->, ->>, some->, some->>, as->
 コレクション変換: mapv, filterv
 述語系: every?, some (述語版), not-every?, not-any?
+プロトコル: extend-protocol
+ユーティリティ: update, complement, constantly
 ```
 
 実装方式: Analyzer 内で Form→Form 変換（マクロ展開）後に再帰解析。
@@ -89,13 +95,14 @@ Atom: swap!
 
 ## 次回タスク
 
-### Phase 8.13 以降の候補
+### Phase 8.17 以降の候補
 
 候補:
-- プロトコル (defprotocol, extend-type)
+- VM の let-closure バグ修正（`(let [x 0] (fn [] x))` で x がキャプチャされない）
 - LazySeq（真の遅延シーケンス）
 - 正規表現
 - letfn（相互再帰ローカル関数）
+- defrecord（プロトコルと組み合わせ）
 
 ---
 
@@ -169,6 +176,11 @@ Atom: swap!
 - `swap!` は特殊形式（関数呼び出しが必要なため通常の BuiltinFn では不可）
 - `atom`, `deref`, `reset!`, `atom?` は通常の組み込み関数
 
+### VM: let-closure バグ（既知）
+- `(let [x 0] (fn [] x))` のような let 内で定義した fn が let-local をキャプチャできない
+- fn-within-fn パターン `((fn [x] (fn [] x)) 0)` は正常動作
+- complement/constantly マクロは fn-within-fn で回避済み
+
 ### 組み込みマクロ
 - and/or は短絡評価（let + if に展開）
 - 合成シンボル名 `__and__`, `__or__`, `__items__`, `__condp__`, `__case__`, `__st__` 等を使用（gensym が理想）
@@ -182,6 +194,14 @@ Atom: swap!
 - defmulti/defmethod は専用 Node 型 (DefmultiNode, DefmethodNode) + 専用 OpCode (0x44, 0x45)
 - :default キーワードのディスパッチ値は default_method フィールドに格納
 - compare モードの E2E テストでは defmulti/defmethod と呼び出しを同一 do ブロック内に記述（バックエンド毎に独自の MultiFn が必要なため）
+
+### プロトコル
+- Protocol 型: name (Symbol) + method_sigs + impls (PersistentMap: type_keyword → method_map)
+- ProtocolFn 型: protocol 参照 + method_name（ディスパッチ用）
+- defprotocol/extend-type は専用 Node 型 + 専用 OpCode (0x46, 0x47)
+- extend-protocol は組み込みマクロ（複数 extend-type に展開）
+- 型名マッピング: "String"→"string", "Integer"→"integer" 等（mapUserTypeName 関数）
+- compare モードのテストでは defprotocol/extend-type と呼び出しを同一 do ブロック内に記述
 
 ### CLI テスト時の注意
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

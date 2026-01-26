@@ -105,7 +105,13 @@ pub const OpCode = enum(u8) {
     /// defmethod（オペランド: 定数インデックス u16 → シンボル名）
     /// スタック: [dispatch_val, method_fn] → [nil]
     defmethod = 0x45,
-    // 0x46-0x4F: 予約
+    /// defprotocol（オペランド: 定数インデックス u16 → プロトコルメタデータ）
+    /// スタック: [] → [nil]
+    defprotocol = 0x46,
+    /// extend-type メソッド登録（オペランド: 定数インデックス u16 → [type, proto, method] 情報）
+    /// スタック: [method_fn] → [nil]
+    extend_type_method = 0x47,
+    // 0x48-0x4F: 予約
 
     // ═══════════════════════════════════════════════════════
     // [F] 制御フロー (0x50-0x5F)
@@ -160,7 +166,8 @@ pub const OpCode = enum(u8) {
     map_seq = 0x6D,
     /// filter（スタック上に [関数, コレクション]）→ フィルタ済みリスト
     filter_seq = 0x6E,
-    // 0x6F: 予約
+    /// take-while（スタック上に [関数, コレクション]）→ リスト
+    take_while_seq = 0x6F,
 
     // ═══════════════════════════════════════════════════════
     // [H] loop/recur (0x70-0x7F)
@@ -201,7 +208,11 @@ pub const OpCode = enum(u8) {
     assoc = 0x95,
     /// (count coll) - 要素数
     count = 0x96,
-    // 0x97-0x9F: 予約
+    /// drop-while（スタック上に [関数, コレクション]）→ リスト
+    drop_while_seq = 0x97,
+    /// map-indexed（スタック上に [関数, コレクション]）→ リスト
+    map_indexed_seq = 0x98,
+    // 0x99-0x9F: 予約
 
     // ═══════════════════════════════════════════════════════
     // [K] 例外処理 (0xA0-0xAF)

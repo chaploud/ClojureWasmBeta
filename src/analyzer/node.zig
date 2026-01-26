@@ -208,6 +208,61 @@ pub const DefmethodNode = struct {
     stack: SourceInfo,
 };
 
+/// take-while ノード
+/// (take-while pred coll)
+pub const TakeWhileNode = struct {
+    fn_node: *Node, // 述語関数
+    coll_node: *Node, // コレクション
+    stack: SourceInfo,
+};
+
+/// drop-while ノード
+/// (drop-while pred coll)
+pub const DropWhileNode = struct {
+    fn_node: *Node, // 述語関数
+    coll_node: *Node, // コレクション
+    stack: SourceInfo,
+};
+
+/// map-indexed ノード
+/// (map-indexed f coll)
+pub const MapIndexedNode = struct {
+    fn_node: *Node, // 変換関数 (fn [index item])
+    coll_node: *Node, // コレクション
+    stack: SourceInfo,
+};
+
+/// defprotocol ノード
+/// (defprotocol Name (method1 [this]) (method2 [this arg]))
+pub const DefprotocolNode = struct {
+    name: []const u8,
+    method_sigs: []const ProtocolMethodSig,
+    stack: SourceInfo,
+
+    pub const ProtocolMethodSig = struct {
+        name: []const u8,
+        arity: u8, // this を含む
+    };
+};
+
+/// extend-type ノード
+/// (extend-type TypeName ProtoName (m1 [this] body) ...)
+pub const ExtendTypeNode = struct {
+    type_name: []const u8, // "String", "Integer" 等
+    extensions: []const ProtocolExtension,
+    stack: SourceInfo,
+
+    pub const ProtocolExtension = struct {
+        protocol_name: []const u8,
+        methods: []const MethodImpl,
+    };
+
+    pub const MethodImpl = struct {
+        name: []const u8,
+        fn_node: *Node,
+    };
+};
+
 // === Node 本体 ===
 
 /// 実行可能ノード
@@ -251,9 +306,18 @@ pub const Node = union(enum) {
     // Atom
     swap_node: *SwapNode,
 
+    // HOF 追加（Phase 8.16）
+    take_while_node: *TakeWhileNode,
+    drop_while_node: *DropWhileNode,
+    map_indexed_node: *MapIndexedNode,
+
     // マルチメソッド
     defmulti_node: *DefmultiNode,
     defmethod_node: *DefmethodNode,
+
+    // プロトコル
+    defprotocol_node: *DefprotocolNode,
+    extend_type_node: *ExtendTypeNode,
 
     /// スタック情報を取得
     pub fn stack(self: Node) SourceInfo {
@@ -279,8 +343,13 @@ pub const Node = union(enum) {
             .map_node => |n| n.stack,
             .filter_node => |n| n.stack,
             .swap_node => |n| n.stack,
+            .take_while_node => |n| n.stack,
+            .drop_while_node => |n| n.stack,
+            .map_indexed_node => |n| n.stack,
             .defmulti_node => |n| n.stack,
             .defmethod_node => |n| n.stack,
+            .defprotocol_node => |n| n.stack,
+            .extend_type_node => |n| n.stack,
         };
     }
 
@@ -308,8 +377,13 @@ pub const Node = union(enum) {
             .map_node => "map",
             .filter_node => "filter",
             .swap_node => "swap!",
+            .take_while_node => "take-while",
+            .drop_while_node => "drop-while",
+            .map_indexed_node => "map-indexed",
             .defmulti_node => "defmulti",
             .defmethod_node => "defmethod",
+            .defprotocol_node => "defprotocol",
+            .extend_type_node => "extend-type",
         };
     }
 
@@ -480,6 +554,33 @@ pub const Node = union(enum) {
                 };
                 break :blk .{ .swap_node = d };
             },
+            .take_while_node => |n| blk: {
+                const d = try allocator.create(TakeWhileNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .coll_node = try n.coll_node.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .take_while_node = d };
+            },
+            .drop_while_node => |n| blk: {
+                const d = try allocator.create(DropWhileNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .coll_node = try n.coll_node.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .drop_while_node = d };
+            },
+            .map_indexed_node => |n| blk: {
+                const d = try allocator.create(MapIndexedNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .coll_node = try n.coll_node.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .map_indexed_node = d };
+            },
             .defmulti_node => |n| blk: {
                 const d = try allocator.create(DefmultiNode);
                 d.* = .{
@@ -498,6 +599,38 @@ pub const Node = union(enum) {
                     .stack = n.stack,
                 };
                 break :blk .{ .defmethod_node = d };
+            },
+            .defprotocol_node => |n| blk: {
+                const d = try allocator.create(DefprotocolNode);
+                d.* = .{
+                    .name = n.name,
+                    .method_sigs = n.method_sigs,
+                    .stack = n.stack,
+                };
+                break :blk .{ .defprotocol_node = d };
+            },
+            .extend_type_node => |n| blk: {
+                const exts = try allocator.alloc(ExtendTypeNode.ProtocolExtension, n.extensions.len);
+                for (n.extensions, 0..) |ext, i| {
+                    const methods = try allocator.alloc(ExtendTypeNode.MethodImpl, ext.methods.len);
+                    for (ext.methods, 0..) |m, j| {
+                        methods[j] = .{
+                            .name = m.name,
+                            .fn_node = try m.fn_node.deepClone(allocator),
+                        };
+                    }
+                    exts[i] = .{
+                        .protocol_name = ext.protocol_name,
+                        .methods = methods,
+                    };
+                }
+                const d = try allocator.create(ExtendTypeNode);
+                d.* = .{
+                    .type_name = n.type_name,
+                    .extensions = exts,
+                    .stack = n.stack,
+                };
+                break :blk .{ .extend_type_node = d };
             },
         };
         return new_node;

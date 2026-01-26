@@ -193,23 +193,24 @@ map, filter, take など基本的なシーケンス操作の前提。
 - realize / force 処理
 - ISeq プロトコル相当の実装
 
-#### Phase 8.5: プロトコル (Protocols)
+#### Phase 8.5: プロトコル (Protocols) ✅ 完了 (Phase 8.15 で実装)
 
-型ベースの多態性。多くのコア関数の拡張性がこれに依存。
+型ベースの多態性。defprotocol, extend-type, extend-protocol, satisfies? を実装済み。
 
 ```clojure
-(defprotocol ILookup
-  (get [this key]))
+(defprotocol IGreet
+  (greet [this]))
 
-(extend-type PersistentVector
-  ILookup
-  (get [this key] (nth this key)))
+(extend-type String
+  IGreet
+  (greet [this] (str "Hello, " this)))
+
+(extend-protocol IGreet
+  Integer (greet [this] (str "Number: " this)))
+
+(greet "World")       ;; => "Hello, World"
+(satisfies? IGreet 42) ;; => true
 ```
-
-**必要な変更**:
-- Value: Protocol型追加
-- defprotocol, extend-type 特殊形式
-- 型→プロトコル実装のディスパッチテーブル
 
 #### Phase 9: GC
 
@@ -253,12 +254,12 @@ map, filter, take など基本的なシーケンス操作の前提。
 
 ### 未実装の重要機能
 
-| 機能 | 影響度 | 依存関係 |
-|------|--------|----------|
-| 遅延シーケンス | 高 | 無限シーケンスに必須 |
-| プロトコル | 高 | 型の拡張性に必須 |
-| メタデータ | 低 | ^{:doc ...} 等 |
-| マルチメソッド | 低 | 値ベースディスパッチ |
+| 機能 | 影響度 | 状態 |
+|------|--------|------|
+| 遅延シーケンス | 高 | 未実装（無限シーケンスに必須） |
+| プロトコル | 高 | ✅ 実装済み (Phase 8.15) |
+| メタデータ | 低 | 未実装 |
+| マルチメソッド | 低 | ✅ 実装済み (Phase 8.14) |
 
 ---
 

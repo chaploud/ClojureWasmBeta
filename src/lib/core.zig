@@ -944,6 +944,16 @@ fn printValue(writer: anytype, val: Value) !void {
             try printValue(writer, a.value);
             try writer.writeByte('>');
         },
+        .protocol => |p| {
+            try writer.writeAll("#<protocol ");
+            try writer.writeAll(p.name.name);
+            try writer.writeByte('>');
+        },
+        .protocol_fn => |pf| {
+            try writer.writeAll("#<protocol-fn ");
+            try writer.writeAll(pf.method_name);
+            try writer.writeByte('>');
+        },
     }
 }
 
@@ -1698,6 +1708,34 @@ pub fn isAtom(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
 }
 
 // ============================================================
+// プロトコル
+// ============================================================
+
+/// satisfies?: 型がプロトコルを実装しているか
+/// (satisfies? Protocol value) → bool
+pub fn satisfiesPred(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+
+    // 第1引数はプロトコル
+    const proto = switch (args[0]) {
+        .protocol => |p| p,
+        else => return error.TypeError,
+    };
+
+    // 第2引数の型キーワード
+    const type_key_str = args[1].typeKeyword();
+    const type_key_s = try allocator.create(value_mod.String);
+    type_key_s.* = value_mod.String.init(type_key_str);
+    const type_key = Value{ .string = type_key_s };
+
+    // impls に型があるか検索
+    if (proto.impls.get(type_key)) |_| {
+        return value_mod.true_val;
+    }
+    return value_mod.false_val;
+}
+
+// ============================================================
 // 文字列操作（拡充）
 // ============================================================
 
@@ -1987,6 +2025,224 @@ pub fn charAt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
 }
 
 // ============================================================
+// ユーティリティ関数（Phase 8.16）
+// ============================================================
+
+/// merge : マップ結合（後勝ち）
+/// (merge) → nil, (merge m1) → m1, (merge m1 m2 ...) → 統合マップ
+pub fn merge(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len == 0) return value_mod.nil;
+
+    // 最初の非nil引数を見つける
+    var result: ?*const value_mod.PersistentMap = null;
+    var start_idx: usize = 0;
+    for (args, 0..) |arg, i| {
+        switch (arg) {
+            .nil => continue,
+            .map => |m| {
+                result = m;
+                start_idx = i + 1;
+                break;
+            },
+            else => return error.TypeError,
+        }
+    }
+
+    if (result == null) return value_mod.nil;
+
+    var current = result.?.*;
+    for (args[start_idx..]) |arg| {
+        switch (arg) {
+            .nil => continue,
+            .map => |m| {
+                // m の全エントリを current に assoc
+                var j: usize = 0;
+                while (j < m.entries.len) : (j += 2) {
+                    current = try current.assoc(allocator, m.entries[j], m.entries[j + 1]);
+                }
+            },
+            else => return error.TypeError,
+        }
+    }
+
+    const new_map = try allocator.create(value_mod.PersistentMap);
+    new_map.* = current;
+    return Value{ .map = new_map };
+}
+
+/// get-in : キーパスで再帰的に get
+/// (get-in m ks) / (get-in m ks default)
+pub fn getIn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+
+    const not_found = if (args.len == 3) args[2] else value_mod.nil;
+    const ks = switch (args[1]) {
+        .vector => |v| v.items,
+        .list => |l| l.items,
+        .nil => return args[0], // 空パス → 元のマップをそのまま返す
+        else => return error.TypeError,
+    };
+
+    var current = args[0];
+    for (ks) |key| {
+        switch (current) {
+            .map => |m| {
+                current = m.get(key) orelse return not_found;
+            },
+            .vector => |v| {
+                if (key != .int) return not_found;
+                const idx = key.int;
+                if (idx < 0 or idx >= v.items.len) return not_found;
+                current = v.items[@intCast(idx)];
+            },
+            .nil => return not_found,
+            else => return not_found,
+        }
+    }
+    return current;
+}
+
+/// assoc-in : キーパスで再帰的に assoc
+/// (assoc-in m ks v)
+pub fn assocIn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 3) return error.ArityError;
+
+    const ks = switch (args[1]) {
+        .vector => |v| v.items,
+        .list => |l| l.items,
+        else => return error.TypeError,
+    };
+
+    if (ks.len == 0) return args[0];
+
+    return assocInHelper(allocator, args[0], ks, args[2]);
+}
+
+fn assocInHelper(allocator: std.mem.Allocator, m: Value, ks: []const Value, v: Value) anyerror!Value {
+    const key = ks[0];
+    if (ks.len == 1) {
+        // ベースケース: (assoc m key v)
+        const assoc_args = [_]Value{ m, key, v };
+        return assoc(allocator, &assoc_args);
+    }
+
+    // 再帰: (assoc m key (assoc-in (get m key) rest-keys v))
+    const get_args = [_]Value{ m, key };
+    const inner = try get(allocator, &get_args);
+    const nested = try assocInHelper(allocator, inner, ks[1..], v);
+    const assoc_args = [_]Value{ m, key, nested };
+    return assoc(allocator, &assoc_args);
+}
+
+/// select-keys : 指定キーのみ残す
+/// (select-keys m ks)
+pub fn selectKeys(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+
+    const coll = args[0];
+    if (coll == .nil) return Value{ .map = try allocator.create(value_mod.PersistentMap) };
+    if (coll != .map) return error.TypeError;
+
+    const ks = switch (args[1]) {
+        .vector => |v| v.items,
+        .list => |l| l.items,
+        .nil => &[_]Value{},
+        else => return error.TypeError,
+    };
+
+    // 結果マップを構築
+    var entries_buf: std.ArrayListUnmanaged(Value) = .empty;
+    for (ks) |key| {
+        if (coll.map.get(key)) |val| {
+            entries_buf.append(allocator, key) catch return error.OutOfMemory;
+            entries_buf.append(allocator, val) catch return error.OutOfMemory;
+        }
+    }
+
+    const new_map = try allocator.create(value_mod.PersistentMap);
+    new_map.* = .{ .entries = entries_buf.toOwnedSlice(allocator) catch return error.OutOfMemory };
+
+    if (coll == .nil) {
+        new_map.* = .{ .entries = &[_]Value{} };
+    }
+
+    return Value{ .map = new_map };
+}
+
+/// zipmap : 2つのシーケンスからマップ作成
+/// (zipmap keys vals)
+pub fn zipmap(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+
+    const keys_items = getItems(args[0]) orelse return error.TypeError;
+    const vals_items = getItems(args[1]) orelse return error.TypeError;
+
+    const len = @min(keys_items.len, vals_items.len);
+    const entries = try allocator.alloc(Value, len * 2);
+    for (0..len) |i| {
+        entries[i * 2] = keys_items[i];
+        entries[i * 2 + 1] = vals_items[i];
+    }
+
+    const new_map = try allocator.create(value_mod.PersistentMap);
+    new_map.* = .{ .entries = entries };
+    return Value{ .map = new_map };
+}
+
+/// not-empty : 空なら nil、そうでなければ coll
+/// (not-empty coll)
+pub fn notEmpty(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+
+    const coll = args[0];
+    return switch (coll) {
+        .nil => value_mod.nil,
+        .list => |l| if (l.items.len == 0) value_mod.nil else coll,
+        .vector => |v| if (v.items.len == 0) value_mod.nil else coll,
+        .map => |m| if (m.entries.len == 0) value_mod.nil else coll,
+        .set => |s| if (s.items.len == 0) value_mod.nil else coll,
+        .string => |s| if (s.data.len == 0) value_mod.nil else coll,
+        else => coll,
+    };
+}
+
+/// type : 型名を文字列で返す
+/// (type x)
+pub fn typeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+
+    const type_name: []const u8 = switch (args[0]) {
+        .nil => "nil",
+        .bool_val => "boolean",
+        .int => "integer",
+        .float => "float",
+        .char_val => "char",
+        .string => "string",
+        .keyword => "keyword",
+        .symbol => "symbol",
+        .list => "list",
+        .vector => "vector",
+        .map => "map",
+        .set => "set",
+        .fn_val => "function",
+        .partial_fn => "function",
+        .comp_fn => "function",
+        .multi_fn => "multimethod",
+        .protocol => "protocol",
+        .protocol_fn => "function",
+        .fn_proto => "function",
+        .var_val => "var",
+        .atom => "atom",
+    };
+
+    const str = try allocator.create(value_mod.String);
+    str.* = value_mod.String.init(type_name);
+    return Value{ .string = str };
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -2100,6 +2356,16 @@ const builtins = [_]BuiltinDef{
     .{ .name = "includes?", .func = includesStr },
     .{ .name = "string-replace", .func = stringReplace },
     .{ .name = "char-at", .func = charAt },
+    // プロトコル
+    .{ .name = "satisfies?", .func = satisfiesPred },
+    // ユーティリティ（Phase 8.16）
+    .{ .name = "merge", .func = merge },
+    .{ .name = "get-in", .func = getIn },
+    .{ .name = "assoc-in", .func = assocIn },
+    .{ .name = "select-keys", .func = selectKeys },
+    .{ .name = "zipmap", .func = zipmap },
+    .{ .name = "not-empty", .func = notEmpty },
+    .{ .name = "type", .func = typeFn },
 };
 
 /// clojure.core の組み込み関数を Env に登録

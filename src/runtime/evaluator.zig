@@ -56,8 +56,13 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .map_node => |n| runMap(n, ctx),
         .filter_node => |n| runFilter(n, ctx),
         .swap_node => |n| runSwap(n, ctx),
+        .take_while_node => |n| runTakeWhile(n, ctx),
+        .drop_while_node => |n| runDropWhile(n, ctx),
+        .map_indexed_node => |n| runMapIndexed(n, ctx),
         .defmulti_node => |n| runDefmulti(n, ctx),
         .defmethod_node => |n| runDefmethod(n, ctx),
+        .defprotocol_node => |n| runDefprotocol(n, ctx),
+        .extend_type_node => |n| runExtendType(n, ctx),
     };
 }
 
@@ -295,6 +300,31 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
             // メソッドが見つからない
             break :blk error.TypeError;
         },
+        .protocol_fn => |pf| blk: {
+            // プロトコル関数呼び出し: 第1引数の型で実装を検索
+            if (args.len < 1) return error.ArityError;
+            const type_key_str = args[0].typeKeyword();
+
+            // type_key を文字列 Value として作成
+            const type_key_s = ctx.allocator.create(value_mod.String) catch return error.OutOfMemory;
+            type_key_s.* = value_mod.String.init(type_key_str);
+            const type_key = Value{ .string = type_key_s };
+
+            // プロトコルの impls から型のメソッドマップを検索
+            const methods_val = pf.protocol.impls.get(type_key) orelse
+                return error.TypeError;
+
+            // メソッドマップから関数を検索
+            if (methods_val != .map) return error.TypeError;
+            const method_name_s = ctx.allocator.create(value_mod.String) catch return error.OutOfMemory;
+            method_name_s.* = value_mod.String.init(pf.method_name);
+            const method_key = Value{ .string = method_name_s };
+
+            const method_fn = methods_val.map.get(method_key) orelse
+                return error.TypeError;
+
+            break :blk callWithArgs(method_fn, args, ctx);
+        },
         .keyword => |k| blk: {
             // キーワードを関数として使用: (:key map) or (:key map default)
             if (args.len < 1 or args.len > 2) return error.ArityError;
@@ -511,6 +541,112 @@ fn runDefmethod(node: *const node_mod.DefmethodNode, ctx: *Context) EvalError!Va
     return value_mod.nil;
 }
 
+/// defprotocol 評価
+/// (defprotocol Name (method1 [this]) (method2 [this arg]))
+fn runDefprotocol(node: *const node_mod.DefprotocolNode, ctx: *Context) EvalError!Value {
+    const ns = ctx.env.getCurrentNs() orelse return error.UndefinedSymbol;
+
+    // Protocol 構造体を作成（空の impls マップ）
+    const empty_impls = ctx.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+    empty_impls.* = value_mod.PersistentMap.empty();
+
+    const proto = ctx.allocator.create(value_mod.Protocol) catch return error.OutOfMemory;
+    proto.* = .{
+        .name = value_mod.Symbol.init(node.name),
+        .method_sigs = blk: {
+            const sigs = ctx.allocator.alloc(value_mod.Protocol.MethodSig, node.method_sigs.len) catch return error.OutOfMemory;
+            for (node.method_sigs, 0..) |sig, i| {
+                sigs[i] = .{ .name = sig.name, .arity = sig.arity };
+            }
+            break :blk sigs;
+        },
+        .impls = empty_impls,
+    };
+
+    // プロトコル名の Var にバインド
+    const proto_var = ns.intern(node.name) catch return error.OutOfMemory;
+    proto_var.bindRoot(Value{ .protocol = proto });
+
+    // 各メソッドについて ProtocolFn を作成し、メソッド名の Var にバインド
+    for (node.method_sigs) |sig| {
+        const pf = ctx.allocator.create(value_mod.ProtocolFn) catch return error.OutOfMemory;
+        pf.* = .{
+            .protocol = proto,
+            .method_name = sig.name,
+        };
+
+        const method_var = ns.intern(sig.name) catch return error.OutOfMemory;
+        method_var.bindRoot(Value{ .protocol_fn = pf });
+    }
+
+    return value_mod.nil;
+}
+
+/// extend-type 評価
+/// (extend-type TypeName ProtoName (m1 [this] body) ...)
+fn runExtendType(node: *const node_mod.ExtendTypeNode, ctx: *Context) EvalError!Value {
+    const ns = ctx.env.getCurrentNs() orelse return error.UndefinedSymbol;
+
+    // 型名を内部 typeKeyword に変換
+    const type_key_str = mapUserTypeName(node.type_name);
+
+    for (node.extensions) |ext| {
+        // プロトコルの Var から Protocol を取得
+        const proto_var = ns.intern(ext.protocol_name) catch return error.OutOfMemory;
+        const proto_val = proto_var.deref();
+        if (proto_val != .protocol) return error.TypeError;
+        const proto = proto_val.protocol;
+
+        // 各メソッドの fn を評価し、メソッドマップを構築
+        // メソッドマップ: {method_name_string → fn Value}
+        var method_map = value_mod.PersistentMap.empty();
+        for (ext.methods) |method| {
+            const method_fn = try run(method.fn_node, ctx);
+            const cloned_fn = method_fn.deepClone(ctx.allocator) catch return error.OutOfMemory;
+
+            const name_s = ctx.allocator.create(value_mod.String) catch return error.OutOfMemory;
+            name_s.* = value_mod.String.init(method.name);
+            const name_key = Value{ .string = name_s };
+
+            method_map = method_map.assoc(ctx.allocator, name_key, cloned_fn) catch return error.OutOfMemory;
+        }
+
+        // impls に追加: type_key_string → メソッドマップ
+        const type_key_s = ctx.allocator.create(value_mod.String) catch return error.OutOfMemory;
+        type_key_s.* = value_mod.String.init(type_key_str);
+        const type_key = Value{ .string = type_key_s };
+
+        const method_map_ptr = ctx.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+        method_map_ptr.* = method_map;
+        const method_map_val = Value{ .map = method_map_ptr };
+
+        const new_impls = ctx.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+        new_impls.* = proto.impls.assoc(ctx.allocator, type_key, method_map_val) catch return error.OutOfMemory;
+        proto.impls = new_impls;
+    }
+
+    return value_mod.nil;
+}
+
+/// ユーザー指定の型名を内部 typeKeyword 文字列に変換
+fn mapUserTypeName(name: []const u8) []const u8 {
+    if (std.mem.eql(u8, name, "nil")) return "nil";
+    if (std.mem.eql(u8, name, "Boolean")) return "boolean";
+    if (std.mem.eql(u8, name, "Integer")) return "integer";
+    if (std.mem.eql(u8, name, "Float")) return "float";
+    if (std.mem.eql(u8, name, "String")) return "string";
+    if (std.mem.eql(u8, name, "Keyword")) return "keyword";
+    if (std.mem.eql(u8, name, "Symbol")) return "symbol";
+    if (std.mem.eql(u8, name, "List")) return "list";
+    if (std.mem.eql(u8, name, "Vector")) return "vector";
+    if (std.mem.eql(u8, name, "Map")) return "map";
+    if (std.mem.eql(u8, name, "Set")) return "set";
+    if (std.mem.eql(u8, name, "Function")) return "function";
+    if (std.mem.eql(u8, name, "Atom")) return "atom";
+    // 未知の型名はそのまま返す
+    return name;
+}
+
 /// apply 評価
 /// (apply f args) または (apply f x y z args)
 fn runApply(node: *const node_mod.ApplyNode, ctx: *Context) EvalError!Value {
@@ -698,6 +834,92 @@ fn runFilter(node: *const node_mod.FilterNode, ctx: *Context) EvalError!Value {
 
     const result_list = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
     result_list.* = .{ .items = result_buf.toOwnedSlice(ctx.allocator) catch return error.OutOfMemory };
+    return Value{ .list = result_list };
+}
+
+/// take-while 評価
+/// (take-while pred coll) — pred が truthy な間だけ要素を取る
+fn runTakeWhile(node: *const node_mod.TakeWhileNode, ctx: *Context) EvalError!Value {
+    const fn_val = try run(node.fn_node, ctx);
+    const coll_val = try run(node.coll_node, ctx);
+
+    const items: []const Value = switch (coll_val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        else => return error.TypeError,
+    };
+
+    var result_buf: std.ArrayListUnmanaged(Value) = .empty;
+    for (items) |item| {
+        const args = ctx.allocator.alloc(Value, 1) catch return error.OutOfMemory;
+        args[0] = item;
+        const pred_result = try callWithArgs(fn_val, args, ctx);
+        if (!pred_result.isTruthy()) break;
+        result_buf.append(ctx.allocator, item) catch return error.OutOfMemory;
+    }
+
+    const result_list = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+    result_list.* = .{ .items = result_buf.toOwnedSlice(ctx.allocator) catch return error.OutOfMemory };
+    return Value{ .list = result_list };
+}
+
+/// drop-while 評価
+/// (drop-while pred coll) — pred が truthy な間だけ要素をスキップ
+fn runDropWhile(node: *const node_mod.DropWhileNode, ctx: *Context) EvalError!Value {
+    const fn_val = try run(node.fn_node, ctx);
+    const coll_val = try run(node.coll_node, ctx);
+
+    const items: []const Value = switch (coll_val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        else => return error.TypeError,
+    };
+
+    // dropping フェーズ: pred が truthy な間スキップ
+    var start: usize = 0;
+    for (items) |item| {
+        const args = ctx.allocator.alloc(Value, 1) catch return error.OutOfMemory;
+        args[0] = item;
+        const pred_result = try callWithArgs(fn_val, args, ctx);
+        if (!pred_result.isTruthy()) break;
+        start += 1;
+    }
+
+    // 残り要素をコピー
+    const remaining = items[start..];
+    const result_items = ctx.allocator.alloc(Value, remaining.len) catch return error.OutOfMemory;
+    @memcpy(result_items, remaining);
+
+    const result_list = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+    result_list.* = .{ .items = result_items };
+    return Value{ .list = result_list };
+}
+
+/// map-indexed 評価
+/// (map-indexed f coll) — f に (index, item) を渡す
+fn runMapIndexed(node: *const node_mod.MapIndexedNode, ctx: *Context) EvalError!Value {
+    const fn_val = try run(node.fn_node, ctx);
+    const coll_val = try run(node.coll_node, ctx);
+
+    const items: []const Value = switch (coll_val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        else => return error.TypeError,
+    };
+
+    var result_items = ctx.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+    for (items, 0..) |item, i| {
+        const args = ctx.allocator.alloc(Value, 2) catch return error.OutOfMemory;
+        args[0] = value_mod.intVal(@intCast(i));
+        args[1] = item;
+        result_items[i] = try callWithArgs(fn_val, args, ctx);
+    }
+
+    const result_list = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+    result_list.* = .{ .items = result_items };
     return Value{ .list = result_list };
 }
 

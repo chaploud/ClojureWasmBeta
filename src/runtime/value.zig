@@ -272,6 +272,27 @@ pub const MultiFn = struct {
     default_method: ?Value, // :default メソッド
 };
 
+// === プロトコル ===
+
+/// プロトコル（defprotocol）
+pub const Protocol = struct {
+    name: Symbol,
+    method_sigs: []const MethodSig,
+    /// type_keyword_string → メソッドマップ（method_name → fn Value）
+    impls: *PersistentMap,
+
+    pub const MethodSig = struct {
+        name: []const u8,
+        arity: u8, // this を含む
+    };
+};
+
+/// プロトコル関数（各メソッドの Var に格納される値）
+pub const ProtocolFn = struct {
+    protocol: *Protocol,
+    method_name: []const u8,
+};
+
 // === 参照型 ===
 
 /// Atom（ミュータブルな参照）
@@ -396,6 +417,8 @@ pub const Value = union(enum) {
     partial_fn: *PartialFn, // 部分適用された関数
     comp_fn: *CompFn, // 合成された関数
     multi_fn: *MultiFn, // マルチメソッド
+    protocol: *Protocol, // プロトコル
+    protocol_fn: *ProtocolFn, // プロトコル関数
 
     // === VM用 ===
     fn_proto: FnProtoPtr, // コンパイル済み関数プロトタイプ
@@ -481,6 +504,8 @@ pub const Value = union(enum) {
             .partial_fn => |a| a == other.partial_fn, // 参照等価
             .comp_fn => |a| a == other.comp_fn, // 参照等価
             .multi_fn => |a| a == other.multi_fn, // 参照等価
+            .protocol => |a| a == other.protocol, // 参照等価
+            .protocol_fn => |a| a == other.protocol_fn, // 参照等価
             .fn_proto => |a| a == other.fn_proto, // 参照等価
             .var_val => |a| a == other.var_val, // 参照等価
             .atom => |a| a == other.atom, // 参照等価
@@ -506,6 +531,33 @@ pub const Value = union(enum) {
             .partial_fn => "function", // partial も関数として表示
             .comp_fn => "function", // comp も関数として表示
             .multi_fn => "multi-fn",
+            .protocol => "protocol",
+            .protocol_fn => "protocol-fn",
+            .fn_proto => "fn-proto",
+            .var_val => "var",
+            .atom => "atom",
+        };
+    }
+
+    /// プロトコルディスパッチ用の型キーワード文字列を返す
+    pub fn typeKeyword(self: Value) []const u8 {
+        return switch (self) {
+            .nil => "nil",
+            .bool_val => "boolean",
+            .int => "integer",
+            .float => "float",
+            .char_val => "character",
+            .string => "string",
+            .keyword => "keyword",
+            .symbol => "symbol",
+            .list => "list",
+            .vector => "vector",
+            .map => "map",
+            .set => "set",
+            .fn_val, .partial_fn, .comp_fn => "function",
+            .multi_fn => "multi-fn",
+            .protocol => "protocol",
+            .protocol_fn => "protocol-fn",
             .fn_proto => "fn-proto",
             .var_val => "var",
             .atom => "atom",
@@ -610,6 +662,12 @@ pub const Value = union(enum) {
                     try writer.writeAll("#<multi-fn>");
                 }
             },
+            .protocol => |p| {
+                try writer.print("#<protocol {s}>", .{p.name.name});
+            },
+            .protocol_fn => |pf| {
+                try writer.print("#<protocol-fn {s}>", .{pf.method_name});
+            },
             .fn_proto => try writer.writeAll("#<fn-proto>"),
             .var_val => try writer.writeAll("#<var>"),
             .atom => |a| {
@@ -684,8 +742,8 @@ pub const Value = union(enum) {
                 new_a.* = .{ .value = try a.value.deepClone(allocator) };
                 break :blk .{ .atom = new_a };
             },
-            // MultiFn は参照をそのまま保持（persistent で作成済み）
-            .multi_fn => self,
+            // MultiFn, Protocol, ProtocolFn は参照をそのまま保持（persistent で作成済み）
+            .multi_fn, .protocol, .protocol_fn => self,
             // 他のランタイムオブジェクトはそのまま（persistent で作成済み）
             .fn_val, .partial_fn, .comp_fn, .fn_proto, .var_val => self,
         };

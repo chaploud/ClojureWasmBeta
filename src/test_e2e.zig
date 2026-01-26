@@ -1501,3 +1501,355 @@ test "compare: defmulti/defmethod rect" {
         \\    (area2 {:type :rect :w 3 :h 4}))
     , 12);
 }
+
+// ============================================================
+// プロトコル (defprotocol / extend-type / extend-protocol)
+// ============================================================
+
+test "compare: defprotocol + extend-type basic" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本: defprotocol + extend-type + メソッド呼び出し
+    try expectStrBoth(allocator, &env,
+        \\(do (defprotocol IFoo (foo [this]))
+        \\    (extend-type String IFoo
+        \\      (foo [this] (str "foo:" this)))
+        \\    (foo "bar"))
+    , "foo:bar");
+}
+
+test "compare: protocol multiple methods" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 1つのプロトコルに複数メソッド
+    try expectIntBoth(allocator, &env,
+        \\(do (defprotocol IMath (add1 [this]) (double [this]))
+        \\    (extend-type Integer IMath
+        \\      (add1 [this] (+ this 1))
+        \\      (double [this] (* this 2)))
+        \\    (add1 10))
+    , 11);
+}
+
+test "compare: protocol multiple methods second" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectIntBoth(allocator, &env,
+        \\(do (defprotocol IMath2 (add1 [this]) (double [this]))
+        \\    (extend-type Integer IMath2
+        \\      (add1 [this] (+ this 1))
+        \\      (double [this] (* this 2)))
+        \\    (double 5))
+    , 10);
+}
+
+test "compare: protocol multiple types" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 同じプロトコルを異なる型に extend
+    try expectStrBoth(allocator, &env,
+        \\(do (defprotocol IGreet (greet [this]))
+        \\    (extend-type String IGreet
+        \\      (greet [this] (str "Hello, " this)))
+        \\    (extend-type Integer IGreet
+        \\      (greet [this] (str "Number: " this)))
+        \\    (greet "World"))
+    , "Hello, World");
+}
+
+test "compare: protocol multiple types integer" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env,
+        \\(do (defprotocol IGreet2 (greet [this]))
+        \\    (extend-type String IGreet2
+        \\      (greet [this] (str "Hello, " this)))
+        \\    (extend-type Integer IGreet2
+        \\      (greet [this] (str "Number: " this)))
+        \\    (greet 42))
+    , "Number: 42");
+}
+
+test "compare: extend-protocol macro" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // extend-protocol マクロによる一括拡張
+    try expectStrBoth(allocator, &env,
+        \\(do (defprotocol IShow (show [this]))
+        \\    (extend-protocol IShow
+        \\      String (show [this] (str "S:" this))
+        \\      Integer (show [this] (str "I:" this)))
+        \\    (show "hi"))
+    , "S:hi");
+}
+
+test "compare: extend-protocol macro integer" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env,
+        \\(do (defprotocol IShow2 (show [this]))
+        \\    (extend-protocol IShow2
+        \\      String (show [this] (str "S:" this))
+        \\      Integer (show [this] (str "I:" this)))
+        \\    (show 7))
+    , "I:7");
+}
+
+test "compare: satisfies? true" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // satisfies? で型チェック
+    try expectBoolBoth(allocator, &env,
+        \\(do (defprotocol ICheck (check [this]))
+        \\    (extend-type String ICheck
+        \\      (check [this] this))
+        \\    (satisfies? ICheck "hello"))
+    , true);
+}
+
+test "compare: satisfies? false" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectBoolBoth(allocator, &env,
+        \\(do (defprotocol ICheck2 (check [this]))
+        \\    (extend-type String ICheck2
+        \\      (check [this] this))
+        \\    (satisfies? ICheck2 42))
+    , false);
+}
+
+test "compare: protocol method with extra arg" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // this 以外の引数を持つメソッド
+    try expectStrBoth(allocator, &env,
+        \\(do (defprotocol IGreetWith (greet-with [this name]))
+        \\    (extend-type String IGreetWith
+        \\      (greet-with [this name] (str name " says hi to " this)))
+        \\    (greet-with "World" "Alice"))
+    , "Alice says hi to World");
+}
+
+// ============================================================
+// Phase 8.16: ユーティリティ関数・高階関数・マクロ
+// ============================================================
+
+test "compare: merge" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本の merge
+    try expectStrBoth(allocator, &env, "(pr-str (merge {:a 1} {:b 2}))", "{:a 1, :b 2}");
+    // 後勝ち
+    try expectStrBoth(allocator, &env, "(pr-str (merge {:a 1} {:a 2}))", "{:a 2}");
+    // nil スキップ
+    try expectStrBoth(allocator, &env, "(pr-str (merge {:a 1} nil {:b 2}))", "{:a 1, :b 2}");
+    // 引数なし
+    try expectNilBoth(allocator, &env, "(merge)");
+}
+
+test "compare: get-in" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectIntBoth(allocator, &env, "(get-in {:a {:b 42}} [:a :b])", 42);
+    try expectKwBoth(allocator, &env, "(get-in {:a 1} [:b] :default)", "default");
+    try expectNilBoth(allocator, &env, "(get-in {:a 1} [:b])");
+}
+
+test "compare: assoc-in" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env, "(pr-str (assoc-in {} [:a :b] 1))", "{:a {:b 1}}");
+    try expectStrBoth(allocator, &env, "(pr-str (assoc-in {:a {:b 1}} [:a :b] 2))", "{:a {:b 2}}");
+}
+
+test "compare: select-keys" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env, "(pr-str (select-keys {:a 1 :b 2 :c 3} [:a :c]))", "{:a 1, :c 3}");
+}
+
+test "compare: zipmap" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env, "(pr-str (zipmap [:a :b] [1 2]))", "{:a 1, :b 2}");
+    // 短い方に合わせる
+    try expectStrBoth(allocator, &env, "(pr-str (zipmap [:a :b :c] [1 2]))", "{:a 1, :b 2}");
+}
+
+test "compare: not-empty" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectNilBoth(allocator, &env, "(not-empty [])");
+    try expectStrBoth(allocator, &env, "(pr-str (not-empty [1]))", "[1]");
+    try expectNilBoth(allocator, &env, "(not-empty nil)");
+}
+
+test "compare: type function" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env, "(type 42)", "integer");
+    try expectStrBoth(allocator, &env, "(type \"hi\")", "string");
+    try expectStrBoth(allocator, &env, "(type :foo)", "keyword");
+    try expectStrBoth(allocator, &env, "(type nil)", "nil");
+    try expectStrBoth(allocator, &env, "(type true)", "boolean");
+    try expectStrBoth(allocator, &env, "(type [1 2])", "vector");
+}
+
+test "compare: take-while" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env, "(pr-str (take-while pos? [3 2 1 0 -1]))", "(3 2 1)");
+    try expectStrBoth(allocator, &env, "(pr-str (take-while pos? []))", "()");
+    try expectStrBoth(allocator, &env, "(pr-str (take-while pos? [-1 2 3]))", "()");
+}
+
+test "compare: drop-while" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env, "(pr-str (drop-while pos? [3 2 1 0 -1]))", "(0 -1)");
+    try expectStrBoth(allocator, &env, "(pr-str (drop-while pos? []))", "()");
+    try expectStrBoth(allocator, &env, "(pr-str (drop-while pos? [-1 2 3]))", "(-1 2 3)");
+}
+
+test "compare: map-indexed" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env, "(pr-str (map-indexed (fn [i x] (+ i x)) [10 20 30]))", "(10 21 32)");
+    try expectStrBoth(allocator, &env, "(pr-str (map-indexed (fn [i x] i) [:a :b :c]))", "(0 1 2)");
+}
+
+test "compare: update macro" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env, "(pr-str (update {:a 1} :a inc))", "{:a 2}");
+    try expectStrBoth(allocator, &env, "(pr-str (update {:a 1} :a + 10))", "{:a 11}");
+}
+
+test "compare: complement macro" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectBoolBoth(allocator, &env, "(do (def not-pos? (complement pos?)) (not-pos? -1))", true);
+    try expectBoolBoth(allocator, &env, "(do (def not-pos? (complement pos?)) (not-pos? 1))", false);
+}
+
+test "compare: constantly macro" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    try expectStrBoth(allocator, &env, "(pr-str (map (constantly 0) [1 2 3]))", "(0 0 0)");
+    try expectIntBoth(allocator, &env, "((constantly 42) 1 2 3)", 42);
+}

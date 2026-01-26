@@ -167,6 +167,12 @@ pub const Analyzer = struct {
                 return self.analyzeMap2(items);
             } else if (std.mem.eql(u8, sym_name, "filter")) {
                 return self.analyzeFilter(items);
+            } else if (std.mem.eql(u8, sym_name, "take-while")) {
+                return self.analyzeTakeWhile(items);
+            } else if (std.mem.eql(u8, sym_name, "drop-while")) {
+                return self.analyzeDropWhile(items);
+            } else if (std.mem.eql(u8, sym_name, "map-indexed")) {
+                return self.analyzeMapIndexed(items);
             } else if (std.mem.eql(u8, sym_name, "throw")) {
                 return self.analyzeThrow(items);
             } else if (std.mem.eql(u8, sym_name, "try")) {
@@ -177,6 +183,10 @@ pub const Analyzer = struct {
                 return self.analyzeDefmulti(items);
             } else if (std.mem.eql(u8, sym_name, "defmethod")) {
                 return self.analyzeDefmethod(items);
+            } else if (std.mem.eql(u8, sym_name, "defprotocol")) {
+                return self.analyzeDefprotocol(items);
+            } else if (std.mem.eql(u8, sym_name, "extend-type")) {
+                return self.analyzeExtendType(items);
             }
 
             // 組み込みマクロ展開（Form→Form 変換して再解析）
@@ -1226,6 +1236,57 @@ pub const Analyzer = struct {
         return node;
     }
 
+    /// (take-while pred coll) の解析
+    fn analyzeTakeWhile(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "take-while requires 2 arguments (take-while pred coll)", .{});
+        }
+
+        const fn_node = try self.analyze(items[1]);
+        const coll_node = try self.analyze(items[2]);
+
+        const data = self.allocator.create(node_mod.TakeWhileNode) catch return error.OutOfMemory;
+        data.* = .{ .fn_node = fn_node, .coll_node = coll_node, .stack = .{} };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .take_while_node = data };
+        return node;
+    }
+
+    /// (drop-while pred coll) の解析
+    fn analyzeDropWhile(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "drop-while requires 2 arguments (drop-while pred coll)", .{});
+        }
+
+        const fn_node = try self.analyze(items[1]);
+        const coll_node = try self.analyze(items[2]);
+
+        const data = self.allocator.create(node_mod.DropWhileNode) catch return error.OutOfMemory;
+        data.* = .{ .fn_node = fn_node, .coll_node = coll_node, .stack = .{} };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .drop_while_node = data };
+        return node;
+    }
+
+    /// (map-indexed f coll) の解析
+    fn analyzeMapIndexed(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "map-indexed requires 2 arguments (map-indexed f coll)", .{});
+        }
+
+        const fn_node = try self.analyze(items[1]);
+        const coll_node = try self.analyze(items[2]);
+
+        const data = self.allocator.create(node_mod.MapIndexedNode) catch return error.OutOfMemory;
+        data.* = .{ .fn_node = fn_node, .coll_node = coll_node, .stack = .{} };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .map_indexed_node = data };
+        return node;
+    }
+
     // ============================================================
     // Atom 操作
     // ============================================================
@@ -1432,6 +1493,14 @@ pub const Analyzer = struct {
             return try self.expandNotEvery(items);
         } else if (std.mem.eql(u8, name, "not-any?")) {
             return try self.expandNotAny(items);
+        } else if (std.mem.eql(u8, name, "extend-protocol")) {
+            return try self.expandExtendProtocol(items);
+        } else if (std.mem.eql(u8, name, "update")) {
+            return try self.expandUpdate(items);
+        } else if (std.mem.eql(u8, name, "complement")) {
+            return try self.expandComplement(items);
+        } else if (std.mem.eql(u8, name, "constantly")) {
+            return try self.expandConstantly(items);
         }
         return null;
     }
@@ -2187,6 +2256,143 @@ pub const Analyzer = struct {
         return node;
     }
 
+    // === プロトコル解析 ===
+
+    /// (defprotocol Name (method1 [this]) (method2 [this arg]))
+    fn analyzeDefprotocol(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "defprotocol requires at least a name", .{});
+        }
+
+        if (items[1] != .symbol) {
+            return err.parseError(.invalid_binding, "defprotocol name must be a symbol", .{});
+        }
+
+        const proto_name = items[1].symbol.name;
+
+        // Var を先に作成
+        if (self.env.getCurrentNs()) |ns| {
+            _ = ns.intern(proto_name) catch return error.OutOfMemory;
+        }
+
+        // メソッドシグネチャをパース: (method-name [this ...])
+        var sigs_buf: std.ArrayListUnmanaged(node_mod.DefprotocolNode.ProtocolMethodSig) = .empty;
+        for (items[2..]) |item| {
+            if (item != .list) {
+                return err.parseError(.invalid_token, "defprotocol method signature must be a list", .{});
+            }
+            const sig_items = item.list;
+            if (sig_items.len < 2) {
+                return err.parseError(.invalid_arity, "defprotocol method signature requires name and params", .{});
+            }
+            if (sig_items[0] != .symbol) {
+                return err.parseError(.invalid_binding, "defprotocol method name must be a symbol", .{});
+            }
+            if (sig_items[1] != .vector) {
+                return err.parseError(.invalid_token, "defprotocol method params must be a vector", .{});
+            }
+
+            const method_name = sig_items[0].symbol.name;
+            const param_count: u8 = @intCast(sig_items[1].vector.len);
+
+            // メソッド名の Var を intern
+            if (self.env.getCurrentNs()) |ns| {
+                _ = ns.intern(method_name) catch return error.OutOfMemory;
+            }
+
+            sigs_buf.append(self.allocator, .{
+                .name = method_name,
+                .arity = param_count,
+            }) catch return error.OutOfMemory;
+        }
+
+        const data = self.allocator.create(node_mod.DefprotocolNode) catch return error.OutOfMemory;
+        data.* = .{
+            .name = proto_name,
+            .method_sigs = sigs_buf.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .defprotocol_node = data };
+        return node;
+    }
+
+    /// (extend-type TypeName ProtoName (m1 [this] body) ... ProtoName2 (m2 [this] body) ...)
+    fn analyzeExtendType(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "extend-type requires type-name and at least one protocol extension", .{});
+        }
+
+        if (items[1] != .symbol) {
+            return err.parseError(.invalid_binding, "extend-type type name must be a symbol", .{});
+        }
+
+        const type_name = items[1].symbol.name;
+
+        // items[2..] をプロトコルごとにグループ化
+        // パターン: ProtoName (method1 [params] body) (method2 [params] body) ProtoName2 ...
+        var extensions: std.ArrayListUnmanaged(node_mod.ExtendTypeNode.ProtocolExtension) = .empty;
+        var idx: usize = 2;
+
+        while (idx < items.len) {
+            // プロトコル名を取得
+            if (items[idx] != .symbol) {
+                return err.parseError(.invalid_binding, "extend-type expects a protocol name symbol", .{});
+            }
+            const protocol_name = items[idx].symbol.name;
+            idx += 1;
+
+            // このプロトコルに属するメソッド実装を収集
+            var methods: std.ArrayListUnmanaged(node_mod.ExtendTypeNode.MethodImpl) = .empty;
+            while (idx < items.len) {
+                // 次のシンボルがリストでなければプロトコル名 → 終了
+                if (items[idx] != .list) break;
+
+                const method_items = items[idx].list;
+                if (method_items.len < 2) {
+                    return err.parseError(.invalid_arity, "extend-type method requires name and params", .{});
+                }
+                if (method_items[0] != .symbol) {
+                    return err.parseError(.invalid_binding, "extend-type method name must be a symbol", .{});
+                }
+
+                const method_name = method_items[0].symbol.name;
+
+                // (method-name [params] body...) → (fn [params] body...) を構築して解析
+                var fn_items = self.allocator.alloc(Form, method_items.len) catch return error.OutOfMemory;
+                fn_items[0] = .{ .symbol = FormSymbol.init("fn") };
+                for (method_items[1..], 0..) |mi, i| {
+                    fn_items[i + 1] = mi;
+                }
+                const fn_node = try self.analyzeFn(fn_items);
+
+                methods.append(self.allocator, .{
+                    .name = method_name,
+                    .fn_node = fn_node,
+                }) catch return error.OutOfMemory;
+
+                idx += 1;
+            }
+
+            extensions.append(self.allocator, .{
+                .protocol_name = protocol_name,
+                .methods = methods.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
+            }) catch return error.OutOfMemory;
+        }
+
+        const data = self.allocator.create(node_mod.ExtendTypeNode) catch return error.OutOfMemory;
+        data.* = .{
+            .type_name = type_name,
+            .extensions = extensions.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .extend_type_node = data };
+        return node;
+    }
+
     // === マクロ展開 ===
 
     /// マクロ呼び出しかどうかをチェックし、展開する
@@ -2591,6 +2797,188 @@ pub const Analyzer = struct {
         return self.makeCall2("nil?", Form{ .list = some_forms });
     }
 
+    /// (extend-protocol Proto
+    ///   Type1 (m [this] ...) (m2 [this] ...)
+    ///   Type2 (m [this] ...))
+    /// → (do (extend-type Type1 Proto (m [this] ...) (m2 [this] ...))
+    ///       (extend-type Type2 Proto (m [this] ...)))
+    fn expandExtendProtocol(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "extend-protocol requires protocol name and at least one type extension", .{});
+        }
+
+        if (items[1] != .symbol) {
+            return err.parseError(.invalid_binding, "extend-protocol first argument must be a protocol name", .{});
+        }
+
+        const proto_name = items[1];
+
+        // items[2..] を型ごとにグループ化して extend-type に変換
+        var extend_forms: std.ArrayListUnmanaged(Form) = .empty;
+        var idx: usize = 2;
+
+        while (idx < items.len) {
+            if (items[idx] != .symbol) {
+                return err.parseError(.invalid_binding, "extend-protocol expects a type name symbol", .{});
+            }
+            const type_sym = items[idx];
+            idx += 1;
+
+            // このタイプに属するメソッド実装を収集
+            var type_methods: std.ArrayListUnmanaged(Form) = .empty;
+            while (idx < items.len) {
+                if (items[idx] != .list) break;
+                type_methods.append(self.allocator, items[idx]) catch return error.OutOfMemory;
+                idx += 1;
+            }
+
+            // (extend-type TypeName Proto (m1 ...) (m2 ...)) を構築
+            const et_len = 3 + type_methods.items.len;
+            const et_forms = self.allocator.alloc(Form, et_len) catch return error.OutOfMemory;
+            et_forms[0] = Form{ .symbol = form_mod.Symbol.init("extend-type") };
+            et_forms[1] = type_sym;
+            et_forms[2] = proto_name;
+            for (type_methods.items, 0..) |m, i| {
+                et_forms[3 + i] = m;
+            }
+
+            extend_forms.append(self.allocator, Form{ .list = et_forms }) catch return error.OutOfMemory;
+        }
+
+        // (do (extend-type ...) (extend-type ...)) を構築
+        const do_forms = self.allocator.alloc(Form, 1 + extend_forms.items.len) catch return error.OutOfMemory;
+        do_forms[0] = Form{ .symbol = form_mod.Symbol.init("do") };
+        for (extend_forms.items, 0..) |ef, i| {
+            do_forms[1 + i] = ef;
+        }
+
+        return Form{ .list = do_forms };
+    }
+
+    // ── Phase 8.16 マクロ ──
+
+    /// (update m k f args...) → (let [__um__ m __uk__ k] (assoc __um__ __uk__ (f (get __um__ __uk__) args...)))
+    fn expandUpdate(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 4) {
+            return err.parseError(.invalid_arity, "update requires at least 3 arguments (update m k f)", .{});
+        }
+
+        const m_form = items[1];
+        const k_form = items[2];
+        const f_form = items[3];
+
+        // (get __um__ __uk__) を構築
+        const get_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        get_forms[0] = Form{ .symbol = form_mod.Symbol.init("get") };
+        get_forms[1] = Form{ .symbol = form_mod.Symbol.init("__um__") };
+        get_forms[2] = Form{ .symbol = form_mod.Symbol.init("__uk__") };
+        const get_call = Form{ .list = get_forms };
+
+        // (f (get __um__ __uk__) args...) を構築
+        const extra_args = items[4..];
+        const f_call_forms = self.allocator.alloc(Form, 2 + extra_args.len) catch return error.OutOfMemory;
+        f_call_forms[0] = f_form;
+        f_call_forms[1] = get_call;
+        for (extra_args, 0..) |arg, i| {
+            f_call_forms[2 + i] = arg;
+        }
+        const f_call = Form{ .list = f_call_forms };
+
+        // (assoc __um__ __uk__ (f ...)) を構築
+        const assoc_forms = self.allocator.alloc(Form, 4) catch return error.OutOfMemory;
+        assoc_forms[0] = Form{ .symbol = form_mod.Symbol.init("assoc") };
+        assoc_forms[1] = Form{ .symbol = form_mod.Symbol.init("__um__") };
+        assoc_forms[2] = Form{ .symbol = form_mod.Symbol.init("__uk__") };
+        assoc_forms[3] = f_call;
+        const assoc_call = Form{ .list = assoc_forms };
+
+        // (let [__um__ m __uk__ k] (assoc ...))
+        return self.makeLet4("__um__", m_form, "__uk__", k_form, assoc_call);
+    }
+
+    /// (complement f) → ((fn [__cf__] (fn [& __ca__] (not (apply __cf__ __ca__)))) f)
+    /// fn-within-fn パターンで展開（VM の let-closure バグを回避）
+    fn expandComplement(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 2) {
+            return err.parseError(.invalid_arity, "complement requires 1 argument", .{});
+        }
+
+        const f_form = items[1];
+
+        // (apply __cf__ __ca__)
+        const apply_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        apply_forms[0] = Form{ .symbol = form_mod.Symbol.init("apply") };
+        apply_forms[1] = Form{ .symbol = form_mod.Symbol.init("__cf__") };
+        apply_forms[2] = Form{ .symbol = form_mod.Symbol.init("__ca__") };
+        const apply_call = Form{ .list = apply_forms };
+
+        // (not (apply ...))
+        const not_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        not_forms[0] = Form{ .symbol = form_mod.Symbol.init("not") };
+        not_forms[1] = apply_call;
+        const not_call = Form{ .list = not_forms };
+
+        // 内側: (fn [& __ca__] (not ...))
+        const inner_params = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        inner_params[0] = Form{ .symbol = form_mod.Symbol.init("&") };
+        inner_params[1] = Form{ .symbol = form_mod.Symbol.init("__ca__") };
+
+        const inner_fn = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        inner_fn[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        inner_fn[1] = Form{ .vector = inner_params };
+        inner_fn[2] = not_call;
+
+        // 外側: (fn [__cf__] (fn ...))
+        const outer_params = self.allocator.alloc(Form, 1) catch return error.OutOfMemory;
+        outer_params[0] = Form{ .symbol = form_mod.Symbol.init("__cf__") };
+
+        const outer_fn = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        outer_fn[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        outer_fn[1] = Form{ .vector = outer_params };
+        outer_fn[2] = Form{ .list = inner_fn };
+
+        // ((fn [__cf__] ...) f)
+        const call_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        call_forms[0] = Form{ .list = outer_fn };
+        call_forms[1] = f_form;
+        return Form{ .list = call_forms };
+    }
+
+    /// (constantly v) → ((fn [__cv__] (fn [& _] __cv__)) v)
+    /// fn-within-fn パターンで展開（VM の let-closure バグを回避）
+    fn expandConstantly(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 2) {
+            return err.parseError(.invalid_arity, "constantly requires 1 argument", .{});
+        }
+
+        const v_form = items[1];
+
+        // 内側: (fn [& _] __cv__)
+        const inner_params = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        inner_params[0] = Form{ .symbol = form_mod.Symbol.init("&") };
+        inner_params[1] = Form{ .symbol = form_mod.Symbol.init("_") };
+
+        const inner_fn = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        inner_fn[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        inner_fn[1] = Form{ .vector = inner_params };
+        inner_fn[2] = Form{ .symbol = form_mod.Symbol.init("__cv__") };
+
+        // 外側: (fn [__cv__] (fn ...))
+        const outer_params = self.allocator.alloc(Form, 1) catch return error.OutOfMemory;
+        outer_params[0] = Form{ .symbol = form_mod.Symbol.init("__cv__") };
+
+        const outer_fn = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        outer_fn[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        outer_fn[1] = Form{ .vector = outer_params };
+        outer_fn[2] = Form{ .list = inner_fn };
+
+        // ((fn [__cv__] ...) v)
+        const call_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        call_forms[0] = Form{ .list = outer_fn };
+        call_forms[1] = v_form;
+        return Form{ .list = call_forms };
+    }
+
     // ── ヘルパー関数 ──
 
     /// (fn-name arg) の形のリストを作成
@@ -2690,7 +3078,7 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .vector = forms };
             },
-            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

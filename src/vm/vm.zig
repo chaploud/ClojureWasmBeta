@@ -244,6 +244,12 @@ pub const VM = struct {
                 .defmethod => {
                     try self.runDefmethod(constants[instr.operand]);
                 },
+                .defprotocol => {
+                    try self.runDefprotocol(constants[instr.operand], constants);
+                },
+                .extend_type_method => {
+                    try self.runExtendTypeMethod(constants[instr.operand]);
+                },
 
                 // ═══════════════════════════════════════════════════════
                 // [F] 制御フロー
@@ -350,6 +356,15 @@ pub const VM = struct {
                 },
                 .filter_seq => {
                     try self.executeFilterWithExceptionHandling();
+                },
+                .take_while_seq => {
+                    try self.executeTakeWhileWithExceptionHandling();
+                },
+                .drop_while_seq => {
+                    try self.executeDropWhileWithExceptionHandling();
+                },
+                .map_indexed_seq => {
+                    try self.executeMapIndexedWithExceptionHandling();
                 },
 
                 // ═══════════════════════════════════════════════════════
@@ -679,6 +694,43 @@ pub const VM = struct {
                 };
                 self.sp = fn_idx;
                 try self.push(result);
+            },
+            .protocol_fn => |pf| {
+                // プロトコル関数呼び出し
+                if (arg_count < 1) return error.ArityError;
+                const args = self.stack[fn_idx + 1 .. self.sp];
+                const args_copy = self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
+                defer self.allocator.free(args_copy);
+                @memcpy(args_copy, args);
+
+                // 第1引数の型キーワード
+                const type_key_str = args[0].typeKeyword();
+
+                // type_key を文字列 Value として作成
+                const type_key_s = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+                type_key_s.* = value_mod.String.init(type_key_str);
+                const type_key = Value{ .string = type_key_s };
+
+                // プロトコルの impls から型のメソッドマップを検索
+                const methods_val = pf.protocol.impls.get(type_key) orelse
+                    return error.TypeError;
+                if (methods_val != .map) return error.TypeError;
+
+                // メソッドマップから関数を検索
+                const method_name_s = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+                method_name_s.* = value_mod.String.init(pf.method_name);
+                const method_key = Value{ .string = method_name_s };
+
+                const method_fn = methods_val.map.get(method_key) orelse
+                    return error.TypeError;
+
+                // スタックを巻き戻して新しい関数と引数を配置
+                self.sp = fn_idx;
+                try self.push(method_fn);
+                for (args_copy) |arg| {
+                    try self.push(arg);
+                }
+                try self.callValue(arg_count);
             },
             .multi_fn => |mf| {
                 // マルチメソッド呼び出し
@@ -1084,6 +1136,140 @@ pub const VM = struct {
         try self.push(value_mod.nil);
     }
 
+    /// defprotocol を実行
+    /// オペランド定数[idx] = プロトコル名シンボル、定数[idx+1] = メソッドシグネチャベクター
+    fn runDefprotocol(self: *VM, name_val: Value, constants: []const Value) VMError!void {
+        const name = switch (name_val) {
+            .symbol => |s| s.name,
+            else => return error.InvalidInstruction,
+        };
+
+        // 定数テーブルからメソッドシグネチャ情報を取得
+        // name_val の次の定数がシグネチャベクター [name1, arity1, name2, arity2, ...]
+        // name_val のインデックスを探す
+        var name_idx: usize = 0;
+        for (constants, 0..) |c, i| {
+            if (c == .symbol and c.symbol == name_val.symbol) {
+                name_idx = i;
+                break;
+            }
+        }
+        const sigs_vec = constants[name_idx + 1];
+        if (sigs_vec != .vector) return error.InvalidInstruction;
+
+        // Protocol 構造体を作成
+        const empty_impls = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+        empty_impls.* = value_mod.PersistentMap.empty();
+
+        const sig_count = sigs_vec.vector.items.len / 2;
+        const method_sigs = self.allocator.alloc(value_mod.Protocol.MethodSig, sig_count) catch return error.OutOfMemory;
+        var si: usize = 0;
+        while (si < sig_count) : (si += 1) {
+            const name_v = sigs_vec.vector.items[si * 2];
+            const arity_v = sigs_vec.vector.items[si * 2 + 1];
+            method_sigs[si] = .{
+                .name = if (name_v == .string) name_v.string.data else return error.InvalidInstruction,
+                .arity = if (arity_v == .int) @intCast(arity_v.int) else return error.InvalidInstruction,
+            };
+        }
+
+        const proto = self.allocator.create(value_mod.Protocol) catch return error.OutOfMemory;
+        proto.* = .{
+            .name = value_mod.Symbol.init(name),
+            .method_sigs = method_sigs,
+            .impls = empty_impls,
+        };
+
+        // Var にバインド
+        const ns = self.env.getCurrentNs() orelse return error.UndefinedVar;
+        const v = ns.intern(name) catch return error.OutOfMemory;
+        v.bindRoot(Value{ .protocol = proto });
+
+        // 各メソッドについて ProtocolFn を作成
+        for (method_sigs) |sig| {
+            const pf = self.allocator.create(value_mod.ProtocolFn) catch return error.OutOfMemory;
+            pf.* = .{
+                .protocol = proto,
+                .method_name = sig.name,
+            };
+            const mv = ns.intern(sig.name) catch return error.OutOfMemory;
+            mv.bindRoot(Value{ .protocol_fn = pf });
+        }
+
+        try self.push(value_mod.nil);
+    }
+
+    /// extend-type メソッドを登録
+    /// オペランド定数 = ベクター [type_name, protocol_name, method_name]
+    /// スタック: [method_fn] → [nil]
+    fn runExtendTypeMethod(self: *VM, meta_val: Value) VMError!void {
+        const method_fn = self.pop();
+
+        if (meta_val != .vector) return error.InvalidInstruction;
+        const meta = meta_val.vector;
+        if (meta.items.len != 3) return error.InvalidInstruction;
+
+        const type_name_str = if (meta.items[0] == .string) meta.items[0].string.data else return error.InvalidInstruction;
+        const proto_name_str = if (meta.items[1] == .string) meta.items[1].string.data else return error.InvalidInstruction;
+        const method_name_str = if (meta.items[2] == .string) meta.items[2].string.data else return error.InvalidInstruction;
+
+        // 型名を内部キーワードに変換
+        const type_key_str = mapUserTypeName(type_name_str);
+
+        // プロトコルの Var から Protocol を取得
+        const ns = self.env.getCurrentNs() orelse return error.UndefinedVar;
+        const proto_var = ns.intern(proto_name_str) catch return error.OutOfMemory;
+        const proto_val = proto_var.deref();
+        if (proto_val != .protocol) return error.InvalidInstruction;
+        const proto = proto_val.protocol;
+
+        // 型キーを作成
+        const type_key_s = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+        type_key_s.* = value_mod.String.init(type_key_str);
+        const type_key = Value{ .string = type_key_s };
+
+        // 既存のメソッドマップを取得（なければ空）
+        var method_map = if (proto.impls.get(type_key)) |existing|
+            if (existing == .map) existing.map.* else value_mod.PersistentMap.empty()
+        else
+            value_mod.PersistentMap.empty();
+
+        // メソッドを追加
+        const method_name_s = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+        method_name_s.* = value_mod.String.init(method_name_str);
+        const method_key = Value{ .string = method_name_s };
+        method_map = method_map.assoc(self.allocator, method_key, method_fn) catch return error.OutOfMemory;
+
+        // impls を更新
+        const method_map_ptr = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+        method_map_ptr.* = method_map;
+        const method_map_val = Value{ .map = method_map_ptr };
+
+        const new_impls = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+        new_impls.* = proto.impls.assoc(self.allocator, type_key, method_map_val) catch return error.OutOfMemory;
+        proto.impls = new_impls;
+
+        try self.push(value_mod.nil);
+    }
+
+    /// ユーザー指定の型名を内部 typeKeyword 文字列に変換
+    fn mapUserTypeName(name: []const u8) []const u8 {
+        if (std.mem.eql(u8, name, "nil")) return "nil";
+        if (std.mem.eql(u8, name, "Boolean")) return "boolean";
+        if (std.mem.eql(u8, name, "Integer")) return "integer";
+        if (std.mem.eql(u8, name, "Float")) return "float";
+        if (std.mem.eql(u8, name, "String")) return "string";
+        if (std.mem.eql(u8, name, "Keyword")) return "keyword";
+        if (std.mem.eql(u8, name, "Symbol")) return "symbol";
+        if (std.mem.eql(u8, name, "List")) return "list";
+        if (std.mem.eql(u8, name, "Vector")) return "vector";
+        if (std.mem.eql(u8, name, "Map")) return "map";
+        if (std.mem.eql(u8, name, "Set")) return "set";
+        if (std.mem.eql(u8, name, "Function")) return "function";
+        if (std.mem.eql(u8, name, "Atom")) return "atom";
+        return name;
+    }
+
     /// apply を実行
     /// スタック: [... fn, arg0, arg1, ..., seq]
     fn applyValue(self: *VM, middle_count: usize) VMError!void {
@@ -1218,6 +1404,135 @@ pub const VM = struct {
     /// executeFilter のラッパー: 例外をハンドラに転送
     fn executeFilterWithExceptionHandling(self: *VM) VMError!void {
         self.executeFilter() catch |e| {
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
+            return e;
+        };
+    }
+
+    /// take-while を実行
+    fn executeTakeWhile(self: *VM) VMError!void {
+        const coll_val = self.pop();
+        const fn_val = self.pop();
+
+        const items: []const Value = switch (coll_val) {
+            .list => |l| l.items,
+            .vector => |v| v.items,
+            .nil => &[_]Value{},
+            else => return error.TypeError,
+        };
+
+        var result_buf: std.ArrayListUnmanaged(Value) = .empty;
+        for (items) |item| {
+            try self.push(fn_val);
+            try self.push(item);
+            try self.callValue(1);
+            const pred_result = self.pop();
+            if (!pred_result.isTruthy()) break;
+            result_buf.append(self.allocator, item) catch return error.OutOfMemory;
+        }
+
+        const result_list = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+        result_list.* = .{ .items = result_buf.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
+        try self.push(Value{ .list = result_list });
+    }
+
+    /// drop-while を実行
+    fn executeDropWhile(self: *VM) VMError!void {
+        const coll_val = self.pop();
+        const fn_val = self.pop();
+
+        const items: []const Value = switch (coll_val) {
+            .list => |l| l.items,
+            .vector => |v| v.items,
+            .nil => &[_]Value{},
+            else => return error.TypeError,
+        };
+
+        var start: usize = 0;
+        for (items) |item| {
+            try self.push(fn_val);
+            try self.push(item);
+            try self.callValue(1);
+            const pred_result = self.pop();
+            if (!pred_result.isTruthy()) break;
+            start += 1;
+        }
+
+        const remaining = items[start..];
+        const result_items = self.allocator.alloc(Value, remaining.len) catch return error.OutOfMemory;
+        @memcpy(result_items, remaining);
+
+        const result_list = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+        result_list.* = .{ .items = result_items };
+        try self.push(Value{ .list = result_list });
+    }
+
+    /// map-indexed を実行
+    fn executeMapIndexed(self: *VM) VMError!void {
+        const coll_val = self.pop();
+        const fn_val = self.pop();
+
+        const items: []const Value = switch (coll_val) {
+            .list => |l| l.items,
+            .vector => |v| v.items,
+            .nil => &[_]Value{},
+            else => return error.TypeError,
+        };
+
+        var result_items = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+        for (items, 0..) |item, i| {
+            try self.push(fn_val);
+            try self.push(value_mod.intVal(@intCast(i)));
+            try self.push(item);
+            try self.callValue(2);
+            result_items[i] = self.pop();
+        }
+
+        const result_list = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+        result_list.* = .{ .items = result_items };
+        try self.push(Value{ .list = result_list });
+    }
+
+    /// executeTakeWhile のラッパー
+    fn executeTakeWhileWithExceptionHandling(self: *VM) VMError!void {
+        self.executeTakeWhile() catch |e| {
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
+            return e;
+        };
+    }
+
+    /// executeDropWhile のラッパー
+    fn executeDropWhileWithExceptionHandling(self: *VM) VMError!void {
+        self.executeDropWhile() catch |e| {
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
+            return e;
+        };
+    }
+
+    /// executeMapIndexed のラッパー
+    fn executeMapIndexedWithExceptionHandling(self: *VM) VMError!void {
+        self.executeMapIndexed() catch |e| {
             if (self.handler_count > 0) {
                 if (e == error.UserException) {
                     if (self.handleThrowFromError()) return;

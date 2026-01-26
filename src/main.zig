@@ -307,6 +307,16 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
             try printValue(writer, a.value);
             try writer.writeByte('>');
         },
+        .protocol => |p| {
+            try writer.writeAll("#<protocol ");
+            try writer.writeAll(p.name.name);
+            try writer.writeByte('>');
+        },
+        .protocol_fn => |pf| {
+            try writer.writeAll("#<protocol-fn ");
+            try writer.writeAll(pf.method_name);
+            try writer.writeByte('>');
+        },
     }
 }
 
