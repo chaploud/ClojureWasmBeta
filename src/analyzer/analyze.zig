@@ -147,6 +147,8 @@ pub const Analyzer = struct {
                 return self.analyzeRecur(items);
             } else if (std.mem.eql(u8, sym_name, "defmacro")) {
                 return self.analyzeDefmacro(items);
+            } else if (std.mem.eql(u8, sym_name, "apply")) {
+                return self.analyzeApply(items);
             }
         }
 
@@ -526,6 +528,39 @@ pub const Analyzer = struct {
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = .{ .recur_node = recur_data };
+        return node;
+    }
+
+    fn analyzeApply(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (apply f args) または (apply f x y z args)
+        // 最低2引数（関数とシーケンス）
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "apply requires at least 2 arguments", .{});
+        }
+
+        // 関数を解析
+        const fn_node = try self.analyze(items[1]);
+
+        // 中間引数（最後の1つを除く）
+        const middle_count = items.len - 3; // items[0]=apply, items[1]=fn, items[-1]=seq
+        var middle_args = self.allocator.alloc(*Node, middle_count) catch return error.OutOfMemory;
+        for (0..middle_count) |i| {
+            middle_args[i] = try self.analyze(items[2 + i]);
+        }
+
+        // シーケンス引数（最後の引数）
+        const seq_node = try self.analyze(items[items.len - 1]);
+
+        const apply_data = self.allocator.create(node_mod.ApplyNode) catch return error.OutOfMemory;
+        apply_data.* = .{
+            .fn_node = fn_node,
+            .args = middle_args,
+            .seq_node = seq_node,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .apply_node = apply_data };
         return node;
     }
 

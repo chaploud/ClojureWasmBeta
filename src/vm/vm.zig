@@ -250,8 +250,11 @@ pub const VM = struct {
                     try self.callValue(@intCast(arg_count));
                 },
                 .apply => {
-                    // TODO: apply 実装
-                    return error.InvalidInstruction;
+                    // apply: (apply f x y z seq)
+                    // スタック: [... fn, arg0, arg1, ..., seq]
+                    // オペランド: 中間引数の数
+                    const middle_count = instr.operand;
+                    try self.applyValue(@intCast(middle_count));
                 },
                 .ret => {
                     const result = self.pop();
@@ -534,6 +537,42 @@ pub const VM = struct {
 
         // nil を push（戻り値）
         try self.push(value_mod.nil);
+    }
+
+    /// apply を実行
+    /// スタック: [... fn, arg0, arg1, ..., seq]
+    fn applyValue(self: *VM, middle_count: usize) VMError!void {
+        // シーケンスを取り出す（スタックトップ）
+        const seq_val = self.pop();
+
+        // シーケンスから要素を抽出
+        const seq_items: []const Value = switch (seq_val) {
+            .list => |l| l.items,
+            .vector => |v| v.items,
+            .nil => &[_]Value{},
+            else => return error.TypeError,
+        };
+
+        // 中間引数を取り出す
+        var middle_args = self.allocator.alloc(Value, middle_count) catch return error.OutOfMemory;
+        defer self.allocator.free(middle_args);
+        var i = middle_count;
+        while (i > 0) {
+            i -= 1;
+            middle_args[i] = self.pop();
+        }
+
+        // 全引数を結合してスタックに戻す
+        const total_args = middle_count + seq_items.len;
+        for (middle_args) |arg| {
+            try self.push(arg);
+        }
+        for (seq_items) |item| {
+            try self.push(item);
+        }
+
+        // callValue を呼び出す
+        try self.callValue(total_args);
     }
 
     // === スタック操作 ===

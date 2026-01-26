@@ -119,6 +119,15 @@ pub const ThrowNode = struct {
     stack: SourceInfo,
 };
 
+/// apply ノード
+/// (apply f args) または (apply f x y z args)
+pub const ApplyNode = struct {
+    fn_node: *Node, // 関数
+    args: []const *Node, // 中間引数（0個以上）
+    seq_node: *Node, // 最後のシーケンス引数
+    stack: SourceInfo,
+};
+
 // === Node 本体 ===
 
 /// 実行可能ノード
@@ -150,6 +159,9 @@ pub const Node = union(enum) {
     // 例外
     throw_node: *ThrowNode,
 
+    // 高階関数
+    apply_node: *ApplyNode,
+
     /// スタック情報を取得
     pub fn stack(self: Node) SourceInfo {
         return switch (self) {
@@ -166,6 +178,7 @@ pub const Node = union(enum) {
             .def_node => |n| n.stack,
             .quote_node => |n| n.stack,
             .throw_node => |n| n.stack,
+            .apply_node => |n| n.stack,
         };
     }
 
@@ -185,6 +198,7 @@ pub const Node = union(enum) {
             .def_node => "def",
             .quote_node => "quote",
             .throw_node => "throw",
+            .apply_node => "apply",
         };
     }
 };

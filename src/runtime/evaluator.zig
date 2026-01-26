@@ -47,6 +47,7 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .def_node => |n| runDef(n, ctx),
         .quote_node => |n| n.form,
         .throw_node => return error.TypeError, // TODO: 例外処理
+        .apply_node => |n| runApply(n, ctx),
     };
 }
 
@@ -230,6 +231,76 @@ fn runDef(node: *const node_mod.DefNode, ctx: *Context) EvalError!Value {
     // Var を返す（#'var 形式）
     // TODO: Var を Value に含める
     return value_mod.nil;
+}
+
+/// apply 評価
+/// (apply f args) または (apply f x y z args)
+fn runApply(node: *const node_mod.ApplyNode, ctx: *Context) EvalError!Value {
+    // 関数を評価
+    const fn_val = try run(node.fn_node, ctx);
+
+    // 中間引数を評価
+    var middle_vals = ctx.allocator.alloc(Value, node.args.len) catch return error.OutOfMemory;
+    for (node.args, 0..) |arg, i| {
+        middle_vals[i] = try run(arg, ctx);
+    }
+
+    // シーケンス引数を評価
+    const seq_val = try run(node.seq_node, ctx);
+
+    // シーケンスから要素を抽出
+    const seq_items: []const Value = switch (seq_val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{}, // nil は空シーケンス
+        else => return error.TypeError,
+    };
+
+    // 全引数を結合
+    const total_len = middle_vals.len + seq_items.len;
+    var all_args = ctx.allocator.alloc(Value, total_len) catch return error.OutOfMemory;
+    @memcpy(all_args[0..middle_vals.len], middle_vals);
+    @memcpy(all_args[middle_vals.len..], seq_items);
+
+    // 関数を呼び出し
+    return switch (fn_val) {
+        .fn_val => |f| blk: {
+            // 組み込み関数
+            if (f.builtin) |builtin_ptr| {
+                const builtin: core.BuiltinFn = @ptrCast(@alignCast(builtin_ptr));
+                break :blk builtin(ctx.allocator, all_args) catch return error.TypeError;
+            }
+
+            // ユーザー定義関数
+            const arity = f.findArity(all_args.len) orelse return error.ArityError;
+
+            // 新しいコンテキストを作成
+            var fn_ctx = Context.init(ctx.allocator, ctx.env);
+
+            // クロージャ環境をバインド
+            if (f.closure_bindings) |bindings| {
+                fn_ctx = fn_ctx.withBindings(bindings) catch return error.OutOfMemory;
+            }
+
+            // 引数をバインド
+            if (arity.variadic) {
+                // 可変長: 固定引数 + rest リスト
+                const fixed_count = arity.params.len - 1;
+                var bindings_arr = ctx.allocator.alloc(Value, arity.params.len) catch return error.OutOfMemory;
+                @memcpy(bindings_arr[0..fixed_count], all_args[0..fixed_count]);
+                const rest_list = value_mod.PersistentList.fromSlice(ctx.allocator, all_args[fixed_count..]) catch return error.OutOfMemory;
+                bindings_arr[fixed_count] = Value{ .list = rest_list };
+                fn_ctx = fn_ctx.withBindings(bindings_arr) catch return error.OutOfMemory;
+            } else {
+                fn_ctx = fn_ctx.withBindings(all_args) catch return error.OutOfMemory;
+            }
+
+            // ボディを評価
+            const body: *const Node = @ptrCast(@alignCast(arity.body));
+            break :blk run(body, &fn_ctx);
+        },
+        else => error.TypeError,
+    };
 }
 
 // === テスト ===

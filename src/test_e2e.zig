@@ -502,3 +502,25 @@ test "compare: 可変長引数" {
     // 固定引数を使う
     try expectIntBoth(allocator, &env, "((fn [x y & rest] (+ x y)) 10 20 30)", 30);
 }
+
+test "compare: apply" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本的な apply
+    try expectIntBoth(allocator, &env, "(apply + [1 2 3])", 6);
+
+    // 中間引数あり
+    try expectIntBoth(allocator, &env, "(apply + 1 2 [3 4])", 10);
+
+    // 空のシーケンス
+    try expectIntBoth(allocator, &env, "(apply + [])", 0);
+    try expectIntBoth(allocator, &env, "(apply + 5 [])", 5);
+
+    // ユーザー定義関数への apply
+    try expectIntBoth(allocator, &env, "(apply (fn [x y] (+ x y)) [10 20])", 30);
+}

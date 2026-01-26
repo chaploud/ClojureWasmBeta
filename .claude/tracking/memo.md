@@ -8,10 +8,11 @@
 ## 前回完了
 
 - Phase 8.2.1: 可変長引数 (& rest) ✓
-  - Evaluator: 余剰引数をリストにまとめてバインド
-  - VM: 同様の処理を実装
-  - 両バックエンドで動作確認（--compare）
-  - E2E テスト追加
+- Phase 8.2.2: apply ✓
+  - Analyzer: ApplyNode として解析
+  - Evaluator: シーケンスを展開して関数呼び出し
+  - VM: apply オペコード実装
+  - 両バックエンドで動作確認
 
 ---
 
@@ -25,7 +26,6 @@
 - 複数アリティ fn
 - コレクションリテラル (vec_new, map_new 等)
 - tail_call 最適化
-- apply
 
 ---
 

@@ -82,6 +82,7 @@ pub const Compiler = struct {
             .def_node => |node| try self.emitDef(node),
             .quote_node => |node| try self.emitQuote(node),
             .throw_node => return error.InvalidNode, // TODO
+            .apply_node => |node| try self.emitApply(node),
         }
     }
 
@@ -332,6 +333,24 @@ pub const Compiler = struct {
     /// quote
     fn emitQuote(self: *Compiler, node: *const node_mod.QuoteNode) CompileError!void {
         try self.emitConstant(node.form);
+    }
+
+    /// apply
+    /// (apply f args) または (apply f x y z args)
+    fn emitApply(self: *Compiler, node: *const node_mod.ApplyNode) CompileError!void {
+        // 関数をコンパイル
+        try self.compile(node.fn_node);
+
+        // 中間引数をコンパイル
+        for (node.args) |arg| {
+            try self.compile(arg);
+        }
+
+        // シーケンス引数をコンパイル
+        try self.compile(node.seq_node);
+
+        // apply 命令（オペランド: 中間引数の数）
+        try self.chunk.emit(.apply, @intCast(node.args.len));
     }
 
     // === ヘルパー ===
