@@ -524,3 +524,24 @@ test "compare: apply" {
     // ユーザー定義関数への apply
     try expectIntBoth(allocator, &env, "(apply (fn [x y] (+ x y)) [10 20])", 30);
 }
+
+test "compare: 複数アリティ fn" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 複数アリティ: 1引数
+    try expectIntBoth(allocator, &env, "((fn ([x] x) ([x y] (+ x y))) 42)", 42);
+
+    // 複数アリティ: 2引数
+    try expectIntBoth(allocator, &env, "((fn ([x] x) ([x y] (+ x y))) 10 20)", 30);
+
+    // 複数アリティ: 0引数
+    try expectIntBoth(allocator, &env, "((fn ([] 0) ([x] x) ([x y] (+ x y))))", 0);
+
+    // 3つのアリティ
+    try expectIntBoth(allocator, &env, "((fn ([] 100) ([x] x) ([x y z] (+ x y z))) 1 2 3)", 6);
+}

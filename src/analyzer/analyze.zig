@@ -337,8 +337,40 @@ pub const Analyzer = struct {
         }
 
         // 複数アリティ: ([params] body...) ...
-        // TODO: 実装
-        return err.parseError(.invalid_token, "Multi-arity fn not yet supported", .{});
+        // 各アリティは (params-vector body...) 形式のリスト
+        var arities_list = std.ArrayListUnmanaged(node_mod.FnArity).empty;
+
+        while (idx < items.len) {
+            const arity_form = items[idx];
+            if (arity_form != .list) {
+                return err.parseError(.invalid_token, "fn arity must be a list: ([params] body...)", .{});
+            }
+
+            const arity_items = arity_form.list;
+            if (arity_items.len == 0 or arity_items[0] != .vector) {
+                return err.parseError(.invalid_token, "fn arity must start with parameter vector", .{});
+            }
+
+            const arity = try self.analyzeFnArity(arity_items[0].vector, arity_items[1..]);
+            arities_list.append(self.allocator, arity) catch return error.OutOfMemory;
+
+            idx += 1;
+        }
+
+        if (arities_list.items.len == 0) {
+            return err.parseError(.invalid_arity, "fn requires at least one arity", .{});
+        }
+
+        const fn_data = self.allocator.create(node_mod.FnNode) catch return error.OutOfMemory;
+        fn_data.* = .{
+            .name = name,
+            .arities = arities_list.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .fn_node = fn_data };
+        return node;
     }
 
     fn analyzeFnArity(self: *Analyzer, params_form: []const Form, body_forms: []const Form) err.Error!node_mod.FnArity {

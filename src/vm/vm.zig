@@ -279,6 +279,11 @@ pub const VM = struct {
                     // FnProto から Fn を作成
                     try self.createClosure(proto_val);
                 },
+                .closure_multi => {
+                    // 複数アリティのクロージャを作成
+                    const arity_count = instr.operand;
+                    try self.createMultiClosure(@intCast(arity_count));
+                },
 
                 // ═══════════════════════════════════════════════════════
                 // [H] loop/recur
@@ -510,6 +515,68 @@ pub const VM = struct {
 
         fn_obj.* = .{
             .name = if (proto.name) |n| value_mod.Symbol.init(n) else null,
+            .arities = runtime_arities,
+            .closure_bindings = closure_bindings,
+        };
+
+        try self.push(Value{ .fn_val = fn_obj });
+    }
+
+    /// 複数アリティのクロージャを作成
+    /// スタック上に arity_count 個の FnProto があることを期待
+    fn createMultiClosure(self: *VM, arity_count: usize) VMError!void {
+        // FnProtos をスタックから取り出す（逆順で）
+        var protos = self.allocator.alloc(*const FnProto, arity_count) catch return error.OutOfMemory;
+        defer self.allocator.free(protos);
+
+        var i = arity_count;
+        while (i > 0) {
+            i -= 1;
+            const val = self.pop();
+            if (val != .fn_proto) return error.InvalidInstruction;
+            protos[i] = @ptrCast(@alignCast(val.fn_proto));
+        }
+
+        // Fn オブジェクトを作成
+        const fn_obj = self.allocator.create(value_mod.Fn) catch return error.OutOfMemory;
+        const runtime_arities = self.allocator.alloc(value_mod.FnArityRuntime, arity_count) catch return error.OutOfMemory;
+
+        for (protos, 0..) |proto, idx| {
+            // パラメータ名のダミー配列を作成
+            const dummy_params = self.allocator.alloc([]const u8, proto.arity) catch return error.OutOfMemory;
+            for (0..proto.arity) |j| {
+                dummy_params[j] = "";
+            }
+
+            runtime_arities[idx] = .{
+                .params = dummy_params,
+                .variadic = proto.variadic,
+                .body = @ptrCast(@constCast(proto)),
+            };
+        }
+
+        // クロージャバインディングをキャプチャ
+        const closure_bindings: ?[]const Value = if (self.frame_count > 0) blk: {
+            const frame = &self.frames[self.frame_count - 1];
+            const locals_count = self.sp - frame.base;
+            if (locals_count > 0) {
+                const bindings = self.allocator.alloc(Value, locals_count) catch return error.OutOfMemory;
+                for (0..locals_count) |j| {
+                    bindings[j] = self.stack[frame.base + j];
+                }
+                break :blk bindings;
+            }
+            break :blk null;
+        } else null;
+
+        // 関数名（最初の proto から取得）
+        const name: ?value_mod.Symbol = if (protos.len > 0 and protos[0].name != null)
+            value_mod.Symbol.init(protos[0].name.?)
+        else
+            null;
+
+        fn_obj.* = .{
+            .name = name,
             .arities = runtime_arities,
             .closure_bindings = closure_bindings,
         };

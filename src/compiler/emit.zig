@@ -252,15 +252,35 @@ pub const Compiler = struct {
     fn emitFn(self: *Compiler, node: *const node_mod.FnNode) CompileError!void {
         // 関数本体を別の Compiler でコンパイル
         // 各アリティ毎に FnProto を作成
-        // ここでは単一アリティのみ対応
 
         if (node.arities.len == 0) {
             try self.chunk.emitOp(.nil);
             return;
         }
 
-        const arity = node.arities[0];
+        // 単一アリティの場合は最適化パス
+        if (node.arities.len == 1) {
+            const proto = try self.compileArity(node.name, node.arities[0]);
+            const proto_val = Value{ .fn_proto = proto };
+            const idx = self.chunk.addConstant(proto_val) catch return error.TooManyConstants;
+            try self.chunk.emit(.closure, idx);
+            return;
+        }
 
+        // 複数アリティ: 各アリティの FnProto をスタックにプッシュ
+        for (node.arities) |arity| {
+            const proto = try self.compileArity(node.name, arity);
+            const proto_val = Value{ .fn_proto = proto };
+            const idx = self.chunk.addConstant(proto_val) catch return error.TooManyConstants;
+            try self.chunk.emit(.const_load, idx);
+        }
+
+        // closure_multi 命令で結合
+        try self.chunk.emit(.closure_multi, @intCast(node.arities.len));
+    }
+
+    /// 単一アリティをコンパイルして FnProto を返す
+    fn compileArity(self: *Compiler, name: ?[]const u8, arity: node_mod.FnArity) CompileError!*FnProto {
         // 関数本体用のコンパイラ
         var fn_compiler = Compiler.init(self.allocator);
         defer fn_compiler.deinit();
@@ -279,7 +299,7 @@ pub const Compiler = struct {
         const proto = self.allocator.create(FnProto) catch return error.OutOfMemory;
         var fn_chunk = fn_compiler.takeChunk();
         proto.* = .{
-            .name = node.name,
+            .name = name,
             .arity = @intCast(arity.params.len),
             .variadic = arity.variadic,
             .local_count = @intCast(fn_compiler.locals.items.len),
@@ -287,10 +307,7 @@ pub const Compiler = struct {
             .constants = fn_chunk.constants.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
         };
 
-        // FnProto を定数として追加
-        const proto_val = Value{ .fn_proto = proto };
-        const idx = self.chunk.addConstant(proto_val) catch return error.TooManyConstants;
-        try self.chunk.emit(.closure, idx);
+        return proto;
     }
 
     /// call

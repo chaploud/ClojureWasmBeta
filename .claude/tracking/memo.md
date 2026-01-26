@@ -9,9 +9,10 @@
 
 - Phase 8.2.1: 可変長引数 (& rest) ✓
 - Phase 8.2.2: apply ✓
-  - Analyzer: ApplyNode として解析
-  - Evaluator: シーケンスを展開して関数呼び出し
-  - VM: apply オペコード実装
+- Phase 8.2.3: 複数アリティ fn ✓
+  - Analyzer: 複数の ([params] body...) 形式を解析
+  - Compiler: closure_multi オペコードで複数 FnProto を結合
+  - VM: createMultiClosure で複数アリティの Fn を作成
   - 両バックエンドで動作確認
 
 ---
@@ -23,9 +24,10 @@
 **開発サイクル**: TreeWalk 一機能追加 → VM 同期 → 繰り返し
 
 **候補機能**:
-- 複数アリティ fn
 - コレクションリテラル (vec_new, map_new 等)
 - tail_call 最適化
+- partial
+- comp
 
 ---
 
@@ -34,7 +36,6 @@
 - 有理数は Form では float で近似（Ratio 型は将来実装）
 - マップ/セットは Reader で nil を返す仮実装
 - コレクションは配列ベースの簡易実装（永続データ構造は将来）
-- 複数アリティ fn は未実装（単一アリティのみ）
 - BuiltinFn は value.zig では anyopaque、core.zig で型定義、evaluator.zig でキャスト
 - char_val は Form に対応していない（valueToForm でエラー）
 - **メモリリーク（Phase 9 GC で対応予定）**:
