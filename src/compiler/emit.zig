@@ -29,6 +29,7 @@ pub const CompileError = error{
 const Local = struct {
     name: []const u8,
     depth: u32,
+    slot: u16, // frame.base からの実際のスタック位置
 };
 
 /// コンパイラ状態
@@ -41,6 +42,10 @@ pub const Compiler = struct {
     scope_depth: u32,
     /// loop 開始位置（recur 用）
     loop_start: ?usize,
+    /// loop バインディングの開始インデックス（recur が正しいスロットに書き込むために必要）
+    loop_locals_base: usize,
+    /// コンパイル時スタック深度（frame.base からの相対位置）
+    sp_depth: u16,
 
     /// 初期化
     pub fn init(allocator: std.mem.Allocator) Compiler {
@@ -50,6 +55,8 @@ pub const Compiler = struct {
             .locals = .empty,
             .scope_depth = 0,
             .loop_start = null,
+            .loop_locals_base = 0,
+            .sp_depth = 0,
         };
     }
 
@@ -100,6 +107,7 @@ pub const Compiler = struct {
         // 特殊値の最適化
         if (val.isNil()) {
             try self.chunk.emitOp(.nil);
+            self.sp_depth += 1;
             return;
         }
         switch (val) {
@@ -109,6 +117,7 @@ pub const Compiler = struct {
                 } else {
                     try self.chunk.emitOp(.false_val);
                 }
+                self.sp_depth += 1;
                 return;
             },
             else => {},
@@ -117,6 +126,7 @@ pub const Compiler = struct {
         // 一般の定数
         const idx = self.chunk.addConstant(val) catch return error.TooManyConstants;
         try self.chunk.emit(.const_load, idx);
+        self.sp_depth += 1;
     }
 
     /// Var 参照
@@ -125,22 +135,30 @@ pub const Compiler = struct {
         const var_val = Value{ .var_val = ref.var_ref };
         const idx = self.chunk.addConstant(var_val) catch return error.TooManyConstants;
         try self.chunk.emit(.var_load, idx);
+        self.sp_depth += 1;
     }
 
     /// ローカル変数参照
     fn emitLocalRef(self: *Compiler, ref: node_mod.LocalRefNode) CompileError!void {
-        try self.chunk.emit(.local_load, @intCast(ref.idx));
+        // コンパイラの locals テーブルから実際のスロット位置を取得
+        const slot = if (ref.idx < self.locals.items.len)
+            self.locals.items[ref.idx].slot
+        else
+            @as(u16, @intCast(ref.idx));
+        try self.chunk.emit(.local_load, slot);
+        self.sp_depth += 1;
     }
 
     /// if
     fn emitIf(self: *Compiler, node: *const node_mod.IfNode) CompileError!void {
-        // test をコンパイル
+        // test をコンパイル（sp_depth += 1 は子が処理）
         try self.compile(node.test_node);
 
-        // false ならジャンプ（then をスキップ）
+        // jump_if_false は test をポップ
+        self.sp_depth -= 1;
         const jump_if_false = self.chunk.emitJump(.jump_if_false) catch return error.OutOfMemory;
 
-        // then をコンパイル
+        // then をコンパイル（sp_depth += 1 は子が処理）
         try self.compile(node.then_node);
 
         // else をスキップするジャンプ
@@ -149,14 +167,19 @@ pub const Compiler = struct {
         // false ジャンプ先をパッチ
         self.chunk.patchJump(jump_if_false);
 
+        // else ブランチは then の結果がない状態から始まる
+        self.sp_depth -= 1;
+
         // else をコンパイル
         if (node.else_node) |else_n| {
             try self.compile(else_n);
         } else {
             try self.chunk.emitOp(.nil);
+            self.sp_depth += 1;
         }
 
         // else スキップジャンプ先をパッチ
+        // 両ブランチとも結果1つ分（+1）で終了
         self.chunk.patchJump(jump_over_else);
     }
 
@@ -164,6 +187,7 @@ pub const Compiler = struct {
     fn emitDo(self: *Compiler, node: *const node_mod.DoNode) CompileError!void {
         if (node.statements.len == 0) {
             try self.chunk.emitOp(.nil);
+            self.sp_depth += 1;
             return;
         }
 
@@ -172,6 +196,7 @@ pub const Compiler = struct {
             // 最後以外は pop
             if (i < node.statements.len - 1) {
                 try self.chunk.emitOp(.pop);
+                self.sp_depth -= 1;
             }
         }
     }
@@ -182,28 +207,21 @@ pub const Compiler = struct {
         self.scope_depth += 1;
         const base_locals = self.locals.items.len;
 
-        // バインディングをコンパイル
+        // バインディングをコンパイル（compile が sp_depth += 1 を処理）
         for (node.bindings) |binding| {
             try self.compile(binding.init);
-            // ローカル変数を追加
+            // addLocal は sp_depth - 1 をスロットとして記録
             try self.addLocal(binding.name);
         }
 
-        // ボディをコンパイル
+        // ボディをコンパイル（sp_depth += 1 は子が処理）
         try self.compile(node.body);
 
-        // スコープ終了、ローカルを pop
+        // スコープ終了: ローカルをスタックから除去し、結果を保持
         const locals_to_pop = self.locals.items.len - base_locals;
-        // ボディの結果を保存するため、結果を残して他を pop
         if (locals_to_pop > 0) {
-            // 結果をスタックトップに持ち上げるため、
-            // locals_to_pop 個の値を除去する必要がある
-            // 簡易実装: 各ローカルを pop してから結果を戻す
-            // より効率的な方法は swap + pop だが、ここでは簡易実装
-            for (0..locals_to_pop) |_| {
-                // 結果とローカルを入れ替えて pop
-                // TODO: 効率化（swap命令追加）
-            }
+            try self.chunk.emit(.scope_exit, @intCast(locals_to_pop));
+            self.sp_depth -= @intCast(locals_to_pop);
         }
 
         // ローカルを削除
@@ -216,23 +234,35 @@ pub const Compiler = struct {
         // スコープ開始
         self.scope_depth += 1;
         const base_locals = self.locals.items.len;
+        const loop_sp_base = self.sp_depth; // バインディング前のスタック位置
 
-        // 初期バインディングをコンパイル
+        // 初期バインディングをコンパイル（compile が sp_depth += 1 を処理）
         for (node.bindings) |binding| {
             try self.compile(binding.init);
             try self.addLocal(binding.name);
         }
 
-        // ループ開始位置を記録
+        // ループ開始位置と loop バインディング開始位置を記録
+        // loop_locals_base はスタック上の実際のオフセット（sp_depth ベース）
         const loop_start_pos = self.chunk.currentOffset();
         const prev_loop_start = self.loop_start;
+        const prev_loop_locals_base = self.loop_locals_base;
         self.loop_start = loop_start_pos;
+        self.loop_locals_base = loop_sp_base;
 
-        // ボディをコンパイル
+        // ボディをコンパイル（sp_depth += 1 は子が処理）
         try self.compile(node.body);
 
         // ループ開始位置を復元
         self.loop_start = prev_loop_start;
+        self.loop_locals_base = prev_loop_locals_base;
+
+        // スコープ終了: ループバインディングを除去し結果を保持
+        const locals_to_pop = self.locals.items.len - base_locals;
+        if (locals_to_pop > 0) {
+            try self.chunk.emit(.scope_exit, @intCast(locals_to_pop));
+            self.sp_depth -= @intCast(locals_to_pop);
+        }
 
         // ローカルを削除
         self.locals.shrinkRetainingCapacity(base_locals);
@@ -241,18 +271,26 @@ pub const Compiler = struct {
 
     /// recur
     fn emitRecur(self: *Compiler, node: *const node_mod.RecurNode) CompileError!void {
-        // 引数をコンパイル
+        const sp_before = self.sp_depth;
+
+        // 引数をコンパイル（各 compile が sp_depth += 1 を処理）
         for (node.args) |arg| {
             try self.compile(arg);
         }
 
-        // recur 命令を発行
-        try self.chunk.emit(.recur, @intCast(node.args.len));
+        // recur 命令を発行（上位8bit: loop開始オフセット、下位8bit: 引数数）
+        const base_offset: u16 = @intCast(self.loop_locals_base);
+        const arg_count: u16 = @intCast(node.args.len);
+        try self.chunk.emit(.recur, (base_offset << 8) | arg_count);
 
         // ループ先頭へジャンプ
         if (self.loop_start) |start| {
             try self.chunk.emitLoop(start);
         }
+
+        // recur はジャンプするので到達しないが、
+        // コンパイル時のsp_depth整合性のために結果1つ分を設定
+        self.sp_depth = sp_before + 1;
     }
 
     /// fn（クロージャ作成）
@@ -262,6 +300,7 @@ pub const Compiler = struct {
 
         if (node.arities.len == 0) {
             try self.chunk.emitOp(.nil);
+            self.sp_depth += 1;
             return;
         }
 
@@ -271,6 +310,7 @@ pub const Compiler = struct {
             const proto_val = Value{ .fn_proto = proto };
             const idx = self.chunk.addConstant(proto_val) catch return error.TooManyConstants;
             try self.chunk.emit(.closure, idx);
+            self.sp_depth += 1;
             return;
         }
 
@@ -280,10 +320,12 @@ pub const Compiler = struct {
             const proto_val = Value{ .fn_proto = proto };
             const idx = self.chunk.addConstant(proto_val) catch return error.TooManyConstants;
             try self.chunk.emit(.const_load, idx);
+            self.sp_depth += 1;
         }
 
-        // closure_multi 命令で結合
+        // closure_multi 命令で結合（N個ポップ、1個プッシュ）
         try self.chunk.emit(.closure_multi, @intCast(node.arities.len));
+        self.sp_depth -= @as(u16, @intCast(node.arities.len)) - 1;
     }
 
     /// 単一アリティをコンパイルして FnProto を返す
@@ -292,9 +334,10 @@ pub const Compiler = struct {
         var fn_compiler = Compiler.init(self.allocator);
         defer fn_compiler.deinit();
 
-        // 引数をローカルとして追加
+        // 引数をローカルとして追加（パラメータはスタック上に存在）
         fn_compiler.scope_depth = 1;
         for (arity.params) |param| {
+            fn_compiler.sp_depth += 1; // パラメータがスタック上に存在
             try fn_compiler.addLocal(param);
         }
 
@@ -319,16 +362,17 @@ pub const Compiler = struct {
 
     /// call
     fn emitCall(self: *Compiler, node: *const node_mod.CallNode) CompileError!void {
-        // 関数をコンパイル
+        // 関数をコンパイル（sp_depth += 1 は子が処理）
         try self.compile(node.fn_node);
 
-        // 引数をコンパイル
+        // 引数をコンパイル（各 sp_depth += 1 は子が処理）
         for (node.args) |arg| {
             try self.compile(arg);
         }
 
-        // call 命令
+        // call 命令（fn + N引数をポップ、結果1つプッシュ → net -N）
         try self.chunk.emit(.call, @intCast(node.args.len));
+        self.sp_depth -= @intCast(node.args.len);
     }
 
     /// def
@@ -338,6 +382,7 @@ pub const Compiler = struct {
             try self.compile(init_node);
         } else {
             try self.chunk.emitOp(.nil);
+            self.sp_depth += 1;
         }
 
         // シンボル名をシンボル Value として追加
@@ -346,7 +391,7 @@ pub const Compiler = struct {
         const name_val = Value{ .symbol = sym };
         const idx = self.chunk.addConstant(name_val) catch return error.TooManyConstants;
 
-        // def/defmacro 命令
+        // def/defmacro 命令（値をポップして Var をプッシュ → sp_depth 変化なし）
         if (node.is_macro) {
             try self.chunk.emit(.def_macro, idx);
         } else {
@@ -373,8 +418,9 @@ pub const Compiler = struct {
         // シーケンス引数をコンパイル
         try self.compile(node.seq_node);
 
-        // apply 命令（オペランド: 中間引数の数）
+        // apply 命令（fn + N中間引数 + seq をポップ、結果プッシュ → net -(N+1)）
         try self.chunk.emit(.apply, @intCast(node.args.len));
+        self.sp_depth -= @as(u16, @intCast(node.args.len)) + 1;
     }
 
     fn emitPartial(self: *Compiler, node: *const node_mod.PartialNode) CompileError!void {
@@ -386,8 +432,9 @@ pub const Compiler = struct {
             try self.compile(arg);
         }
 
-        // partial 命令（オペランド: 引数の数）
+        // partial 命令（fn + N引数をポップ、結果プッシュ → net -N）
         try self.chunk.emit(.partial, @intCast(node.args.len));
+        self.sp_depth -= @intCast(node.args.len);
     }
 
     fn emitComp(self: *Compiler, node: *const node_mod.CompNode) CompileError!void {
@@ -396,8 +443,11 @@ pub const Compiler = struct {
             try self.compile(fn_node);
         }
 
-        // comp 命令（オペランド: 関数の数）
+        // comp 命令（N個ポップ、1個プッシュ → net -(N-1)）
         try self.chunk.emit(.comp, @intCast(node.fns.len));
+        if (node.fns.len > 1) {
+            self.sp_depth -= @as(u16, @intCast(node.fns.len)) - 1;
+        }
     }
 
     fn emitReduce(self: *Compiler, node: *const node_mod.ReduceNode) CompileError!void {
@@ -413,22 +463,27 @@ pub const Compiler = struct {
         // コレクションをコンパイル
         try self.compile(node.coll_node);
 
-        // reduce 命令（オペランド: 初期値フラグ）
+        // reduce 命令（fn + init? + coll をポップ、結果プッシュ → net -(1+has_init)）
         try self.chunk.emit(.reduce, has_init);
+        self.sp_depth -= 1 + has_init;
     }
 
     /// map コンパイル: (map f coll)
     fn emitMap(self: *Compiler, node: *const node_mod.MapNode) CompileError!void {
         try self.compile(node.fn_node);
         try self.compile(node.coll_node);
+        // fn + coll をポップ、結果プッシュ → net -1
         try self.chunk.emit(.map_seq, 0);
+        self.sp_depth -= 1;
     }
 
     /// filter コンパイル: (filter pred coll)
     fn emitFilter(self: *Compiler, node: *const node_mod.FilterNode) CompileError!void {
         try self.compile(node.fn_node);
         try self.compile(node.coll_node);
+        // fn + coll をポップ、結果プッシュ → net -1
         try self.chunk.emit(.filter_seq, 0);
+        self.sp_depth -= 1;
     }
 
     // === Atom 操作 ===
@@ -443,8 +498,9 @@ pub const Compiler = struct {
         for (node.args) |arg| {
             try self.compile(arg);
         }
-        // swap_atom 命令（オペランド: 追加引数の数）
+        // swap_atom 命令（atom + fn + N引数をポップ、結果プッシュ → net -(N+1)）
         try self.chunk.emit(.swap_atom, @intCast(node.args.len));
+        self.sp_depth -= @as(u16, @intCast(node.args.len)) + 1;
     }
 
     // === 例外処理 ===
@@ -467,10 +523,12 @@ pub const Compiler = struct {
     /// ... finally ...
     /// try_end
     fn emitTry(self: *Compiler, node: *const node_mod.TryNode) CompileError!void {
+        const sp_before = self.sp_depth;
+
         // try_begin: catch 節へのオフセット（後でパッチ）
         const try_begin_idx = self.chunk.emitJump(.try_begin) catch return error.OutOfMemory;
 
-        // body をコンパイル
+        // body をコンパイル（sp_depth += 1 は子が処理）
         try self.compile(node.body);
 
         // 成功時: catch をスキップして finally/end へジャンプ
@@ -479,9 +537,13 @@ pub const Compiler = struct {
         // catch 節開始位置をパッチ
         self.chunk.patchJump(try_begin_idx);
 
+        // catch パスでは body の結果はなく、例外が VM によりプッシュされる
+        self.sp_depth = sp_before;
+
         // catch 節
         if (node.catch_clause) |clause| {
             try self.chunk.emitOp(.catch_begin);
+            self.sp_depth += 1; // VM が例外値をプッシュ
 
             // catch バインディング用のスコープ
             self.scope_depth += 1;
@@ -493,17 +555,27 @@ pub const Compiler = struct {
             // catch ハンドラ本体をコンパイル
             try self.compile(clause.body);
 
-            // ローカルを削除
+            // catch スコープのローカルを削除
+            const locals_to_pop = self.locals.items.len - base_locals;
+            if (locals_to_pop > 0) {
+                try self.chunk.emit(.scope_exit, @intCast(locals_to_pop));
+                self.sp_depth -= @intCast(locals_to_pop);
+            }
+
             self.locals.shrinkRetainingCapacity(base_locals);
             self.scope_depth -= 1;
         } else {
             // catch なし: nil をプッシュ（catch_begin マーカー）
             try self.chunk.emitOp(.catch_begin);
             try self.chunk.emitOp(.nil);
+            self.sp_depth += 1;
         }
 
         // finally/end へのジャンプをパッチ
         self.chunk.patchJump(jump_to_finally);
+
+        // sp_depth を body/catch の結果分に統一
+        self.sp_depth = sp_before + 1;
 
         // finally 節
         if (node.finally_body) |finally_n| {
@@ -511,6 +583,7 @@ pub const Compiler = struct {
             try self.compile(finally_n);
             // finally の結果は捨てる（try/catch の結果を維持）
             try self.chunk.emitOp(.pop);
+            self.sp_depth -= 1;
         }
 
         // try_end マーカー
@@ -527,6 +600,7 @@ pub const Compiler = struct {
         self.locals.append(self.allocator, .{
             .name = name,
             .depth = self.scope_depth,
+            .slot = self.sp_depth - 1, // 直前に push された値の位置
         }) catch return error.OutOfMemory;
     }
 };

@@ -166,6 +166,15 @@ pub const VM = struct {
                     self.stack[self.sp - 1] = self.stack[self.sp - 2];
                     self.stack[self.sp - 2] = tmp;
                 },
+                .scope_exit => {
+                    // スコープ終了: N個のローカルを除去し、結果（スタックトップ）を保持
+                    const n: usize = instr.operand;
+                    if (n > 0) {
+                        const result = self.stack[self.sp - 1];
+                        self.sp -= n;
+                        self.stack[self.sp - 1] = result;
+                    }
+                },
 
                 // ═══════════════════════════════════════════════════════
                 // [C] ローカル変数
@@ -344,8 +353,9 @@ pub const VM = struct {
                 },
                 .recur => {
                     // recur: ループ変数を新しい値で更新
-                    // スタックから引数を取り出し、ループバインディングに格納
-                    const arg_count = instr.operand;
+                    // オペランド: 上位8bit = loop開始オフセット、下位8bit = 引数数
+                    const arg_count = instr.operand & 0xFF;
+                    const base_offset = (instr.operand >> 8) & 0xFF;
 
                     // 引数をスタックから取り出して一時保存
                     const temp_values = self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
@@ -358,10 +368,14 @@ pub const VM = struct {
                         temp_values[i] = self.pop();
                     }
 
-                    // ループバインディングを更新（フレームベースから）
+                    // ループバインディングを更新（let 等のバインディングをスキップ）
                     for (temp_values, 0..) |val, idx| {
-                        self.stack[frame.base + idx] = val;
+                        self.stack[frame.base + base_offset + idx] = val;
                     }
+
+                    // SP をループバインディング直後にリセット
+                    // （loop body 内の let 等で追加されたローカルを破棄）
+                    self.sp = frame.base + base_offset + arg_count;
 
                     // 次の命令（jump）がループ先頭に戻る
                 },

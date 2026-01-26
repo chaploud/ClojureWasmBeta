@@ -1420,6 +1420,14 @@ pub const Analyzer = struct {
             return try self.expandMapv(items);
         } else if (std.mem.eql(u8, name, "filterv")) {
             return try self.expandFilterv(items);
+        } else if (std.mem.eql(u8, name, "every?")) {
+            return try self.expandEvery(items);
+        } else if (std.mem.eql(u8, name, "some")) {
+            return try self.expandSome(items);
+        } else if (std.mem.eql(u8, name, "not-every?")) {
+            return try self.expandNotEvery(items);
+        } else if (std.mem.eql(u8, name, "not-any?")) {
+            return try self.expandNotAny(items);
         }
         return null;
     }
@@ -2398,6 +2406,175 @@ pub const Analyzer = struct {
         vec_forms[0] = Form{ .symbol = form_mod.Symbol.init("vec") };
         vec_forms[1] = Form{ .list = filter_forms };
         return Form{ .list = vec_forms };
+    }
+
+    /// (every? pred coll) →
+    /// (let [__ep__ pred __es__ (seq coll)]
+    ///   (loop [__s__ __es__]
+    ///     (if (nil? __s__) true
+    ///       (if (__ep__ (first __s__))
+    ///         (recur (seq (rest __s__)))
+    ///         false))))
+    fn expandEvery(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "every? requires 2 arguments", .{});
+        }
+        const pred = items[1];
+        const coll = items[2];
+
+        // (seq coll)
+        const seq_coll = try self.makeCall2("seq", coll);
+        // (first __s__)
+        const first_s = try self.makeCall2("first", Form{ .symbol = form_mod.Symbol.init("__s__") });
+        // (__ep__ (first __s__))
+        const pred_call = try self.makeList2(Form{ .symbol = form_mod.Symbol.init("__ep__") }, first_s);
+        // (rest __s__)
+        const rest_s = try self.makeCall2("rest", Form{ .symbol = form_mod.Symbol.init("__s__") });
+        // (seq (rest __s__))
+        const seq_rest = try self.makeCall2("seq", rest_s);
+        // (recur (seq (rest __s__)))
+        const recur_form = try self.makeCall2("recur", seq_rest);
+        // (if (__ep__ (first __s__)) (recur ...) false)
+        const inner_if = try self.makeIf(pred_call, recur_form, Form.bool_false);
+        // (nil? __s__)
+        const nil_check = try self.makeCall2("nil?", Form{ .symbol = form_mod.Symbol.init("__s__") });
+        // (if (nil? __s__) true (if ...))
+        const outer_if = try self.makeIf(nil_check, Form.bool_true, inner_if);
+        // (loop [__s__ __es__] (if ...))
+        const loop_form = try self.makeLoop1("__s__", Form{ .symbol = form_mod.Symbol.init("__es__") }, outer_if);
+        // (let [__ep__ pred __es__ (seq coll)] (loop ...))
+        return self.makeLet4("__ep__", pred, "__es__", seq_coll, loop_form);
+    }
+
+    /// (some pred coll) →
+    /// (let [__sp__ pred __ss__ (seq coll)]
+    ///   (loop [__s__ __ss__]
+    ///     (if (nil? __s__) nil
+    ///       (let [__v__ (__sp__ (first __s__))]
+    ///         (if __v__ __v__
+    ///           (recur (seq (rest __s__))))))))
+    fn expandSome(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "some requires 2 arguments", .{});
+        }
+        const pred = items[1];
+        const coll = items[2];
+
+        const seq_coll = try self.makeCall2("seq", coll);
+        const first_s = try self.makeCall2("first", Form{ .symbol = form_mod.Symbol.init("__s__") });
+        const pred_call = try self.makeList2(Form{ .symbol = form_mod.Symbol.init("__sp__") }, first_s);
+        const rest_s = try self.makeCall2("rest", Form{ .symbol = form_mod.Symbol.init("__s__") });
+        const seq_rest = try self.makeCall2("seq", rest_s);
+        const recur_form = try self.makeCall2("recur", seq_rest);
+        // (if __v__ __v__ (recur ...))
+        const v_sym = Form{ .symbol = form_mod.Symbol.init("__v__") };
+        const inner_if = try self.makeIf(v_sym, v_sym, recur_form);
+        // (let [__v__ (__sp__ (first __s__))] (if __v__ __v__ (recur ...)))
+        const let_v = try self.makeLet2("__v__", pred_call, inner_if);
+        // (nil? __s__)
+        const nil_check = try self.makeCall2("nil?", Form{ .symbol = form_mod.Symbol.init("__s__") });
+        // (if (nil? __s__) nil (let ...))
+        const outer_if = try self.makeIf(nil_check, Form.nil, let_v);
+        // (loop [__s__ __ss__] ...)
+        const loop_form = try self.makeLoop1("__s__", Form{ .symbol = form_mod.Symbol.init("__ss__") }, outer_if);
+        // (let [__sp__ pred __ss__ (seq coll)] (loop ...))
+        return self.makeLet4("__sp__", pred, "__ss__", seq_coll, loop_form);
+    }
+
+    /// (not-every? pred coll) → (not (every? pred coll))
+    fn expandNotEvery(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "not-every? requires 2 arguments", .{});
+        }
+        // 未展開の (every? pred coll) を構築（Analyzer が再帰的に展開する）
+        const every_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        every_forms[0] = Form{ .symbol = form_mod.Symbol.init("every?") };
+        every_forms[1] = items[1];
+        every_forms[2] = items[2];
+        return self.makeCall2("not", Form{ .list = every_forms });
+    }
+
+    /// (not-any? pred coll) → (nil? (some pred coll))
+    fn expandNotAny(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "not-any? requires 2 arguments", .{});
+        }
+        // 未展開の (some pred coll) を構築（Analyzer が再帰的に展開する）
+        const some_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        some_forms[0] = Form{ .symbol = form_mod.Symbol.init("some") };
+        some_forms[1] = items[1];
+        some_forms[2] = items[2];
+        // some は truthy value を返す（nil or 値）ので nil? でチェック
+        return self.makeCall2("nil?", Form{ .list = some_forms });
+    }
+
+    // ── ヘルパー関数 ──
+
+    /// (fn-name arg) の形のリストを作成
+    fn makeCall2(self: *Analyzer, fn_name: []const u8, arg: Form) err.Error!Form {
+        const forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        forms[0] = Form{ .symbol = form_mod.Symbol.init(fn_name) };
+        forms[1] = arg;
+        return Form{ .list = forms };
+    }
+
+    /// (fn_form arg) の形のリストを作成（fn_form は任意の Form）
+    fn makeList2(self: *Analyzer, fn_form: Form, arg: Form) err.Error!Form {
+        const forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        forms[0] = fn_form;
+        forms[1] = arg;
+        return Form{ .list = forms };
+    }
+
+    /// (if cond_form then else_) を作成
+    fn makeIf(self: *Analyzer, cond_form: Form, then: Form, else_: Form) err.Error!Form {
+        const forms = self.allocator.alloc(Form, 4) catch return error.OutOfMemory;
+        forms[0] = Form{ .symbol = form_mod.Symbol.init("if") };
+        forms[1] = cond_form;
+        forms[2] = then;
+        forms[3] = else_;
+        return Form{ .list = forms };
+    }
+
+    /// (loop [name init_val] body) を作成
+    fn makeLoop1(self: *Analyzer, name: []const u8, init_val: Form, body: Form) err.Error!Form {
+        const bindings = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        bindings[0] = Form{ .symbol = form_mod.Symbol.init(name) };
+        bindings[1] = init_val;
+
+        const forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        forms[0] = Form{ .symbol = form_mod.Symbol.init("loop") };
+        forms[1] = Form{ .vector = bindings };
+        forms[2] = body;
+        return Form{ .list = forms };
+    }
+
+    /// (let [name1 val1] body) を作成
+    fn makeLet2(self: *Analyzer, name: []const u8, val: Form, body: Form) err.Error!Form {
+        const bindings = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        bindings[0] = Form{ .symbol = form_mod.Symbol.init(name) };
+        bindings[1] = val;
+
+        const forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        forms[1] = Form{ .vector = bindings };
+        forms[2] = body;
+        return Form{ .list = forms };
+    }
+
+    /// (let [name1 val1 name2 val2] body) を作成
+    fn makeLet4(self: *Analyzer, name1: []const u8, val1: Form, name2: []const u8, val2: Form, body: Form) err.Error!Form {
+        const bindings = self.allocator.alloc(Form, 4) catch return error.OutOfMemory;
+        bindings[0] = Form{ .symbol = form_mod.Symbol.init(name1) };
+        bindings[1] = val1;
+        bindings[2] = Form{ .symbol = form_mod.Symbol.init(name2) };
+        bindings[3] = val2;
+
+        const forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        forms[1] = Form{ .vector = bindings };
+        forms[2] = body;
+        return Form{ .list = forms };
     }
 
     /// Value を Form に変換（マクロ展開結果の再解析用）

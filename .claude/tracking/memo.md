@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.11 キーワード関数 完了**
+**Phase 8.12 述語関数 + VM スタック管理修正 完了**
 
 ### 完了した機能
 
@@ -29,6 +29,7 @@
 | 8.9 | defnマクロ・dotimes・doseq・if-not・comment + メモリ安全性修正 |
 | 8.10 | condp・case・some->・some->>・as->・mapv・filterv・defn docstring |
 | 8.11 | キーワードを関数として使用: `(:a {:a 1})` → `1` |
+| 8.12 | every?/some/not-every?/not-any? + VMスタック管理修正 |
 
 ### 組み込み関数
 
@@ -38,7 +39,9 @@
 論理: not, and, or
 述語: nil?, number?, integer?, float?, string?, keyword?,
       symbol?, fn?, coll?, list?, vector?, map?, set?, empty?, contains?,
-      some?, zero?, pos?, neg?, even?, odd?, atom?
+      some?, zero?, pos?, neg?, even?, odd?, atom?,
+      every?, not-every?, not-any? (マクロ展開)
+      some (述語版, マクロ展開)
 コレクション: first, rest, cons, conj, count, nth, get, list, vector
 マップ: hash-map, assoc, dissoc, keys, vals
 シーケンス: take, drop, range, concat, into, reverse, seq, vec,
@@ -73,6 +76,7 @@ Atom: swap!
 コメント: comment
 スレッディング: ->, ->>, some->, some->>, as->
 コレクション変換: mapv, filterv
+述語系: every?, some (述語版), not-every?, not-any?
 ```
 
 実装方式: Analyzer 内で Form→Form 変換（マクロ展開）後に再帰解析。
@@ -90,7 +94,7 @@ Atom: swap!
 - 正規表現
 - マルチメソッド (defmulti, defmethod)
 - letfn（相互再帰ローカル関数）
-- every?/some/not-every?/not-any? マクロ
+- try/catch の InvalidArity バグ修正（pre-existing）
 
 ---
 
@@ -135,6 +139,12 @@ Atom: swap!
 
 ### VM
 - createClosure: frame.base > 0 のみキャプチャ（トップレベルクロージャバグ修正済み）
+- **sp_depth コンパイル時スタック追跡**: ローカル変数のスロット位置を正確に計算
+  - `Local.slot`: frame.base からの実際のスタック位置
+  - `Compiler.sp_depth`: コンパイル時のスタック深度追跡（全 emit 関数で更新）
+  - `scope_exit` 命令: let/loop スコープ終了時にローカルを除去し結果を保持
+  - `loop_locals_base`: sp_depth ベースで正確なオフセットを計算（recur が正しいスロットに書き込む）
+  - これにより `(+ 1 (let [x 2] x))` や `(not (loop ...))` 等のネストが正常動作
 
 ### compare モード
 - Var スナップショット機構: 各バックエンドが独自の Var 状態を維持
