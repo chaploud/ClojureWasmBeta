@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 9.2 完了 — 遅延ジェネレータ・lazy mapcat**
+**Phase 11 進行中 — PURE 述語・ユーティリティバッチ**
 
 | Phase | 内容 |
 |-------|------|
@@ -38,8 +38,9 @@
 | 9 | LazySeq — 真の遅延シーケンス（無限シーケンス対応） |
 | 9.1 | Lazy map/filter/concat — 遅延変換・連結 |
 | 9.2 | iterate/repeat/cycle/range()/mapcat — 遅延ジェネレータ・lazy mapcat |
+| 11 | PURE述語バッチ(23)+コレクション/ユーティリティ(17)+ビット演算等(17) = +57関数 |
 
-実装状況: 228 done / 174 skip / 300 todo
+実装状況: 289 done / 174 skip / 243 todo
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
 ---

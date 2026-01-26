@@ -3725,6 +3725,989 @@ pub fn isSorted(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
     return value_mod.false_val;
 }
 
+// === Phase 11: PURE 述語バッチ ===
+
+/// any? : 常に true を返す（任意の値に対して true）
+pub fn isAny(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return value_mod.true_val;
+}
+
+/// boolean? : 真偽値かどうか
+pub fn isBoolean(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .bool_val) value_mod.true_val else value_mod.false_val;
+}
+
+/// int? : 整数かどうか（integer? と同じ）
+pub fn isInt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .int) value_mod.true_val else value_mod.false_val;
+}
+
+/// double? : 浮動小数点かどうか（float? と同じ）
+pub fn isDouble(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .float) value_mod.true_val else value_mod.false_val;
+}
+
+/// char? : 文字かどうか
+pub fn isChar(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .char_val) value_mod.true_val else value_mod.false_val;
+}
+
+/// ident? : 識別子（キーワードまたはシンボル）かどうか
+pub fn isIdent(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .keyword, .symbol => value_mod.true_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// simple-ident? : 名前空間なしの識別子かどうか
+pub fn isSimpleIdent(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .keyword => |k| if (k.namespace == null) value_mod.true_val else value_mod.false_val,
+        .symbol => |s| if (s.namespace == null) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// simple-keyword? : 名前空間なしのキーワードかどうか
+pub fn isSimpleKeyword(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .keyword => |k| if (k.namespace == null) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// simple-symbol? : 名前空間なしのシンボルかどうか
+pub fn isSimpleSymbol(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .symbol => |s| if (s.namespace == null) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// qualified-ident? : 名前空間付きの識別子かどうか
+pub fn isQualifiedIdent(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .keyword => |k| if (k.namespace != null) value_mod.true_val else value_mod.false_val,
+        .symbol => |s| if (s.namespace != null) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// qualified-keyword? : 名前空間付きのキーワードかどうか
+pub fn isQualifiedKeyword(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .keyword => |k| if (k.namespace != null) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// qualified-symbol? : 名前空間付きのシンボルかどうか
+pub fn isQualifiedSymbol(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .symbol => |s| if (s.namespace != null) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// indexed? : インデックスアクセス可能かどうか（vector）
+pub fn isIndexed(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .vector) value_mod.true_val else value_mod.false_val;
+}
+
+/// ifn? : 関数として呼び出し可能かどうか
+pub fn isIFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .fn_val, .partial_fn, .comp_fn, .multi_fn, .protocol_fn,
+        .keyword, .symbol, .vector, .map, .set,
+        => value_mod.true_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// identical? : 参照同一性（同一オブジェクト）かどうか
+pub fn isIdentical(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const a = args[0];
+    const b = args[1];
+    // タグが異なれば false
+    const a_tag = std.meta.activeTag(a);
+    const b_tag = std.meta.activeTag(b);
+    if (a_tag != b_tag) return value_mod.false_val;
+    // 値型はビット一致で判定
+    return switch (a) {
+        .nil => value_mod.true_val,
+        .bool_val => |av| if (av == b.bool_val) value_mod.true_val else value_mod.false_val,
+        .int => |av| if (av == b.int) value_mod.true_val else value_mod.false_val,
+        .float => |av| if (av == b.float) value_mod.true_val else value_mod.false_val,
+        .char_val => |av| if (av == b.char_val) value_mod.true_val else value_mod.false_val,
+        // ポインタ型はポインタ比較
+        .string => |av| if (av == b.string) value_mod.true_val else value_mod.false_val,
+        .keyword => |av| if (av == b.keyword) value_mod.true_val else value_mod.false_val,
+        .symbol => |av| if (av == b.symbol) value_mod.true_val else value_mod.false_val,
+        .list => |av| if (av == b.list) value_mod.true_val else value_mod.false_val,
+        .vector => |av| if (av == b.vector) value_mod.true_val else value_mod.false_val,
+        .map => |av| if (av == b.map) value_mod.true_val else value_mod.false_val,
+        .set => |av| if (av == b.set) value_mod.true_val else value_mod.false_val,
+        .fn_val => |av| if (av == b.fn_val) value_mod.true_val else value_mod.false_val,
+        .atom => |av| if (av == b.atom) value_mod.true_val else value_mod.false_val,
+        .lazy_seq => |av| if (av == b.lazy_seq) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// NaN? : NaN かどうか
+pub fn isNaN(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .float => |f| if (std.math.isNan(f)) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// infinite? : 無限大かどうか
+pub fn isInfinite(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .float => |f| if (std.math.isInf(f)) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// nat-int? : 非負整数（0以上の整数）かどうか
+pub fn isNatInt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .int => |i| if (i >= 0) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// neg-int? : 負の整数かどうか
+pub fn isNegInt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .int => |i| if (i < 0) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// pos-int? : 正の整数（1以上）かどうか
+pub fn isPosInt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .int => |i| if (i > 0) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// special-symbol? : 特殊形式のシンボルかどうか
+pub fn isSpecialSymbol(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .symbol => |s| {
+            if (s.namespace != null) return value_mod.false_val;
+            const name = s.name;
+            // Clojure の特殊形式一覧
+            const specials = [_][]const u8{
+                "def", "if", "do", "let*", "fn*", "quote", "var",
+                "loop*", "recur", "throw", "try", "catch", "finally",
+                "monitor-enter", "monitor-exit", "new", "set!", ".",
+                "&", "deftype*", "reify*", "case*", "import*",
+                "letfn*",
+            };
+            for (specials) |sp| {
+                if (std.mem.eql(u8, name, sp)) return value_mod.true_val;
+            }
+            return value_mod.false_val;
+        },
+        else => value_mod.false_val,
+    };
+}
+
+/// var? : Var かどうか
+pub fn isVar(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .var_val) value_mod.true_val else value_mod.false_val;
+}
+
+/// map-entry? : マップエントリ（2要素ベクタ）かどうか
+pub fn isMapEntry(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .vector => |v| if (v.items.len == 2) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+// === Phase 11 追加: PURE コレクション/ユーティリティ ===
+
+/// key : マップエントリのキーを返す（2要素ベクタの first）
+pub fn keyFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .vector => |v| if (v.items.len >= 1) v.items[0] else error.TypeError,
+        else => error.TypeError,
+    };
+}
+
+/// val : マップエントリの値を返す（2要素ベクタの second）
+pub fn valFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .vector => |v| if (v.items.len >= 2) v.items[1] else error.TypeError,
+        else => error.TypeError,
+    };
+}
+
+/// array-map : キーと値のペアからマップを作成（hash-map と同じ）
+pub fn arrayMap(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len % 2 != 0) return error.ArityError;
+    const new_map = try allocator.create(value_mod.PersistentMap);
+    new_map.* = value_mod.PersistentMap.empty();
+    var i: usize = 0;
+    while (i < args.len) : (i += 2) {
+        new_map.* = try new_map.assoc(allocator, args[i], args[i + 1]);
+    }
+    return Value{ .map = new_map };
+}
+
+/// hash-set : 要素からセットを作成
+pub fn hashSet(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    var new_set = value_mod.PersistentSet.empty();
+    for (args) |item| {
+        new_set = try new_set.conj(allocator, item);
+    }
+    const set_ptr = try allocator.create(value_mod.PersistentSet);
+    set_ptr.* = new_set;
+    return Value{ .set = set_ptr };
+}
+
+/// list* : 最後の引数をシーケンスとして展開した list を返す
+/// (list* 1 2 [3 4]) → (1 2 3 4)
+pub fn listStar(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len == 0) return error.ArityError;
+    if (args.len == 1) {
+        // (list* coll) → (seq coll)
+        return seq(allocator, args);
+    }
+
+    var items: std.ArrayListUnmanaged(Value) = .empty;
+    // 先頭 n-1 個の引数を追加
+    for (args[0 .. args.len - 1]) |arg| {
+        items.append(allocator, arg) catch return error.OutOfMemory;
+    }
+    // 最後の引数をシーケンスとして展開
+    const last_arg = args[args.len - 1];
+    const tail_items = (try getItemsRealized(allocator, last_arg)) orelse &[_]Value{};
+    for (tail_items) |item| {
+        items.append(allocator, item) catch return error.OutOfMemory;
+    }
+
+    if (items.items.len == 0) return value_mod.nil;
+    const result = try value_mod.PersistentList.fromSlice(allocator, items.items);
+    return Value{ .list = result };
+}
+
+/// remove : filter の否定版（述語が false の要素を返す）
+pub fn removeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const pred = args[0];
+    const coll = args[1];
+    const call = call_fn orelse return error.TypeError;
+
+    const items = (try getItemsRealized(allocator, coll)) orelse return error.TypeError;
+    var result: std.ArrayListUnmanaged(Value) = .empty;
+    for (items) |item| {
+        const call_args = [_]Value{item};
+        const r = try call(pred, &call_args, allocator);
+        if (!r.isTruthy()) {
+            result.append(allocator, item) catch return error.OutOfMemory;
+        }
+    }
+
+    if (result.items.len == 0) return value_mod.nil;
+    const list_ptr = try value_mod.PersistentList.fromSlice(allocator, result.items);
+    return Value{ .list = list_ptr };
+}
+
+/// nthnext : (drop n coll) して seq を返す
+pub fn nthnext(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const n = switch (args[1]) {
+        .int => |i| i,
+        else => return error.TypeError,
+    };
+    if (n < 0) return error.TypeError;
+
+    const items = (try getItemsRealized(allocator, args[0])) orelse return error.TypeError;
+    const idx: usize = @intCast(n);
+    if (idx >= items.len) return value_mod.nil;
+
+    const remaining = items[idx..];
+    if (remaining.len == 0) return value_mod.nil;
+    const list_ptr = try value_mod.PersistentList.fromSlice(allocator, remaining);
+    return Value{ .list = list_ptr };
+}
+
+/// nthrest : (drop n coll) して空でも () を返す
+pub fn nthrest(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const n = switch (args[1]) {
+        .int => |i| i,
+        else => return error.TypeError,
+    };
+    if (n < 0) return error.TypeError;
+
+    const items = (try getItemsRealized(allocator, args[0])) orelse return error.TypeError;
+    const idx: usize = @intCast(n);
+    const remaining = if (idx >= items.len) &[_]Value{} else items[idx..];
+
+    const list_ptr = try value_mod.PersistentList.fromSlice(allocator, remaining);
+    return Value{ .list = list_ptr };
+}
+
+/// reduce-kv : マップを k,v ペアでリデュース
+/// (reduce-kv f init coll)
+pub fn reduceKv(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 3) return error.ArityError;
+    const f = args[0];
+    var acc = args[1];
+    const coll = args[2];
+    const call = call_fn orelse return error.TypeError;
+
+    switch (coll) {
+        .map => |m| {
+            var i: usize = 0;
+            while (i < m.entries.len) : (i += 2) {
+                const call_args = [_]Value{ acc, m.entries[i], m.entries[i + 1] };
+                acc = try call(f, &call_args, allocator);
+            }
+        },
+        .vector => |v| {
+            for (v.items, 0..) |item, i| {
+                const call_args = [_]Value{ acc, value_mod.intVal(@intCast(i)), item };
+                acc = try call(f, &call_args, allocator);
+            }
+        },
+        .nil => {},
+        else => return error.TypeError,
+    }
+    return acc;
+}
+
+/// merge-with : 衝突時に関数で結合する merge
+/// (merge-with f & maps)
+pub fn mergeWith(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    const f = args[0];
+    const maps = args[1..];
+    const call = call_fn orelse return error.TypeError;
+
+    if (maps.len == 0) return value_mod.nil;
+
+    // 最初の非nil マップを見つける
+    var current: ?value_mod.PersistentMap = null;
+    var start_idx: usize = 0;
+    for (maps, 0..) |m, i| {
+        switch (m) {
+            .nil => continue,
+            .map => |mp| {
+                current = mp.*;
+                start_idx = i + 1;
+                break;
+            },
+            else => return error.TypeError,
+        }
+    }
+
+    if (current == null) return value_mod.nil;
+
+    for (maps[start_idx..]) |m| {
+        switch (m) {
+            .nil => continue,
+            .map => |mp| {
+                var j: usize = 0;
+                while (j < mp.entries.len) : (j += 2) {
+                    const k = mp.entries[j];
+                    const new_v = mp.entries[j + 1];
+                    if (current.?.get(k)) |old_v| {
+                        // 衝突: f を適用
+                        const call_args = [_]Value{ old_v, new_v };
+                        const merged_v = try call(f, &call_args, allocator);
+                        current = try current.?.assoc(allocator, k, merged_v);
+                    } else {
+                        current = try current.?.assoc(allocator, k, new_v);
+                    }
+                }
+            },
+            else => return error.TypeError,
+        }
+    }
+
+    const new_map = try allocator.create(value_mod.PersistentMap);
+    new_map.* = current.?;
+    return Value{ .map = new_map };
+}
+
+/// update-in : ネストされたキーパスの値を関数で更新
+/// (update-in m ks f & args)
+pub fn updateIn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 3) return error.ArityError;
+    const m = args[0];
+    const ks = switch (args[1]) {
+        .vector => |v| v.items,
+        .list => |l| l.items,
+        else => return error.TypeError,
+    };
+    const f = args[2];
+    const extra_args = args[3..];
+    const call = call_fn orelse return error.TypeError;
+
+    if (ks.len == 0) {
+        // 空パス: f を m 自体に適用
+        var call_args: std.ArrayListUnmanaged(Value) = .empty;
+        call_args.append(allocator, m) catch return error.OutOfMemory;
+        for (extra_args) |a| {
+            call_args.append(allocator, a) catch return error.OutOfMemory;
+        }
+        return call(f, call_args.items, allocator);
+    }
+
+    return updateInHelper(allocator, m, ks, f, extra_args, call);
+}
+
+fn updateInHelper(
+    allocator: std.mem.Allocator,
+    m: Value,
+    ks: []const Value,
+    f: Value,
+    extra_args: []const Value,
+    call: CallFn,
+) anyerror!Value {
+    const key = ks[0];
+    if (ks.len == 1) {
+        // ベースケース: (update m key f args...)
+        const get_args = [_]Value{ m, key };
+        const old_val = try get(allocator, &get_args);
+        var call_args: std.ArrayListUnmanaged(Value) = .empty;
+        call_args.append(allocator, old_val) catch return error.OutOfMemory;
+        for (extra_args) |a| {
+            call_args.append(allocator, a) catch return error.OutOfMemory;
+        }
+        const new_val = try call(f, call_args.items, allocator);
+        const assoc_args = [_]Value{ m, key, new_val };
+        return assoc(allocator, &assoc_args);
+    }
+
+    // 再帰: (assoc m key (update-in (get m key) rest-ks f args...))
+    const get_args = [_]Value{ m, key };
+    const inner_map = try get(allocator, &get_args);
+    const inner_result = try updateInHelper(allocator, inner_map, ks[1..], f, extra_args, call);
+    const assoc_args = [_]Value{ m, key, inner_result };
+    return assoc(allocator, &assoc_args);
+}
+
+/// update-keys : マップの全キーに関数を適用
+/// (update-keys m f)
+pub fn updateKeys(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const m = args[0];
+    const f = args[1];
+    const call = call_fn orelse return error.TypeError;
+
+    switch (m) {
+        .nil => return value_mod.nil,
+        .map => |mp| {
+            var new_map = value_mod.PersistentMap.empty();
+            var i: usize = 0;
+            while (i < mp.entries.len) : (i += 2) {
+                const call_args = [_]Value{mp.entries[i]};
+                const new_key = try call(f, &call_args, allocator);
+                new_map = try new_map.assoc(allocator, new_key, mp.entries[i + 1]);
+            }
+            const result = try allocator.create(value_mod.PersistentMap);
+            result.* = new_map;
+            return Value{ .map = result };
+        },
+        else => return error.TypeError,
+    }
+}
+
+/// update-vals : マップの全値に関数を適用
+/// (update-vals m f)
+pub fn updateVals(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const m = args[0];
+    const f = args[1];
+    const call = call_fn orelse return error.TypeError;
+
+    switch (m) {
+        .nil => return value_mod.nil,
+        .map => |mp| {
+            var new_map = value_mod.PersistentMap.empty();
+            var i: usize = 0;
+            while (i < mp.entries.len) : (i += 2) {
+                const call_args = [_]Value{mp.entries[i + 1]};
+                const new_val = try call(f, &call_args, allocator);
+                new_map = try new_map.assoc(allocator, mp.entries[i], new_val);
+            }
+            const result = try allocator.create(value_mod.PersistentMap);
+            result.* = new_map;
+            return Value{ .map = result };
+        },
+        else => return error.TypeError,
+    }
+}
+
+/// bounded-count : コレクションの要素数を最大 n まで数える
+/// (bounded-count n coll)
+pub fn boundedCount(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const limit = switch (args[0]) {
+        .int => |i| i,
+        else => return error.TypeError,
+    };
+    if (limit < 0) return error.TypeError;
+    const n: usize = @intCast(limit);
+
+    return switch (args[1]) {
+        .vector => |v| value_mod.intVal(@intCast(@min(v.items.len, n))),
+        .list => |l| value_mod.intVal(@intCast(@min(l.items.len, n))),
+        .map => |m| value_mod.intVal(@intCast(@min(m.count(), n))),
+        .set => |s| value_mod.intVal(@intCast(@min(s.count(), n))),
+        .nil => value_mod.intVal(0),
+        .string => |s| value_mod.intVal(@intCast(@min(s.data.len, n))),
+        else => value_mod.intVal(0),
+    };
+}
+
+/// compare : 2つの値を比較（-1, 0, 1 を返す）
+pub fn compareFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const a = args[0];
+    const b = args[1];
+
+    // 数値比較
+    if (a == .int and b == .int) {
+        if (a.int < b.int) return value_mod.intVal(-1);
+        if (a.int > b.int) return value_mod.intVal(1);
+        return value_mod.intVal(0);
+    }
+    if ((a == .int or a == .float) and (b == .int or b == .float)) {
+        const af: f64 = if (a == .int) @floatFromInt(a.int) else a.float;
+        const bf: f64 = if (b == .int) @floatFromInt(b.int) else b.float;
+        if (af < bf) return value_mod.intVal(-1);
+        if (af > bf) return value_mod.intVal(1);
+        return value_mod.intVal(0);
+    }
+    // 文字列比較
+    if (a == .string and b == .string) {
+        const order = std.mem.order(u8, a.string.data, b.string.data);
+        return value_mod.intVal(switch (order) {
+            .lt => -1,
+            .eq => 0,
+            .gt => 1,
+        });
+    }
+    // キーワード比較
+    if (a == .keyword and b == .keyword) {
+        const order = std.mem.order(u8, a.keyword.name, b.keyword.name);
+        return value_mod.intVal(switch (order) {
+            .lt => -1,
+            .eq => 0,
+            .gt => 1,
+        });
+    }
+    // シンボル比較
+    if (a == .symbol and b == .symbol) {
+        const order = std.mem.order(u8, a.symbol.name, b.symbol.name);
+        return value_mod.intVal(switch (order) {
+            .lt => -1,
+            .eq => 0,
+            .gt => 1,
+        });
+    }
+
+    return error.TypeError;
+}
+
+/// empty : コレクションの同型空コレクションを返す
+pub fn emptyFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .list => Value{ .list = try value_mod.PersistentList.empty(allocator) },
+        .vector => blk: {
+            const result = try allocator.create(value_mod.PersistentVector);
+            result.* = value_mod.PersistentVector.empty();
+            break :blk Value{ .vector = result };
+        },
+        .map => blk: {
+            const result = try allocator.create(value_mod.PersistentMap);
+            result.* = value_mod.PersistentMap.empty();
+            break :blk Value{ .map = result };
+        },
+        .set => blk: {
+            const result = try allocator.create(value_mod.PersistentSet);
+            result.* = value_mod.PersistentSet.empty();
+            break :blk Value{ .set = result };
+        },
+        .nil => value_mod.nil,
+        else => value_mod.nil,
+    };
+}
+
+/// sequence : coll を seq に変換、空なら nil
+pub fn sequenceFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return seq(allocator, args);
+}
+
+// === Phase 11 追加: ビット演算・ユーティリティ ===
+
+/// bit-and-not : (bit-and x (bit-not y))
+pub fn bitAndNot(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int or args[1] != .int) return error.TypeError;
+    return value_mod.intVal(args[0].int & ~args[1].int);
+}
+
+/// bit-clear : n 番目のビットをクリア
+pub fn bitClear(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int or args[1] != .int) return error.TypeError;
+    const shift: u6 = @intCast(@min(@max(args[1].int, 0), 63));
+    return value_mod.intVal(args[0].int & ~(@as(i64, 1) << shift));
+}
+
+/// bit-flip : n 番目のビットを反転
+pub fn bitFlip(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int or args[1] != .int) return error.TypeError;
+    const shift: u6 = @intCast(@min(@max(args[1].int, 0), 63));
+    return value_mod.intVal(args[0].int ^ (@as(i64, 1) << shift));
+}
+
+/// bit-set : n 番目のビットをセット
+pub fn bitSet(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int or args[1] != .int) return error.TypeError;
+    const shift: u6 = @intCast(@min(@max(args[1].int, 0), 63));
+    return value_mod.intVal(args[0].int | (@as(i64, 1) << shift));
+}
+
+/// bit-test : n 番目のビットをテスト
+pub fn bitTest(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int or args[1] != .int) return error.TypeError;
+    const shift: u6 = @intCast(@min(@max(args[1].int, 0), 63));
+    const result = (args[0].int >> shift) & 1;
+    return if (result == 1) value_mod.true_val else value_mod.false_val;
+}
+
+/// unsigned-bit-shift-right : 符号なし右シフト
+pub fn unsignedBitShiftRight(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int or args[1] != .int) return error.TypeError;
+    const shift: u6 = @intCast(@min(@max(args[1].int, 0), 63));
+    const unsigned_val: u64 = @bitCast(args[0].int);
+    const shifted = unsigned_val >> shift;
+    return value_mod.intVal(@bitCast(shifted));
+}
+
+/// parse-long : 文字列を整数にパース
+pub fn parseLong(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .string => |s| {
+            const trimmed = std.mem.trim(u8, s.data, &[_]u8{ ' ', '\t', '\n', '\r' });
+            const val = std.fmt.parseInt(i64, trimmed, 10) catch return value_mod.nil;
+            return value_mod.intVal(val);
+        },
+        else => value_mod.nil,
+    };
+}
+
+/// parse-double : 文字列を浮動小数点にパース
+pub fn parseDouble(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .string => |s| {
+            const trimmed = std.mem.trim(u8, s.data, &[_]u8{ ' ', '\t', '\n', '\r' });
+            const val = std.fmt.parseFloat(f64, trimmed) catch return value_mod.nil;
+            return value_mod.floatVal(val);
+        },
+        else => value_mod.nil,
+    };
+}
+
+/// parse-boolean : 文字列を真偽値にパース（"true"→true, "false"→false, その他→nil）
+pub fn parseBooleanFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .string => |s| {
+            if (std.mem.eql(u8, s.data, "true")) return value_mod.true_val;
+            if (std.mem.eql(u8, s.data, "false")) return value_mod.false_val;
+            return value_mod.nil;
+        },
+        else => value_mod.nil,
+    };
+}
+
+/// rand-nth : コレクションからランダムに1つ選ぶ
+pub fn randNth(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const items = (try getItemsRealized(allocator, args[0])) orelse return error.TypeError;
+    if (items.len == 0) return error.TypeError;
+    const seed: u64 = @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())));
+    var prng = std.Random.DefaultPrng.init(seed);
+    const rng = prng.random();
+    const idx = rng.intRangeAtMost(usize, 0, items.len - 1);
+    return items[idx];
+}
+
+/// repeatedly : f を n 回呼んでリストにする
+/// (repeatedly n f)
+pub fn repeatedly(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const n = switch (args[0]) {
+        .int => |i| i,
+        else => return error.TypeError,
+    };
+    if (n < 0) return error.TypeError;
+    const repeat_count: usize = @intCast(n);
+    const f = args[1];
+    const call = call_fn orelse return error.TypeError;
+
+    var result: std.ArrayListUnmanaged(Value) = .empty;
+    for (0..repeat_count) |_| {
+        const r = try call(f, &[_]Value{}, allocator);
+        result.append(allocator, r) catch return error.OutOfMemory;
+    }
+
+    if (result.items.len == 0) return value_mod.nil;
+    const list_ptr = try value_mod.PersistentList.fromSlice(allocator, result.items);
+    return Value{ .list = list_ptr };
+}
+
+/// reductions : reduce の中間結果をリストにする
+/// (reductions f coll) / (reductions f init coll)
+pub fn reductions(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+    const f = args[0];
+    const call = call_fn orelse return error.TypeError;
+
+    var acc: Value = undefined;
+    var items: []const Value = undefined;
+
+    if (args.len == 2) {
+        // (reductions f coll)
+        const coll_items = (try getItemsRealized(allocator, args[1])) orelse return error.TypeError;
+        if (coll_items.len == 0) {
+            // 空コレクション → 初期値なし → ()
+            const list_ptr = try value_mod.PersistentList.empty(allocator);
+            return Value{ .list = list_ptr };
+        }
+        acc = coll_items[0];
+        items = coll_items[1..];
+    } else {
+        // (reductions f init coll)
+        acc = args[1];
+        items = (try getItemsRealized(allocator, args[2])) orelse return error.TypeError;
+    }
+
+    var result: std.ArrayListUnmanaged(Value) = .empty;
+    result.append(allocator, acc) catch return error.OutOfMemory;
+    for (items) |item| {
+        const call_args = [_]Value{ acc, item };
+        acc = try call(f, &call_args, allocator);
+        result.append(allocator, acc) catch return error.OutOfMemory;
+    }
+
+    const list_ptr = try value_mod.PersistentList.fromSlice(allocator, result.items);
+    return Value{ .list = list_ptr };
+}
+
+/// split-with : 述語を満たす先頭部分と残りに分割
+/// (split-with pred coll) → [(take-while pred coll) (drop-while pred coll)]
+pub fn splitWith(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const pred = args[0];
+    const coll = args[1];
+    const call = call_fn orelse return error.TypeError;
+
+    const items = (try getItemsRealized(allocator, coll)) orelse return error.TypeError;
+    var split_idx: usize = 0;
+    for (items) |item| {
+        const call_args = [_]Value{item};
+        const r = try call(pred, &call_args, allocator);
+        if (!r.isTruthy()) break;
+        split_idx += 1;
+    }
+
+    const taken = items[0..split_idx];
+    const dropped = items[split_idx..];
+
+    // ベクタに2つのリストを入れる
+    const vec_items = try allocator.alloc(Value, 2);
+
+    if (taken.len == 0) {
+        vec_items[0] = Value{ .list = try value_mod.PersistentList.empty(allocator) };
+    } else {
+        vec_items[0] = Value{ .list = try value_mod.PersistentList.fromSlice(allocator, taken) };
+    }
+    if (dropped.len == 0) {
+        vec_items[1] = Value{ .list = try value_mod.PersistentList.empty(allocator) };
+    } else {
+        vec_items[1] = Value{ .list = try value_mod.PersistentList.fromSlice(allocator, dropped) };
+    }
+
+    const vec_ptr = try allocator.create(value_mod.PersistentVector);
+    vec_ptr.* = .{ .items = vec_items };
+    return Value{ .vector = vec_ptr };
+}
+
+/// dedupe : 連続する重複要素を除去
+pub fn dedupeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const items = (try getItemsRealized(allocator, args[0])) orelse return error.TypeError;
+    if (items.len == 0) return value_mod.nil;
+
+    var result: std.ArrayListUnmanaged(Value) = .empty;
+    result.append(allocator, items[0]) catch return error.OutOfMemory;
+    for (items[1..]) |item| {
+        if (!item.eql(result.items[result.items.len - 1])) {
+            result.append(allocator, item) catch return error.OutOfMemory;
+        }
+    }
+
+    const list_ptr = try value_mod.PersistentList.fromSlice(allocator, result.items);
+    return Value{ .list = list_ptr };
+}
+
+/// rseq : ベクタの逆順シーケンス
+pub fn rseq(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .vector => |v| {
+            if (v.items.len == 0) return value_mod.nil;
+            const reversed = try allocator.alloc(Value, v.items.len);
+            for (v.items, 0..) |item, i| {
+                reversed[v.items.len - 1 - i] = item;
+            }
+            const list_ptr = try value_mod.PersistentList.fromSlice(allocator, reversed);
+            return Value{ .list = list_ptr };
+        },
+        else => error.TypeError,
+    };
+}
+
+/// max-key : f の結果が最大の要素を返す
+pub fn maxKey(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const f = args[0];
+    const call = call_fn orelse return error.TypeError;
+
+    var best = args[1];
+    const call_args0 = [_]Value{best};
+    var best_score = try call(f, &call_args0, allocator);
+
+    for (args[2..]) |item| {
+        const call_args = [_]Value{item};
+        const score = try call(f, &call_args, allocator);
+        if (compareValues(score, best_score) > 0) {
+            best = item;
+            best_score = score;
+        }
+    }
+    return best;
+}
+
+/// min-key : f の結果が最小の要素を返す
+pub fn minKey(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const f = args[0];
+    const call = call_fn orelse return error.TypeError;
+
+    var best = args[1];
+    const call_args0 = [_]Value{best};
+    var best_score = try call(f, &call_args0, allocator);
+
+    for (args[2..]) |item| {
+        const call_args = [_]Value{item};
+        const score = try call(f, &call_args, allocator);
+        if (compareValues(score, best_score) < 0) {
+            best = item;
+            best_score = score;
+        }
+    }
+    return best;
+}
+
+/// 内部比較ヘルパー（数値のみ、compare と同じロジック）
+fn compareValues(a: Value, b: Value) i64 {
+    if (a == .int and b == .int) {
+        if (a.int < b.int) return -1;
+        if (a.int > b.int) return 1;
+        return 0;
+    }
+    const af: f64 = if (a == .int) @floatFromInt(a.int) else if (a == .float) a.float else return 0;
+    const bf: f64 = if (b == .int) @floatFromInt(b.int) else if (b == .float) b.float else return 0;
+    if (af < bf) return -1;
+    if (af > bf) return 1;
+    return 0;
+}
+
 /// string-split : 文字列を区切り文字で分割（clojure.string/split 簡易版）
 pub fn stringSplit(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 2) return error.ArityError;
@@ -4007,10 +4990,37 @@ const builtins = [_]BuiltinDef{
     .{ .name = "neg?", .func = isNeg },
     .{ .name = "even?", .func = isEven },
     .{ .name = "odd?", .func = isOdd },
+    // Phase 11 述語
+    .{ .name = "any?", .func = isAny },
+    .{ .name = "boolean?", .func = isBoolean },
+    .{ .name = "int?", .func = isInt },
+    .{ .name = "double?", .func = isDouble },
+    .{ .name = "char?", .func = isChar },
+    .{ .name = "ident?", .func = isIdent },
+    .{ .name = "simple-ident?", .func = isSimpleIdent },
+    .{ .name = "simple-keyword?", .func = isSimpleKeyword },
+    .{ .name = "simple-symbol?", .func = isSimpleSymbol },
+    .{ .name = "qualified-ident?", .func = isQualifiedIdent },
+    .{ .name = "qualified-keyword?", .func = isQualifiedKeyword },
+    .{ .name = "qualified-symbol?", .func = isQualifiedSymbol },
+    .{ .name = "indexed?", .func = isIndexed },
+    .{ .name = "ifn?", .func = isIFn },
+    .{ .name = "identical?", .func = isIdentical },
+    .{ .name = "NaN?", .func = isNaN },
+    .{ .name = "infinite?", .func = isInfinite },
+    .{ .name = "nat-int?", .func = isNatInt },
+    .{ .name = "neg-int?", .func = isNegInt },
+    .{ .name = "pos-int?", .func = isPosInt },
+    .{ .name = "special-symbol?", .func = isSpecialSymbol },
+    .{ .name = "var?", .func = isVar },
+    .{ .name = "map-entry?", .func = isMapEntry },
     // コンストラクタ
     .{ .name = "list", .func = list },
+    .{ .name = "list*", .func = listStar },
     .{ .name = "vector", .func = vector },
     .{ .name = "hash-map", .func = hashMap },
+    .{ .name = "array-map", .func = arrayMap },
+    .{ .name = "hash-set", .func = hashSet },
     // コレクション
     .{ .name = "first", .func = first },
     .{ .name = "rest", .func = rest },
@@ -4079,6 +5089,21 @@ const builtins = [_]BuiltinDef{
     .{ .name = "zipmap", .func = zipmap },
     .{ .name = "not-empty", .func = notEmpty },
     .{ .name = "type", .func = typeFn },
+    // Phase 11 追加
+    .{ .name = "key", .func = keyFn },
+    .{ .name = "val", .func = valFn },
+    .{ .name = "remove", .func = removeFn },
+    .{ .name = "nthnext", .func = nthnext },
+    .{ .name = "nthrest", .func = nthrest },
+    .{ .name = "reduce-kv", .func = reduceKv },
+    .{ .name = "merge-with", .func = mergeWith },
+    .{ .name = "update-in", .func = updateIn },
+    .{ .name = "update-keys", .func = updateKeys },
+    .{ .name = "update-vals", .func = updateVals },
+    .{ .name = "bounded-count", .func = boundedCount },
+    .{ .name = "compare", .func = compareFn },
+    .{ .name = "empty", .func = emptyFn },
+    .{ .name = "sequence", .func = sequenceFn },
     // Phase 8.19: シーケンス・ユーティリティ拡充
     .{ .name = "second", .func = second },
     .{ .name = "last", .func = last },
@@ -4114,6 +5139,12 @@ const builtins = [_]BuiltinDef{
     .{ .name = "bit-not", .func = bitNot },
     .{ .name = "bit-shift-left", .func = bitShiftLeft },
     .{ .name = "bit-shift-right", .func = bitShiftRight },
+    .{ .name = "bit-and-not", .func = bitAndNot },
+    .{ .name = "bit-clear", .func = bitClear },
+    .{ .name = "bit-flip", .func = bitFlip },
+    .{ .name = "bit-set", .func = bitSet },
+    .{ .name = "bit-test", .func = bitTest },
+    .{ .name = "unsigned-bit-shift-right", .func = unsignedBitShiftRight },
     .{ .name = "keyword", .func = keywordFn },
     .{ .name = "symbol", .func = symbolFn },
     .{ .name = "split-at", .func = splitAt },
@@ -4145,6 +5176,18 @@ const builtins = [_]BuiltinDef{
     .{ .name = "realized?", .func = isRealized },
     .{ .name = "lazy-seq?", .func = isLazySeq },
     .{ .name = "doall", .func = doall },
+    // Phase 11 追加（ユーティリティ）
+    .{ .name = "parse-long", .func = parseLong },
+    .{ .name = "parse-double", .func = parseDouble },
+    .{ .name = "parse-boolean", .func = parseBooleanFn },
+    .{ .name = "rand-nth", .func = randNth },
+    .{ .name = "repeatedly", .func = repeatedly },
+    .{ .name = "reductions", .func = reductions },
+    .{ .name = "split-with", .func = splitWith },
+    .{ .name = "dedupe", .func = dedupeFn },
+    .{ .name = "rseq", .func = rseq },
+    .{ .name = "max-key", .func = maxKey },
+    .{ .name = "min-key", .func = minKey },
 };
 
 /// clojure.core の組み込み関数を Env に登録

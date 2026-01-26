@@ -2243,3 +2243,385 @@ test "compare: mapcat lazy" {
         \\(pr-str (for [x [1 2] y [:a :b]] (list x y)))
     , "((1 :a) (1 :b) (2 :a) (2 :b))");
 }
+
+// ============================================================
+// Phase 11: PURE 述語バッチ
+// ============================================================
+
+test "compare: Phase 11 type predicates" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // any? — 常に true
+    try expectBoolBoth(allocator, &env, "(any? 42)", true);
+    try expectBoolBoth(allocator, &env, "(any? nil)", true);
+    try expectBoolBoth(allocator, &env, "(any? false)", true);
+
+    // boolean?
+    try expectBoolBoth(allocator, &env, "(boolean? true)", true);
+    try expectBoolBoth(allocator, &env, "(boolean? false)", true);
+    try expectBoolBoth(allocator, &env, "(boolean? nil)", false);
+    try expectBoolBoth(allocator, &env, "(boolean? 1)", false);
+
+    // int?
+    try expectBoolBoth(allocator, &env, "(int? 42)", true);
+    try expectBoolBoth(allocator, &env, "(int? -1)", true);
+    try expectBoolBoth(allocator, &env, "(int? 3.14)", false);
+    try expectBoolBoth(allocator, &env, "(int? nil)", false);
+
+    // double?
+    try expectBoolBoth(allocator, &env, "(double? 3.14)", true);
+    try expectBoolBoth(allocator, &env, "(double? 42)", false);
+
+    // char? — 文字リテラル(\a)は Reader 未対応のため false ケースのみ
+    try expectBoolBoth(allocator, &env, "(char? 97)", false);
+    try expectBoolBoth(allocator, &env, "(char? nil)", false);
+}
+
+test "compare: Phase 11 ident predicates" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // ident?
+    try expectBoolBoth(allocator, &env, "(ident? :foo)", true);
+    try expectBoolBoth(allocator, &env, "(ident? :foo/bar)", true);
+    try expectBoolBoth(allocator, &env,
+        \\(ident? 'foo)
+    , true);
+    try expectBoolBoth(allocator, &env, "(ident? 42)", false);
+
+    // simple-ident?
+    try expectBoolBoth(allocator, &env, "(simple-ident? :foo)", true);
+    try expectBoolBoth(allocator, &env, "(simple-ident? :foo/bar)", false);
+    try expectBoolBoth(allocator, &env,
+        \\(simple-ident? 'foo)
+    , true);
+
+    // simple-keyword?
+    try expectBoolBoth(allocator, &env, "(simple-keyword? :foo)", true);
+    try expectBoolBoth(allocator, &env, "(simple-keyword? :foo/bar)", false);
+    try expectBoolBoth(allocator, &env,
+        \\(simple-keyword? 'foo)
+    , false);
+
+    // simple-symbol?
+    try expectBoolBoth(allocator, &env,
+        \\(simple-symbol? 'foo)
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(simple-symbol? 'foo/bar)
+    , false);
+    try expectBoolBoth(allocator, &env, "(simple-symbol? :foo)", false);
+
+    // qualified-ident?
+    try expectBoolBoth(allocator, &env, "(qualified-ident? :foo/bar)", true);
+    try expectBoolBoth(allocator, &env, "(qualified-ident? :foo)", false);
+    try expectBoolBoth(allocator, &env,
+        \\(qualified-ident? 'foo/bar)
+    , true);
+
+    // qualified-keyword?
+    try expectBoolBoth(allocator, &env, "(qualified-keyword? :foo/bar)", true);
+    try expectBoolBoth(allocator, &env, "(qualified-keyword? :foo)", false);
+    try expectBoolBoth(allocator, &env,
+        \\(qualified-keyword? 'foo/bar)
+    , false);
+
+    // qualified-symbol?
+    try expectBoolBoth(allocator, &env,
+        \\(qualified-symbol? 'foo/bar)
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(qualified-symbol? 'foo)
+    , false);
+    try expectBoolBoth(allocator, &env, "(qualified-symbol? :foo/bar)", false);
+}
+
+test "compare: Phase 11 numeric predicates" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // NaN?
+    try expectBoolBoth(allocator, &env, "(NaN? ##NaN)", true);
+    try expectBoolBoth(allocator, &env, "(NaN? 1.0)", false);
+    try expectBoolBoth(allocator, &env, "(NaN? 42)", false);
+
+    // infinite?
+    try expectBoolBoth(allocator, &env, "(infinite? ##Inf)", true);
+    try expectBoolBoth(allocator, &env, "(infinite? ##-Inf)", true);
+    try expectBoolBoth(allocator, &env, "(infinite? 1.0)", false);
+    try expectBoolBoth(allocator, &env, "(infinite? 42)", false);
+
+    // nat-int?
+    try expectBoolBoth(allocator, &env, "(nat-int? 0)", true);
+    try expectBoolBoth(allocator, &env, "(nat-int? 42)", true);
+    try expectBoolBoth(allocator, &env, "(nat-int? -1)", false);
+    try expectBoolBoth(allocator, &env, "(nat-int? 3.14)", false);
+
+    // neg-int?
+    try expectBoolBoth(allocator, &env, "(neg-int? -1)", true);
+    try expectBoolBoth(allocator, &env, "(neg-int? 0)", false);
+    try expectBoolBoth(allocator, &env, "(neg-int? 1)", false);
+
+    // pos-int?
+    try expectBoolBoth(allocator, &env, "(pos-int? 1)", true);
+    try expectBoolBoth(allocator, &env, "(pos-int? 0)", false);
+    try expectBoolBoth(allocator, &env, "(pos-int? -1)", false);
+}
+
+test "compare: Phase 11 misc predicates" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // indexed?
+    try expectBoolBoth(allocator, &env, "(indexed? [1 2 3])", true);
+    try expectBoolBoth(allocator, &env, "(indexed? '(1 2 3))", false);
+    try expectBoolBoth(allocator, &env, "(indexed? {:a 1})", false);
+
+    // ifn? — 呼び出し可能かどうか
+    try expectBoolBoth(allocator, &env, "(ifn? inc)", true);
+    try expectBoolBoth(allocator, &env, "(ifn? :foo)", true);
+    try expectBoolBoth(allocator, &env, "(ifn? {:a 1})", true);
+    try expectBoolBoth(allocator, &env, "(ifn? #{1 2})", true);
+    try expectBoolBoth(allocator, &env, "(ifn? [1 2])", true);
+    try expectBoolBoth(allocator, &env, "(ifn? 42)", false);
+    try expectBoolBoth(allocator, &env, "(ifn? nil)", false);
+
+    // identical?
+    try expectBoolBoth(allocator, &env, "(identical? nil nil)", true);
+    try expectBoolBoth(allocator, &env, "(identical? true true)", true);
+    try expectBoolBoth(allocator, &env, "(identical? 42 42)", true);
+    try expectBoolBoth(allocator, &env, "(identical? :foo :foo)", false); // 別のポインタ
+
+    // special-symbol?
+    try expectBoolBoth(allocator, &env,
+        \\(special-symbol? 'def)
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(special-symbol? 'if)
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(special-symbol? 'do)
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(special-symbol? 'quote)
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(special-symbol? 'recur)
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(special-symbol? 'foo)
+    , false);
+    try expectBoolBoth(allocator, &env, "(special-symbol? :def)", false);
+
+    // map-entry?
+    try expectBoolBoth(allocator, &env, "(map-entry? [1 2])", true);
+    try expectBoolBoth(allocator, &env, "(map-entry? [1])", false);
+    try expectBoolBoth(allocator, &env, "(map-entry? [1 2 3])", false);
+    try expectBoolBoth(allocator, &env, "(map-entry? '(1 2))", false);
+
+    // var?
+    try expectBoolBoth(allocator, &env, "(var? 42)", false);
+    try expectBoolBoth(allocator, &env, "(var? nil)", false);
+}
+
+// ============================================================
+// Phase 11 追加: PURE コレクション/ユーティリティ
+// ============================================================
+
+test "compare: Phase 11 collection utilities" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // key / val
+    try expectKwBoth(allocator, &env, "(key [:a 1])", "a");
+    try expectIntBoth(allocator, &env, "(val [:a 1])", 1);
+
+    // array-map
+    try expectStrBoth(allocator, &env, "(pr-str (array-map :a 1 :b 2))", "{:a 1, :b 2}");
+    try expectStrBoth(allocator, &env, "(pr-str (array-map))", "{}");
+
+    // hash-set
+    try expectStrBoth(allocator, &env, "(pr-str (hash-set 1 2 3))", "#{1 2 3}");
+    try expectStrBoth(allocator, &env, "(pr-str (hash-set))", "#{}");
+
+    // list*
+    try expectStrBoth(allocator, &env, "(pr-str (list* 1 2 [3 4]))", "(1 2 3 4)");
+    try expectStrBoth(allocator, &env, "(pr-str (list* [1 2]))", "(1 2)");
+    try expectStrBoth(allocator, &env, "(pr-str (list* 1 '(2 3)))", "(1 2 3)");
+
+    // remove
+    try expectStrBoth(allocator, &env, "(pr-str (remove even? [1 2 3 4 5]))", "(1 3 5)");
+    try expectNilBoth(allocator, &env, "(remove even? [2 4 6])");
+
+    // nthnext
+    try expectStrBoth(allocator, &env, "(pr-str (nthnext [1 2 3 4] 2))", "(3 4)");
+    try expectNilBoth(allocator, &env, "(nthnext [1 2] 5)");
+    try expectNilBoth(allocator, &env, "(nthnext [1 2] 2)");
+
+    // nthrest
+    try expectStrBoth(allocator, &env, "(pr-str (nthrest [1 2 3 4] 2))", "(3 4)");
+    try expectStrBoth(allocator, &env, "(pr-str (nthrest [1 2] 5))", "()");
+
+    // reduce-kv
+    try expectIntBoth(allocator, &env,
+        \\(reduce-kv (fn [acc k v] (+ acc v)) 0 {:a 1 :b 2 :c 3})
+    , 6);
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (reduce-kv (fn [acc i v] (conj acc [i v])) [] [10 20 30]))
+    , "[[0 10] [1 20] [2 30]]");
+
+    // merge-with
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (merge-with + {:a 1 :b 2} {:a 3 :b 4}))
+    , "{:a 4, :b 6}");
+
+    // update-in
+    try expectIntBoth(allocator, &env,
+        \\(get-in (update-in {:a {:b 1}} [:a :b] inc) [:a :b])
+    , 2);
+
+    // update-keys
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (update-keys {:a 1 :b 2} name))
+    , "{\"a\" 1, \"b\" 2}");
+
+    // update-vals
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (update-vals {:a 1 :b 2} inc))
+    , "{:a 2, :b 3}");
+
+    // bounded-count
+    try expectIntBoth(allocator, &env, "(bounded-count 5 [1 2 3])", 3);
+    try expectIntBoth(allocator, &env, "(bounded-count 2 [1 2 3])", 2);
+
+    // compare
+    try expectIntBoth(allocator, &env, "(compare 1 2)", -1);
+    try expectIntBoth(allocator, &env, "(compare 2 2)", 0);
+    try expectIntBoth(allocator, &env, "(compare 3 2)", 1);
+    try expectIntBoth(allocator, &env,
+        \\(compare "abc" "def")
+    , -1);
+
+    // empty
+    try expectStrBoth(allocator, &env, "(pr-str (empty [1 2 3]))", "[]");
+    try expectStrBoth(allocator, &env, "(pr-str (empty {:a 1}))", "{}");
+    try expectStrBoth(allocator, &env, "(pr-str (empty '(1 2 3)))", "()");
+
+    // sequence
+    try expectStrBoth(allocator, &env, "(pr-str (sequence [1 2 3]))", "(1 2 3)");
+    try expectNilBoth(allocator, &env, "(sequence [])");
+}
+
+test "compare: Phase 11 bit operations" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // bit-and-not
+    try expectIntBoth(allocator, &env, "(bit-and-not 15 3)", 12);
+
+    // bit-clear
+    try expectIntBoth(allocator, &env, "(bit-clear 7 1)", 5); // 111 → 101
+
+    // bit-flip
+    try expectIntBoth(allocator, &env, "(bit-flip 5 1)", 7); // 101 → 111
+    try expectIntBoth(allocator, &env, "(bit-flip 7 1)", 5); // 111 → 101
+
+    // bit-set
+    try expectIntBoth(allocator, &env, "(bit-set 5 1)", 7); // 101 → 111
+
+    // bit-test
+    try expectBoolBoth(allocator, &env, "(bit-test 7 0)", true);
+    try expectBoolBoth(allocator, &env, "(bit-test 7 1)", true);
+    try expectBoolBoth(allocator, &env, "(bit-test 7 3)", false);
+
+    // unsigned-bit-shift-right
+    try expectIntBoth(allocator, &env, "(unsigned-bit-shift-right 8 2)", 2);
+}
+
+test "compare: Phase 11 parse and utility" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // parse-long
+    try expectIntBoth(allocator, &env,
+        \\(parse-long "42")
+    , 42);
+    try expectIntBoth(allocator, &env,
+        \\(parse-long "-7")
+    , -7);
+    try expectNilBoth(allocator, &env,
+        \\(parse-long "abc")
+    );
+
+    // parse-double
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (parse-double "3.14"))
+    , "3.14");
+    try expectNilBoth(allocator, &env,
+        \\(parse-double "xyz")
+    );
+
+    // parse-boolean
+    try expectBoolBoth(allocator, &env,
+        \\(parse-boolean "true")
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(parse-boolean "false")
+    , false);
+    try expectNilBoth(allocator, &env,
+        \\(parse-boolean "yes")
+    );
+
+    // reductions
+    try expectStrBoth(allocator, &env, "(pr-str (reductions + [1 2 3 4]))", "(1 3 6 10)");
+    try expectStrBoth(allocator, &env, "(pr-str (reductions + 10 [1 2 3]))", "(10 11 13 16)");
+
+    // split-with
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (split-with (fn [x] (< x 3)) [1 2 3 4 5]))
+    , "[(1 2) (3 4 5)]");
+
+    // dedupe
+    try expectStrBoth(allocator, &env, "(pr-str (dedupe [1 1 2 2 3 3 1]))", "(1 2 3 1)");
+
+    // rseq
+    try expectStrBoth(allocator, &env, "(pr-str (rseq [1 2 3]))", "(3 2 1)");
+    try expectNilBoth(allocator, &env, "(rseq [])");
+
+    // max-key / min-key
+    try expectIntBoth(allocator, &env,
+        \\(max-key (fn [x] (* x x)) -3 2 1)
+    , -3);
+    try expectIntBoth(allocator, &env,
+        \\(min-key (fn [x] (* x x)) -3 2 1)
+    , 1);
+}

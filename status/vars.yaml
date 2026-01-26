@@ -577,8 +577,10 @@ vars:
       layer: host
     NaN?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     PrintWriter-on:
       type: function
       status: todo
@@ -664,8 +666,10 @@ vars:
       impl_type: none
     any?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     apply:
       type: function
       status: done
@@ -673,8 +677,10 @@ vars:
       layer: bridge
     array-map:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     aset:
       type: function
       status: skip
@@ -772,16 +778,22 @@ vars:
       impl_type: builtin
     bit-and-not:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     bit-clear:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     bit-flip:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     bit-not:
       type: function
       status: done
@@ -792,8 +804,10 @@ vars:
       impl_type: builtin
     bit-set:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     bit-shift-left:
       type: function
       status: done
@@ -804,8 +818,10 @@ vars:
       impl_type: builtin
     bit-test:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     bit-xor:
       type: function
       status: done
@@ -820,12 +836,16 @@ vars:
       impl_type: none
     boolean?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     booleans:
       type: function
-      status: skip
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     bound-fn*:
       type: function
       status: todo
@@ -836,8 +856,10 @@ vars:
       impl_type: none
     bounded-count:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     butlast:
       type: function
       status: done
@@ -876,12 +898,16 @@ vars:
       impl_type: none
     char?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     chars:
       type: function
-      status: skip
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     chunk:
       type: function
       status: todo
@@ -951,8 +977,10 @@ vars:
       impl_type: none
     compare:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     compare-and-set!:
       type: function
       status: todo
@@ -1040,8 +1068,10 @@ vars:
       impl_type: none
     dedupe:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     delay?:
       type: function
       status: todo
@@ -1115,12 +1145,16 @@ vars:
       impl_type: none
     double?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     doubles:
       type: function
-      status: skip
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     drop:
       type: function
       status: done
@@ -1141,8 +1175,10 @@ vars:
       impl_type: none
     empty:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     empty?:
       type: function
       status: done
@@ -1396,20 +1432,26 @@ vars:
       impl_type: none
     hash-set:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     hash-unordered-coll:
       type: function
       status: todo
       impl_type: none
     ident?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     identical?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     identity:
       type: function
       status: done
@@ -1417,8 +1459,10 @@ vars:
       layer: pure
     ifn?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     inc:
       type: function
       status: done
@@ -1430,12 +1474,16 @@ vars:
       impl_type: none
     indexed?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     infinite?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     init-proxy:
       type: function
       status: skip
@@ -1466,8 +1514,10 @@ vars:
       impl_type: none
     int?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     integer?:
       type: function
       status: done
@@ -1490,14 +1540,18 @@ vars:
       status: done
       impl_type: builtin
       layer: host
+      impl: builtin
+      host: host
     into-array:
       type: function
       status: skip
       impl_type: none
     ints:
       type: function
-      status: skip
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     isa?:
       type: function
       status: todo
@@ -1529,8 +1583,10 @@ vars:
       impl_type: macro
     key:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     keys:
       type: function
       status: done
@@ -1558,15 +1614,21 @@ vars:
       status: done
       impl_type: builtin
       layer: host
+      impl: builtin
+      host: host
     list*:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     list?:
       type: function
       status: done
       impl_type: builtin
       layer: host
+      impl: builtin
+      host: host
     load:
       type: function
       status: todo
@@ -1618,8 +1680,10 @@ vars:
       layer: bridge
     map-entry?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     map-indexed:
       type: function
       status: done
@@ -1647,8 +1711,10 @@ vars:
       layer: host
     max-key:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     memoize:
       type: function
       status: todo
@@ -1660,8 +1726,10 @@ vars:
       layer: pure
     merge-with:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     meta:
       type: function
       status: done
@@ -1681,8 +1749,10 @@ vars:
       layer: host
     min-key:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     mix-collection-hash:
       type: function
       status: todo
@@ -1712,12 +1782,16 @@ vars:
       impl_type: none
     nat-int?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     neg-int?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     neg?:
       type: function
       status: done
@@ -1816,12 +1890,16 @@ vars:
       layer: host
     nthnext:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     nthrest:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     num:
       type: function
       status: todo
@@ -1850,16 +1928,22 @@ vars:
       impl_type: none
     parse-boolean:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     parse-double:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     parse-long:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     parse-uuid:
       type: function
       status: todo
@@ -1919,8 +2003,10 @@ vars:
       impl_type: none
     pos-int?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     pos?:
       type: function
       status: done
@@ -2003,16 +2089,22 @@ vars:
       impl_type: none
     qualified-ident?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     qualified-keyword?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     qualified-symbol?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     quot:
       type: function
       status: done
@@ -2027,8 +2119,10 @@ vars:
       impl_type: builtin
     rand-nth:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     random-sample:
       type: function
       status: todo
@@ -2117,8 +2211,10 @@ vars:
       layer: bridge
     reduce-kv:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     reduced:
       type: function
       status: todo
@@ -2129,8 +2225,10 @@ vars:
       impl_type: none
     reductions:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     ref:
       type: function
       status: skip
@@ -2165,8 +2263,10 @@ vars:
       impl_type: builtin
     remove:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     remove-all-methods:
       type: function
       status: todo
@@ -2194,8 +2294,10 @@ vars:
       layer: host
     repeatedly:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     replace:
       type: function
       status: done
@@ -2254,8 +2356,10 @@ vars:
       impl_type: builtin
     rseq:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     rsubseq:
       type: function
       status: todo
@@ -2313,8 +2417,10 @@ vars:
       impl_type: none
     sequence:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     sequential?:
       type: function
       status: done
@@ -2370,16 +2476,22 @@ vars:
       impl_type: none
     simple-ident?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     simple-keyword?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     simple-symbol?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     slurp:
       type: function
       status: todo
@@ -2428,8 +2540,10 @@ vars:
       impl_type: builtin
     special-symbol?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     spit:
       type: function
       status: todo
@@ -2440,8 +2554,10 @@ vars:
       impl_type: builtin
     split-with:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     splitv-at:
       type: function
       status: todo
@@ -2684,8 +2800,10 @@ vars:
       impl_type: none
     unsigned-bit-shift-right:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     update:
       type: function
       status: done
@@ -2693,20 +2811,26 @@ vars:
       layer: pure
     update-in:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     update-keys:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     update-proxy:
       type: function
       status: skip
       impl_type: none
     update-vals:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     uri?:
       type: function
       status: todo
@@ -2721,8 +2845,10 @@ vars:
       impl_type: none
     val:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     vals:
       type: function
       status: done
@@ -2738,8 +2864,10 @@ vars:
       impl_type: none
     var?:
       type: function
-      status: todo
+      status: done
       impl_type: none
+      impl: builtin
+      host: host
     vary-meta:
       type: function
       status: todo
