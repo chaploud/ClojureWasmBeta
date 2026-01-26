@@ -86,6 +86,8 @@ pub const Compiler = struct {
             .partial_node => |node| try self.emitPartial(node),
             .comp_node => |node| try self.emitComp(node),
             .reduce_node => |node| try self.emitReduce(node),
+            .map_node => |node| try self.emitMap(node),
+            .filter_node => |node| try self.emitFilter(node),
         }
     }
 
@@ -411,6 +413,20 @@ pub const Compiler = struct {
 
         // reduce 命令（オペランド: 初期値フラグ）
         try self.chunk.emit(.reduce, has_init);
+    }
+
+    /// map コンパイル: (map f coll)
+    fn emitMap(self: *Compiler, node: *const node_mod.MapNode) CompileError!void {
+        try self.compile(node.fn_node);
+        try self.compile(node.coll_node);
+        try self.chunk.emit(.map_seq, 0);
+    }
+
+    /// filter コンパイル: (filter pred coll)
+    fn emitFilter(self: *Compiler, node: *const node_mod.FilterNode) CompileError!void {
+        try self.compile(node.fn_node);
+        try self.compile(node.coll_node);
+        try self.chunk.emit(.filter_seq, 0);
     }
 
     // === ヘルパー ===

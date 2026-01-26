@@ -1079,6 +1079,344 @@ pub fn containsKey(allocator: std.mem.Allocator, args: []const Value) anyerror!V
 }
 
 // ============================================================
+// シーケンス操作
+// ============================================================
+
+/// コレクションの要素を取得するヘルパー
+fn getItems(val: Value) ?[]const Value {
+    return switch (val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        else => null,
+    };
+}
+
+/// take : 先頭 n 個の要素を取得
+pub fn take(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int) return error.TypeError;
+    const n_raw = args[0].int;
+    const n: usize = if (n_raw < 0) 0 else @intCast(n_raw);
+
+    const items = getItems(args[1]) orelse return error.TypeError;
+    const take_count = @min(n, items.len);
+
+    const new_items = try allocator.dupe(Value, items[0..take_count]);
+    const result = try allocator.create(value_mod.PersistentList);
+    result.* = .{ .items = new_items };
+    return Value{ .list = result };
+}
+
+/// drop : 先頭 n 個を除いた残りの要素
+pub fn drop(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int) return error.TypeError;
+    const n_raw = args[0].int;
+    const n: usize = if (n_raw < 0) 0 else @intCast(n_raw);
+
+    const items = getItems(args[1]) orelse return error.TypeError;
+    const drop_count = @min(n, items.len);
+
+    const new_items = try allocator.dupe(Value, items[drop_count..]);
+    const result = try allocator.create(value_mod.PersistentList);
+    result.* = .{ .items = new_items };
+    return Value{ .list = result };
+}
+
+/// range : 数列を生成
+/// (range end), (range start end), (range start end step)
+pub fn range(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1 or args.len > 3) return error.ArityError;
+
+    var start: i64 = 0;
+    var end: i64 = undefined;
+    var step: i64 = 1;
+
+    if (args.len == 1) {
+        if (args[0] != .int) return error.TypeError;
+        end = args[0].int;
+    } else if (args.len == 2) {
+        if (args[0] != .int or args[1] != .int) return error.TypeError;
+        start = args[0].int;
+        end = args[1].int;
+    } else {
+        if (args[0] != .int or args[1] != .int or args[2] != .int) return error.TypeError;
+        start = args[0].int;
+        end = args[1].int;
+        step = args[2].int;
+        if (step == 0) return error.TypeError;
+    }
+
+    // 要素数を計算
+    var count_val: usize = 0;
+    if (step > 0 and start < end) {
+        count_val = @intCast(@divTrunc(end - start + step - 1, step));
+    } else if (step < 0 and start > end) {
+        count_val = @intCast(@divTrunc(start - end - step - 1, -step));
+    }
+
+    const items = try allocator.alloc(Value, count_val);
+    var val = start;
+    for (0..count_val) |i| {
+        items[i] = value_mod.intVal(val);
+        val += step;
+    }
+
+    const result = try allocator.create(value_mod.PersistentList);
+    result.* = .{ .items = items };
+    return Value{ .list = result };
+}
+
+/// concat : 複数のコレクションを連結
+pub fn concat(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    // 全要素数を計算
+    var total: usize = 0;
+    for (args) |arg| {
+        const items = getItems(arg) orelse return error.TypeError;
+        total += items.len;
+    }
+
+    const new_items = try allocator.alloc(Value, total);
+    var offset: usize = 0;
+    for (args) |arg| {
+        const items = getItems(arg).?;
+        @memcpy(new_items[offset .. offset + items.len], items);
+        offset += items.len;
+    }
+
+    const result = try allocator.create(value_mod.PersistentList);
+    result.* = .{ .items = new_items };
+    return Value{ .list = result };
+}
+
+/// into : コレクションに要素を追加
+/// (into to from) — to の型に応じて結合
+pub fn into(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+
+    const from_items = getItems(args[1]) orelse return error.TypeError;
+
+    switch (args[0]) {
+        .nil => {
+            // nil → リストとして返す（逆順）
+            const new_items = try allocator.alloc(Value, from_items.len);
+            for (from_items, 0..) |item, i| {
+                new_items[from_items.len - 1 - i] = item;
+            }
+            const result = try allocator.create(value_mod.PersistentList);
+            result.* = .{ .items = new_items };
+            return Value{ .list = result };
+        },
+        .list => |l| {
+            // リスト → 先頭に追加（逆順）
+            const new_items = try allocator.alloc(Value, l.items.len + from_items.len);
+            for (from_items, 0..) |item, i| {
+                new_items[from_items.len - 1 - i] = item;
+            }
+            @memcpy(new_items[from_items.len..], l.items);
+            const result = try allocator.create(value_mod.PersistentList);
+            result.* = .{ .items = new_items };
+            return Value{ .list = result };
+        },
+        .vector => |v| {
+            // ベクター → 末尾に追加
+            const new_items = try allocator.alloc(Value, v.items.len + from_items.len);
+            @memcpy(new_items[0..v.items.len], v.items);
+            @memcpy(new_items[v.items.len..], from_items);
+            const result = try allocator.create(value_mod.PersistentVector);
+            result.* = .{ .items = new_items };
+            return Value{ .vector = result };
+        },
+        .set => |s| {
+            // セット → 追加（重複除外）
+            var set = s.*;
+            for (from_items) |item| {
+                set = try set.conj(allocator, item);
+            }
+            const result = try allocator.create(value_mod.PersistentSet);
+            result.* = set;
+            return Value{ .set = result };
+        },
+        .map => |m| {
+            // マップ → キーバリューペアを追加
+            var map = m.*;
+            var i: usize = 0;
+            while (i + 1 < from_items.len) : (i += 2) {
+                map = try map.assoc(allocator, from_items[i], from_items[i + 1]);
+            }
+            const result = try allocator.create(value_mod.PersistentMap);
+            result.* = map;
+            return Value{ .map = result };
+        },
+        else => return error.TypeError,
+    }
+}
+
+/// reverse : コレクションを逆順に
+pub fn reverseFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const items = getItems(args[0]) orelse return error.TypeError;
+
+    const new_items = try allocator.alloc(Value, items.len);
+    for (items, 0..) |item, i| {
+        new_items[items.len - 1 - i] = item;
+    }
+
+    const result = try allocator.create(value_mod.PersistentList);
+    result.* = .{ .items = new_items };
+    return Value{ .list = result };
+}
+
+/// seq : シーケンスに変換（空なら nil）
+pub fn seq(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+
+    return switch (args[0]) {
+        .nil => value_mod.nil,
+        .list => |l| if (l.items.len == 0) value_mod.nil else args[0],
+        .vector => |v| blk: {
+            if (v.items.len == 0) break :blk value_mod.nil;
+            const result = try value_mod.PersistentList.fromSlice(allocator, v.items);
+            break :blk Value{ .list = result };
+        },
+        .map => |m| blk: {
+            if (m.count() == 0) break :blk value_mod.nil;
+            // マップはキーバリューペアのベクタのリストに変換
+            const pair_count = m.count();
+            const items = try allocator.alloc(Value, pair_count);
+            var i: usize = 0;
+            var entry_idx: usize = 0;
+            while (entry_idx < m.entries.len) : (entry_idx += 2) {
+                const pair_items = try allocator.alloc(Value, 2);
+                pair_items[0] = m.entries[entry_idx];
+                pair_items[1] = m.entries[entry_idx + 1];
+                const pair_vec = try allocator.create(value_mod.PersistentVector);
+                pair_vec.* = .{ .items = pair_items };
+                items[i] = Value{ .vector = pair_vec };
+                i += 1;
+            }
+            const result = try allocator.create(value_mod.PersistentList);
+            result.* = .{ .items = items };
+            break :blk Value{ .list = result };
+        },
+        .set => |s| blk: {
+            if (s.items.len == 0) break :blk value_mod.nil;
+            const result = try value_mod.PersistentList.fromSlice(allocator, s.items);
+            break :blk Value{ .list = result };
+        },
+        .string => |s| blk: {
+            if (s.data.len == 0) break :blk value_mod.nil;
+            // 文字列を1文字ずつのリストに（UTF-8バイト単位で簡易実装）
+            const items = try allocator.alloc(Value, s.data.len);
+            for (s.data, 0..) |byte, idx| {
+                const char_str = try allocator.alloc(u8, 1);
+                char_str[0] = byte;
+                const str_obj = try allocator.create(value_mod.String);
+                str_obj.* = value_mod.String.init(char_str);
+                items[idx] = Value{ .string = str_obj };
+            }
+            const result = try allocator.create(value_mod.PersistentList);
+            result.* = .{ .items = items };
+            break :blk Value{ .list = result };
+        },
+        else => error.TypeError,
+    };
+}
+
+/// vec : ベクターに変換
+pub fn vecFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+
+    return switch (args[0]) {
+        .nil => blk: {
+            const result = try allocator.create(value_mod.PersistentVector);
+            result.* = value_mod.PersistentVector.empty();
+            break :blk Value{ .vector = result };
+        },
+        .vector => args[0],
+        .list => |l| blk: {
+            const result = try allocator.create(value_mod.PersistentVector);
+            result.* = .{ .items = try allocator.dupe(Value, l.items) };
+            break :blk Value{ .vector = result };
+        },
+        .set => |s| blk: {
+            const result = try allocator.create(value_mod.PersistentVector);
+            result.* = .{ .items = try allocator.dupe(Value, s.items) };
+            break :blk Value{ .vector = result };
+        },
+        else => error.TypeError,
+    };
+}
+
+/// repeat : 値を n 回繰り返したリストを生成
+pub fn repeat(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int) return error.TypeError;
+    const n_raw = args[0].int;
+    if (n_raw < 0) return error.TypeError;
+    const n: usize = @intCast(n_raw);
+
+    const items = try allocator.alloc(Value, n);
+    for (0..n) |i| {
+        items[i] = args[1];
+    }
+
+    const result = try allocator.create(value_mod.PersistentList);
+    result.* = .{ .items = items };
+    return Value{ .list = result };
+}
+
+/// distinct : 重複を除いたリストを返す
+pub fn distinct(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const items = getItems(args[0]) orelse return error.TypeError;
+
+    var result_buf: std.ArrayListUnmanaged(Value) = .empty;
+    for (items) |item| {
+        var found = false;
+        for (result_buf.items) |existing| {
+            if (item.eql(existing)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            try result_buf.append(allocator, item);
+        }
+    }
+
+    const result = try allocator.create(value_mod.PersistentList);
+    result.* = .{ .items = try result_buf.toOwnedSlice(allocator) };
+    return Value{ .list = result };
+}
+
+/// flatten : ネストされたコレクションを平坦化
+pub fn flatten(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+
+    var result_buf: std.ArrayListUnmanaged(Value) = .empty;
+    try flattenInto(allocator, args[0], &result_buf);
+
+    const result = try allocator.create(value_mod.PersistentList);
+    result.* = .{ .items = try result_buf.toOwnedSlice(allocator) };
+    return Value{ .list = result };
+}
+
+fn flattenInto(allocator: std.mem.Allocator, val: Value, buf: *std.ArrayListUnmanaged(Value)) !void {
+    switch (val) {
+        .list => |l| {
+            for (l.items) |item| try flattenInto(allocator, item, buf);
+        },
+        .vector => |v| {
+            for (v.items) |item| try flattenInto(allocator, item, buf);
+        },
+        .nil => {},
+        else => try buf.append(allocator, val),
+    }
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -1137,6 +1475,18 @@ const builtins = [_]BuiltinDef{
     .{ .name = "keys", .func = keys },
     .{ .name = "vals", .func = vals },
     .{ .name = "contains?", .func = containsKey },
+    // シーケンス操作
+    .{ .name = "take", .func = take },
+    .{ .name = "drop", .func = drop },
+    .{ .name = "range", .func = range },
+    .{ .name = "concat", .func = concat },
+    .{ .name = "into", .func = into },
+    .{ .name = "reverse", .func = reverseFn },
+    .{ .name = "seq", .func = seq },
+    .{ .name = "vec", .func = vecFn },
+    .{ .name = "repeat", .func = repeat },
+    .{ .name = "distinct", .func = distinct },
+    .{ .name = "flatten", .func = flatten },
     // 文字列
     .{ .name = "str", .func = strFn },
     // 出力

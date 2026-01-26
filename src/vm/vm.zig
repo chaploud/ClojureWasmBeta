@@ -299,6 +299,12 @@ pub const VM = struct {
                     const has_init = instr.operand != 0;
                     try self.executeReduce(has_init);
                 },
+                .map_seq => {
+                    try self.executeMap();
+                },
+                .filter_seq => {
+                    try self.executeFilter();
+                },
 
                 // ═══════════════════════════════════════════════════════
                 // [H] loop/recur
@@ -775,6 +781,63 @@ pub const VM = struct {
 
         // 結果をプッシュ
         try self.push(acc);
+    }
+
+    /// map を実行
+    /// スタック: [関数, コレクション] (コレクションがトップ)
+    fn executeMap(self: *VM) VMError!void {
+        const coll_val = self.pop();
+        const fn_val = self.pop();
+
+        const items: []const Value = switch (coll_val) {
+            .list => |l| l.items,
+            .vector => |v| v.items,
+            .nil => &[_]Value{},
+            else => return error.TypeError,
+        };
+
+        // 各要素に関数を適用
+        var result_items = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+        for (items, 0..) |item, i| {
+            try self.push(fn_val);
+            try self.push(item);
+            try self.callValue(1);
+            result_items[i] = self.pop();
+        }
+
+        const result_list = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+        result_list.* = .{ .items = result_items };
+        try self.push(Value{ .list = result_list });
+    }
+
+    /// filter を実行
+    /// スタック: [関数, コレクション] (コレクションがトップ)
+    fn executeFilter(self: *VM) VMError!void {
+        const coll_val = self.pop();
+        const fn_val = self.pop();
+
+        const items: []const Value = switch (coll_val) {
+            .list => |l| l.items,
+            .vector => |v| v.items,
+            .nil => &[_]Value{},
+            else => return error.TypeError,
+        };
+
+        // 述語が真の要素だけ集める
+        var result_buf: std.ArrayListUnmanaged(Value) = .empty;
+        for (items) |item| {
+            try self.push(fn_val);
+            try self.push(item);
+            try self.callValue(1);
+            const pred_result = self.pop();
+            if (pred_result.isTruthy()) {
+                result_buf.append(self.allocator, item) catch return error.OutOfMemory;
+            }
+        }
+
+        const result_list = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+        result_list.* = .{ .items = result_buf.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
+        try self.push(Value{ .list = result_list });
     }
 
     /// def を実行

@@ -163,6 +163,10 @@ pub const Analyzer = struct {
                 return self.analyzeComp(items);
             } else if (std.mem.eql(u8, sym_name, "reduce")) {
                 return self.analyzeReduce(items);
+            } else if (std.mem.eql(u8, sym_name, "map")) {
+                return self.analyzeMap2(items);
+            } else if (std.mem.eql(u8, sym_name, "filter")) {
+                return self.analyzeFilter(items);
             }
         }
 
@@ -1156,6 +1160,48 @@ pub const Analyzer = struct {
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = .{ .reduce_node = reduce_data };
+        return node;
+    }
+
+    /// (map f coll) の解析
+    fn analyzeMap2(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "map requires 2 arguments (map f coll)", .{});
+        }
+
+        const fn_node = try self.analyze(items[1]);
+        const coll_node = try self.analyze(items[2]);
+
+        const map_data = self.allocator.create(node_mod.MapNode) catch return error.OutOfMemory;
+        map_data.* = .{
+            .fn_node = fn_node,
+            .coll_node = coll_node,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .map_node = map_data };
+        return node;
+    }
+
+    /// (filter pred coll) の解析
+    fn analyzeFilter(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "filter requires 2 arguments (filter pred coll)", .{});
+        }
+
+        const fn_node = try self.analyze(items[1]);
+        const coll_node = try self.analyze(items[2]);
+
+        const filter_data = self.allocator.create(node_mod.FilterNode) catch return error.OutOfMemory;
+        filter_data.* = .{
+            .fn_node = fn_node,
+            .coll_node = coll_node,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .filter_node = filter_data };
         return node;
     }
 

@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.3 分配束縛 完了** - シーケンシャル分配・マップ分配の両方が動作。
+**Phase 8.4 シーケンス操作 完了** - map, filter, take, drop, range 等が動作。
 
 ### 完了した機能
 
@@ -21,6 +21,7 @@
 | 8.1 | クロージャ完成, 複数アリティfn, 可変長引数 |
 | 8.2 | 高階関数 (apply, partial, comp, reduce) |
 | 8.3 | 分配束縛（シーケンシャル `[a b]`、マップ `{:keys [a]}`) |
+| 8.4 | シーケンス操作 (map, filter, take, drop, range 等) |
 
 ### 組み込み関数
 
@@ -32,6 +33,8 @@
       symbol?, fn?, coll?, list?, vector?, map?, set?, empty?, contains?
 コレクション: first, rest, cons, conj, count, nth, get, list, vector
 マップ: hash-map, assoc, dissoc, keys, vals
+シーケンス: take, drop, range, concat, into, reverse, seq, vec,
+           repeat, distinct, flatten
 文字列: str
 出力: println, pr-str
 ```
@@ -41,40 +44,51 @@
 ```
 制御: if, do, let, loop, recur
 関数: fn, def, defmacro, quote
-高階: apply, partial, comp, reduce
+高階: apply, partial, comp, reduce, map, filter
 ```
 
-### 分配束縛（8.3 で追加）
+### シーケンス操作（8.4 で追加）
 
 ```clojure
-;; シーケンシャル分配
-(let [[a b c] [1 2 3]] (+ a b c))      ; => 6
-(let [[x & rest] [1 2 3 4]] rest)      ; => (2 3 4)
-(let [[a b :as all] [1 2]] all)        ; => [1 2]
-(let [[a [b c]] [1 [2 3]]] (+ a b c))  ; => 6 (ネスト)
+;; map / filter（特殊ノード: ユーザー関数を呼び出し）
+(map inc [1 2 3])                        ; => (2 3 4)
+(filter (fn [x] (> x 2)) [1 2 3 4 5])   ; => (3 4 5)
 
-;; マップ分配
-(let [{:keys [name age]} {:name "Alice" :age 30}] name) ; => "Alice"
-(let [{x :x y :y} {:x 1 :y 2}] (+ x y))               ; => 3
-(let [{:keys [a] :or {a 0}} {}] a)                      ; => 0
-(let [{:keys [a b] :as m} {:a 1 :b 2}] m)               ; => {:a 1 :b 2}
-(let [{:strs [name]} {"name" "Bob"}] name)              ; => "Bob"
+;; 組み込みシーケンス関数
+(take 3 (range 10))                      ; => (0 1 2)
+(drop 2 [1 2 3 4 5])                     ; => (3 4 5)
+(range 5)                                ; => (0 1 2 3 4)
+(range 2 8)                              ; => (2 3 4 5 6 7)
+(range 0 10 3)                           ; => (0 3 6 9)
+(concat [1 2] [3 4])                     ; => (1 2 3 4)
+(into [] (list 1 2 3))                   ; => [1 2 3]
+(reverse [1 2 3])                        ; => (3 2 1)
+(seq [1 2 3])                            ; => (1 2 3) / (seq []) => nil
+(vec (list 1 2 3))                       ; => [1 2 3]
+(repeat 3 :x)                           ; => (:x :x :x)
+(distinct [1 2 1 3])                     ; => (1 2 3)
+(flatten [[1 2] [3 [4 5]]])             ; => (1 2 3 4 5)
 
-;; fn 引数での分配（ベクター・マップ両対応）
-((fn [[a b]] (+ a b)) [1 2])             ; => 3
-((fn [{:keys [x y]}] (+ x y)) {:x 3 :y 4}) ; => 7
-
-;; 順次バインディング（後続が前のバインディングを参照）
-(let [x 1 y x] y)                      ; => 1
+;; 複合パイプライン
+(reduce + 0 (take 3 (map inc (range 10))))               ; => 6
+(reduce + 0 (filter (fn [x] (> x 5)) (range 10)))        ; => 30
 ```
+
+**注意**: map/filter は現在 Eager 実装（即座にリスト全体を生成）。
+真の LazySeq（無限シーケンス対応）は将来のフェーズで実装。
 
 ---
 
 ## 次回タスク
 
-### Phase 8.4: 遅延シーケンス (LazySeq)
+### Phase 8.5: プロトコル or その他機能拡充
 
-map, filter, take に必須。
+候補:
+- プロトコル (defprotocol, extend-type)
+- try/catch/finally (例外処理)
+- Atom (状態管理)
+- cond, when, when-not, if-let, when-let (制御フロー)
+- threading macro (->, ->>)
 
 ---
 
@@ -82,8 +96,8 @@ map, filter, take に必須。
 
 | Phase | 内容 | 依存 |
 |-------|------|------|
-| 8.4 | 遅延シーケンス (LazySeq) | map/filter/take に必須 |
-| 8.5 | プロトコル | 型の拡張性に必須 |
+| 8.5 | プロトコル or 機能拡充 | - |
+| 8.6 | LazySeq（真の遅延シーケンス）| 無限シーケンスに必要 |
 | 9 | GC | LazySeq導入後に必須 |
 | 10 | Wasm連携 | 言語機能充実後 |
 
@@ -109,6 +123,11 @@ map, filter, take に必須。
 
 ### VM
 - createClosure: frame.base > 0 のみキャプチャ（トップレベルクロージャバグ修正済み）
+
+### シーケンス操作
+- map/filter は Eager 実装（リスト全体を即座に生成）
+- LazySeq が必要な場合（無限シーケンス、遅延実行）は別途実装が必要
+- `(range)` 引数なし（無限シーケンス）は未サポート
 
 ---
 

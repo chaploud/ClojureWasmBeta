@@ -799,3 +799,85 @@ test "compare: map destructuring" {
         \\((fn [z {:keys [x y]}] (+ z x y)) 10 {:x 3 :y 4})
     , 17);
 }
+
+test "compare: sequence operations" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // map
+    try expectIntBoth(allocator, &env, "(count (map inc [1 2 3]))", 3);
+    try expectIntBoth(allocator, &env, "(first (map inc [1 2 3]))", 2);
+    try expectIntBoth(allocator, &env,
+        \\(reduce + 0 (map inc [1 2 3]))
+    , 9);
+    try expectIntBoth(allocator, &env,
+        \\(reduce + 0 (map (fn [x] (* x x)) [1 2 3]))
+    , 14);
+
+    // filter
+    try expectIntBoth(allocator, &env,
+        \\(count (filter (fn [x] (> x 2)) [1 2 3 4 5]))
+    , 3);
+    try expectIntBoth(allocator, &env,
+        \\(reduce + 0 (filter (fn [x] (> x 2)) [1 2 3 4 5]))
+    , 12);
+
+    // map + filter チェーン
+    try expectIntBoth(allocator, &env,
+        \\(reduce + 0 (map inc (filter (fn [x] (> x 2)) [1 2 3 4 5])))
+    , 15);
+
+    // take
+    try expectIntBoth(allocator, &env, "(count (take 3 [1 2 3 4 5]))", 3);
+    try expectIntBoth(allocator, &env, "(first (take 3 [1 2 3 4 5]))", 1);
+
+    // drop
+    try expectIntBoth(allocator, &env, "(count (drop 2 [1 2 3 4 5]))", 3);
+    try expectIntBoth(allocator, &env, "(first (drop 2 [1 2 3 4 5]))", 3);
+
+    // range
+    try expectIntBoth(allocator, &env, "(count (range 5))", 5);
+    try expectIntBoth(allocator, &env, "(first (range 5))", 0);
+    try expectIntBoth(allocator, &env, "(count (range 2 8))", 6);
+    try expectIntBoth(allocator, &env, "(count (range 0 10 3))", 4);
+
+    // concat
+    try expectIntBoth(allocator, &env, "(count (concat [1 2] [3 4] [5]))", 5);
+    try expectIntBoth(allocator, &env, "(first (concat [10] [20]))", 10);
+
+    // reverse
+    try expectIntBoth(allocator, &env, "(first (reverse [1 2 3 4]))", 4);
+
+    // seq
+    try expectNilBoth(allocator, &env, "(seq [])");
+    try expectIntBoth(allocator, &env, "(first (seq [1 2 3]))", 1);
+
+    // vec
+    try expectIntBoth(allocator, &env, "(count (vec (list 1 2 3)))", 3);
+
+    // repeat
+    try expectIntBoth(allocator, &env, "(count (repeat 5 :x))", 5);
+
+    // distinct
+    try expectIntBoth(allocator, &env, "(count (distinct [1 2 1 3 2 4]))", 4);
+
+    // flatten
+    try expectIntBoth(allocator, &env, "(count (flatten [[1 2] [3 4] [5]]))", 5);
+
+    // into
+    try expectIntBoth(allocator, &env, "(count (into [] (list 1 2 3)))", 3);
+
+    // 複合テスト: take + map + range
+    try expectIntBoth(allocator, &env,
+        \\(reduce + 0 (take 3 (map inc (range 10))))
+    , 6);
+
+    // 複合テスト: reduce + filter + range
+    try expectIntBoth(allocator, &env,
+        \\(reduce + 0 (filter (fn [x] (> x 5)) (range 10)))
+    , 30);
+}

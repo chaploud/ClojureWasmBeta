@@ -51,6 +51,8 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .partial_node => |n| runPartial(n, ctx),
         .comp_node => |n| runComp(n, ctx),
         .reduce_node => |n| runReduce(n, ctx),
+        .map_node => |n| runMap(n, ctx),
+        .filter_node => |n| runFilter(n, ctx),
     };
 }
 
@@ -410,6 +412,61 @@ fn runReduce(node: *const node_mod.ReduceNode, ctx: *Context) EvalError!Value {
     }
 
     return acc;
+}
+
+/// map 評価
+/// (map f coll)
+fn runMap(node: *const node_mod.MapNode, ctx: *Context) EvalError!Value {
+    const fn_val = try run(node.fn_node, ctx);
+    const coll_val = try run(node.coll_node, ctx);
+
+    const items: []const Value = switch (coll_val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        else => return error.TypeError,
+    };
+
+    // 各要素に関数を適用
+    var result_items = ctx.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+    for (items, 0..) |item, i| {
+        const args = ctx.allocator.alloc(Value, 1) catch return error.OutOfMemory;
+        args[0] = item;
+        result_items[i] = try callWithArgs(fn_val, args, ctx);
+    }
+
+    const result_list = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+    result_list.* = .{ .items = result_items };
+    return Value{ .list = result_list };
+}
+
+/// filter 評価
+/// (filter pred coll)
+fn runFilter(node: *const node_mod.FilterNode, ctx: *Context) EvalError!Value {
+    const fn_val = try run(node.fn_node, ctx);
+    const coll_val = try run(node.coll_node, ctx);
+
+    const items: []const Value = switch (coll_val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        else => return error.TypeError,
+    };
+
+    // 述語が真の要素だけ集める
+    var result_buf: std.ArrayListUnmanaged(Value) = .empty;
+    for (items) |item| {
+        const args = ctx.allocator.alloc(Value, 1) catch return error.OutOfMemory;
+        args[0] = item;
+        const pred_result = try callWithArgs(fn_val, args, ctx);
+        if (pred_result.isTruthy()) {
+            result_buf.append(ctx.allocator, item) catch return error.OutOfMemory;
+        }
+    }
+
+    const result_list = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+    result_list.* = .{ .items = result_buf.toOwnedSlice(ctx.allocator) catch return error.OutOfMemory };
+    return Value{ .list = result_list };
 }
 
 // === テスト ===

@@ -152,6 +152,22 @@ pub const ReduceNode = struct {
     stack: SourceInfo,
 };
 
+/// map ノード
+/// (map f coll)
+pub const MapNode = struct {
+    fn_node: *Node, // 変換関数
+    coll_node: *Node, // コレクション
+    stack: SourceInfo,
+};
+
+/// filter ノード
+/// (filter pred coll)
+pub const FilterNode = struct {
+    fn_node: *Node, // 述語関数
+    coll_node: *Node, // コレクション
+    stack: SourceInfo,
+};
+
 // === Node 本体 ===
 
 /// 実行可能ノード
@@ -188,6 +204,8 @@ pub const Node = union(enum) {
     partial_node: *PartialNode,
     comp_node: *CompNode,
     reduce_node: *ReduceNode,
+    map_node: *MapNode,
+    filter_node: *FilterNode,
 
     /// スタック情報を取得
     pub fn stack(self: Node) SourceInfo {
@@ -209,6 +227,8 @@ pub const Node = union(enum) {
             .partial_node => |n| n.stack,
             .comp_node => |n| n.stack,
             .reduce_node => |n| n.stack,
+            .map_node => |n| n.stack,
+            .filter_node => |n| n.stack,
         };
     }
 
@@ -232,6 +252,8 @@ pub const Node = union(enum) {
             .partial_node => "partial",
             .comp_node => "comp",
             .reduce_node => "reduce",
+            .map_node => "map",
+            .filter_node => "filter",
         };
     }
 };
