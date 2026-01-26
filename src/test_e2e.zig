@@ -2101,3 +2101,145 @@ test "compare: lazy concat" {
         \\(pr-str (concat (lazy-seq (cons 1 (lazy-seq (cons 2 nil)))) (lazy-seq (cons 3 (lazy-seq (cons 4 nil))))))
     , "(1 2 3 4)");
 }
+
+test "compare: iterate - infinite lazy sequence" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本: (iterate inc 0) → (0 1 2 3 4 ...)
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (take 5 (iterate inc 0)))
+    , "(0 1 2 3 4)");
+
+    // iterate は lazy
+    try expectBoolBoth(allocator, &env,
+        \\(lazy-seq? (iterate inc 0))
+    , true);
+
+    // ユーザー定義関数との合成
+    try expectStrBoth(allocator, &env,
+        \\(do
+        \\  (def double (fn [x] (* x 2)))
+        \\  (pr-str (take 5 (iterate double 1))))
+    , "(1 2 4 8 16)");
+
+    // drop + take
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (take 3 (drop 10 (iterate inc 0))))
+    , "(10 11 12)");
+}
+
+test "compare: repeat - infinite and finite" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // (repeat x) → 無限
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (take 4 (repeat :a)))
+    , "(:a :a :a :a)");
+
+    // 無限 repeat は lazy
+    try expectBoolBoth(allocator, &env,
+        \\(lazy-seq? (repeat 42))
+    , true);
+
+    // (repeat n x) → 有限（既存動作）
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (repeat 3 "hello"))
+    , "(\"hello\" \"hello\" \"hello\")");
+}
+
+test "compare: cycle - infinite repetition of collection" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本: (cycle [1 2 3]) → (1 2 3 1 2 3 ...)
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (take 8 (cycle [1 2 3])))
+    , "(1 2 3 1 2 3 1 2)");
+
+    // cycle は lazy
+    try expectBoolBoth(allocator, &env,
+        \\(lazy-seq? (cycle (list 1 2)))
+    , true);
+
+    // 空コレクション → nil
+    try expectNilBoth(allocator, &env,
+        \\(cycle [])
+    );
+
+    // map + cycle 合成
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (take 6 (map inc (cycle [10 20 30]))))
+    , "(11 21 31 11 21 31)");
+}
+
+test "compare: range - infinite lazy version" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // (range) → (0 1 2 3 ...)
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (take 5 (range)))
+    , "(0 1 2 3 4)");
+
+    // (range) は lazy
+    try expectBoolBoth(allocator, &env,
+        \\(lazy-seq? (range))
+    , true);
+
+    // filter + range
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (take 5 (filter even? (range))))
+    , "(0 2 4 6 8)");
+
+    // 有限 range は変更なし
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (range 5))
+    , "(0 1 2 3 4)");
+}
+
+test "compare: mapcat lazy" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本: 有限 mapcat
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (mapcat (fn [x] (list x (* x 10))) (list 1 2 3)))
+    , "(1 10 2 20 3 30)");
+
+    // 無限入力での mapcat
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (take 6 (mapcat (fn [x] (list x x)) (range))))
+    , "(0 0 1 1 2 2)");
+
+    // 空サブコレクションをスキップ
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (mapcat (fn [x] (if (even? x) (list x) nil)) (list 1 2 3 4 5)))
+    , "(2 4)");
+
+    // for 内部の mapcat（ネスト束縛）
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (for [x [1 2] y [:a :b]] (list x y)))
+    , "((1 :a) (1 :b) (2 :a) (2 :b))");
+}

@@ -280,40 +280,87 @@ pub const LazySeq = struct {
     transform: ?Transform,
     /// 遅延 concat: 残りのコレクション列
     concat_sources: ?[]const Value,
+    /// 遅延ジェネレータ: 無限シーケンス生成器
+    generator: ?Generator,
 
-    pub const TransformKind = enum { map, filter };
+    pub const TransformKind = enum { map, filter, mapcat };
     pub const Transform = struct {
         kind: TransformKind,
         fn_val: Value,    // 変換関数（map の f、filter の pred）
         source: Value,    // 変換元シーケンス（lazy-seq or list/vector）
     };
 
+    /// 遅延ジェネレータ: iterate, repeat, cycle, range 等の無限シーケンス
+    pub const GeneratorKind = enum { iterate, repeat_infinite, cycle, range_infinite };
+    pub const Generator = struct {
+        kind: GeneratorKind,
+        fn_val: ?Value,   // iterate の f
+        current: Value,   // 現在の値（iterate の x、repeat の値、range の n）
+        source: ?[]const Value, // cycle の元コレクション
+        source_idx: usize,     // cycle の現在位置
+    };
+
+    const empty_fields = LazySeq{
+        .body_fn = null, .realized = null, .cons_head = null, .cons_tail = null,
+        .transform = null, .concat_sources = null, .generator = null,
+    };
+
     /// 未実体化の LazySeq を作成（サンク形式）
     pub fn init(body_fn: Value) LazySeq {
-        return .{ .body_fn = body_fn, .realized = null, .cons_head = null, .cons_tail = null, .transform = null, .concat_sources = null };
+        var ls = empty_fields;
+        ls.body_fn = body_fn;
+        return ls;
     }
 
     /// cons 形式の LazySeq を作成: (cons head lazy-tail)
     /// head は即値、tail は遅延のまま
     pub fn initCons(head: Value, tail: Value) LazySeq {
-        return .{ .body_fn = null, .realized = null, .cons_head = head, .cons_tail = tail, .transform = null, .concat_sources = null };
+        var ls = empty_fields;
+        ls.cons_head = head;
+        ls.cons_tail = tail;
+        return ls;
     }
 
     /// 遅延変換の LazySeq を作成（lazy map/filter）
     pub fn initTransform(kind: TransformKind, fn_val: Value, source: Value) LazySeq {
-        return .{
-            .body_fn = null, .realized = null, .cons_head = null, .cons_tail = null,
-            .transform = .{ .kind = kind, .fn_val = fn_val, .source = source }, .concat_sources = null,
-        };
+        var ls = empty_fields;
+        ls.transform = .{ .kind = kind, .fn_val = fn_val, .source = source };
+        return ls;
     }
 
     /// 遅延 concat の LazySeq を作成
-    /// sources は結合するコレクション列（lazy-seq, list, vector, nil のいずれか）
     pub fn initConcat(sources: []const Value) LazySeq {
-        return .{
-            .body_fn = null, .realized = null, .cons_head = null, .cons_tail = null,
-            .transform = null, .concat_sources = sources,
-        };
+        var ls = empty_fields;
+        ls.concat_sources = sources;
+        return ls;
+    }
+
+    /// iterate ジェネレータ: (iterate f x) → (x (f x) (f (f x)) ...)
+    pub fn initIterate(fn_val: Value, initial: Value) LazySeq {
+        var ls = empty_fields;
+        ls.generator = .{ .kind = .iterate, .fn_val = fn_val, .current = initial, .source = null, .source_idx = 0 };
+        return ls;
+    }
+
+    /// repeat 無限ジェネレータ: (repeat x) → (x x x ...)
+    pub fn initRepeatInfinite(val: Value) LazySeq {
+        var ls = empty_fields;
+        ls.generator = .{ .kind = .repeat_infinite, .fn_val = null, .current = val, .source = null, .source_idx = 0 };
+        return ls;
+    }
+
+    /// cycle ジェネレータ: (cycle coll) → 元コレクションを無限に繰り返す
+    pub fn initCycle(items: []const Value, start_idx: usize) LazySeq {
+        var ls = empty_fields;
+        ls.generator = .{ .kind = .cycle, .fn_val = null, .current = nil, .source = items, .source_idx = start_idx };
+        return ls;
+    }
+
+    /// range 無限ジェネレータ: (range) → (0 1 2 3 ...)
+    pub fn initRangeInfinite(start: Value) LazySeq {
+        var ls = empty_fields;
+        ls.generator = .{ .kind = .range_infinite, .fn_val = null, .current = start, .source = null, .source_idx = 0 };
+        return ls;
     }
 
     /// 既に実体化済みかどうか
@@ -833,6 +880,13 @@ pub const Value = union(enum) {
                         .source = try t.source.deepClone(allocator),
                     } else null,
                     .concat_sources = if (ls.concat_sources) |cs| try deepCloneValues(allocator, cs) else null,
+                    .generator = if (ls.generator) |g| LazySeq.Generator{
+                        .kind = g.kind,
+                        .fn_val = if (g.fn_val) |fv| try fv.deepClone(allocator) else null,
+                        .current = try g.current.deepClone(allocator),
+                        .source = if (g.source) |s| try deepCloneValues(allocator, s) else null,
+                        .source_idx = g.source_idx,
+                    } else null,
                 };
                 break :blk .{ .lazy_seq = new_ls };
             },

@@ -1686,8 +1686,6 @@ pub const Analyzer = struct {
             return try self.expandFnil(items);
         } else if (std.mem.eql(u8, name, "assert")) {
             return try self.expandAssert(items);
-        } else if (std.mem.eql(u8, name, "mapcat")) {
-            return try self.expandMapcat(items);
         } else if (std.mem.eql(u8, name, "keep")) {
             return try self.expandKeep(items);
         } else if (std.mem.eql(u8, name, "keep-indexed")) {

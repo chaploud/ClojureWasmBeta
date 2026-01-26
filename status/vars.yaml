@@ -1022,8 +1022,9 @@ vars:
       impl_type: none
     cycle:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     dec:
       type: function
       status: done
@@ -1503,8 +1504,9 @@ vars:
       impl_type: none
     iterate:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     iteration:
       type: function
       status: todo
@@ -1631,7 +1633,8 @@ vars:
     mapcat:
       type: function
       status: done
-      impl_type: macro
+      impl_type: builtin
+      layer: host
     mapv:
       type: function
       status: done

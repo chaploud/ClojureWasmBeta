@@ -48,6 +48,12 @@ pub fn forceLazySeqOneStep(allocator: std.mem.Allocator, ls: *value_mod.LazySeq)
         return;
     }
 
+    // ジェネレータの場合
+    if (ls.generator) |g| {
+        try forceGeneratorOneStep(allocator, ls, g);
+        return;
+    }
+
     // サンク形式の場合: body_fn を呼んで結果を取得
     const body_fn = ls.body_fn orelse {
         // body_fn も cons_head もない → 空
@@ -67,6 +73,7 @@ pub fn forceLazySeqOneStep(allocator: std.mem.Allocator, ls: *value_mod.LazySeq)
         ls.cons_tail = inner.cons_tail;
         ls.transform = inner.transform;
         ls.concat_sources = inner.concat_sources;
+        ls.generator = inner.generator;
         // 再帰的に一段 force（内側もサンク形式かもしれない）
         return forceLazySeqOneStep(allocator, ls);
     }
@@ -140,6 +147,56 @@ fn forceTransformOneStep(
                 current = rest_val;
             }
         },
+        .mapcat => {
+            // source を走査して非空のサブコレクションを見つける
+            var current = t.source;
+            while (true) {
+                const src_elem = try seqFirst(allocator, current);
+                if (src_elem == .nil) {
+                    // source 終了 → 空
+                    ls.transform = null;
+                    ls.realized = value_mod.nil;
+                    return;
+                }
+                // f(elem) → サブコレクション
+                const sub_coll = try call(t.fn_val, &[_]Value{src_elem}, allocator);
+                const src_rest = try seqRest(allocator, current);
+
+                // サブコレクションの first を取得
+                const sub_first = try seqFirst(allocator, sub_coll);
+                if (sub_first == .nil) {
+                    // サブコレクションが空 → 次の要素へスキップ
+                    current = src_rest;
+                    continue;
+                }
+
+                // cons(sub_first, concat(rest(sub_coll), lazy-mapcat(f, rest(source))))
+                ls.transform = null;
+                ls.cons_head = sub_first;
+
+                const sub_rest = try seqRest(allocator, sub_coll);
+                if (isSeqEmpty(src_rest)) {
+                    // source の残りがない → tail は rest(sub_coll)
+                    ls.cons_tail = if (isSeqEmpty(sub_rest)) value_mod.nil else sub_rest;
+                } else if (isSeqEmpty(sub_rest)) {
+                    // サブコレクションの残りがない → tail は lazy-mapcat(f, rest(source))
+                    const tail_ls = try allocator.create(value_mod.LazySeq);
+                    tail_ls.* = value_mod.LazySeq.initTransform(.mapcat, t.fn_val, src_rest);
+                    ls.cons_tail = Value{ .lazy_seq = tail_ls };
+                } else {
+                    // 両方ある → concat(rest(sub_coll), lazy-mapcat(f, rest(source)))
+                    const mapcat_tail = try allocator.create(value_mod.LazySeq);
+                    mapcat_tail.* = value_mod.LazySeq.initTransform(.mapcat, t.fn_val, src_rest);
+                    const sources = try allocator.alloc(Value, 2);
+                    sources[0] = sub_rest;
+                    sources[1] = Value{ .lazy_seq = mapcat_tail };
+                    const concat_ls = try allocator.create(value_mod.LazySeq);
+                    concat_ls.* = value_mod.LazySeq.initConcat(sources);
+                    ls.cons_tail = Value{ .lazy_seq = concat_ls };
+                }
+                return;
+            }
+        },
     }
 }
 
@@ -209,6 +266,59 @@ fn forceConcatOneStep(
     // 全ての source が空 → 結果も空
     ls.concat_sources = null;
     ls.realized = value_mod.nil;
+}
+
+/// ジェネレータを一段 force する
+fn forceGeneratorOneStep(
+    allocator: std.mem.Allocator,
+    ls: *value_mod.LazySeq,
+    g: value_mod.LazySeq.Generator,
+) anyerror!void {
+    switch (g.kind) {
+        .iterate => {
+            // cons(current, lazy-iterate(f, f(current)))
+            const f = g.fn_val orelse return error.TypeError;
+            const call = call_fn orelse return error.TypeError;
+            const next_val = try call(f, &[_]Value{g.current}, allocator);
+            ls.generator = null;
+            ls.cons_head = g.current;
+            const tail_ls = try allocator.create(value_mod.LazySeq);
+            tail_ls.* = value_mod.LazySeq.initIterate(f, next_val);
+            ls.cons_tail = Value{ .lazy_seq = tail_ls };
+        },
+        .repeat_infinite => {
+            // cons(current, lazy-repeat(current))
+            ls.generator = null;
+            ls.cons_head = g.current;
+            const tail_ls = try allocator.create(value_mod.LazySeq);
+            tail_ls.* = value_mod.LazySeq.initRepeatInfinite(g.current);
+            ls.cons_tail = Value{ .lazy_seq = tail_ls };
+        },
+        .cycle => {
+            // cons(source[idx], lazy-cycle(source, (idx+1) % len))
+            const source = g.source orelse return error.TypeError;
+            if (source.len == 0) {
+                ls.generator = null;
+                ls.realized = value_mod.nil;
+                return;
+            }
+            const idx = g.source_idx % source.len;
+            ls.generator = null;
+            ls.cons_head = source[idx];
+            const tail_ls = try allocator.create(value_mod.LazySeq);
+            tail_ls.* = value_mod.LazySeq.initCycle(source, idx + 1);
+            ls.cons_tail = Value{ .lazy_seq = tail_ls };
+        },
+        .range_infinite => {
+            // cons(current, lazy-range(current + 1))
+            const n = g.current.int;
+            ls.generator = null;
+            ls.cons_head = g.current;
+            const tail_ls = try allocator.create(value_mod.LazySeq);
+            tail_ls.* = value_mod.LazySeq.initRangeInfinite(value_mod.intVal(n + 1));
+            ls.cons_tail = Value{ .lazy_seq = tail_ls };
+        },
+    }
 }
 
 /// シーケンスの first を取得（lazy-seq/list/vector/nil 対応）
@@ -1739,7 +1849,14 @@ pub fn drop(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// range : 数列を生成
 /// (range end), (range start end), (range start end step)
 pub fn range(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len < 1 or args.len > 3) return error.ArityError;
+    if (args.len > 3) return error.ArityError;
+
+    // (range) → 無限 lazy-seq: (0 1 2 3 ...)
+    if (args.len == 0) {
+        const ls = try allocator.create(value_mod.LazySeq);
+        ls.* = value_mod.LazySeq.initRangeInfinite(value_mod.intVal(0));
+        return Value{ .lazy_seq = ls };
+    }
 
     var start: i64 = 0;
     var end: i64 = undefined;
@@ -1987,7 +2104,16 @@ pub fn vecFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 
 /// repeat : 値を n 回繰り返したリストを生成
 pub fn repeat(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len != 2) return error.ArityError;
+    if (args.len < 1 or args.len > 2) return error.ArityError;
+
+    // (repeat x) → 無限 lazy-seq: (x x x ...)
+    if (args.len == 1) {
+        const ls = try allocator.create(value_mod.LazySeq);
+        ls.* = value_mod.LazySeq.initRepeatInfinite(args[0]);
+        return Value{ .lazy_seq = ls };
+    }
+
+    // (repeat n x) → 有限リスト
     if (args[0] != .int) return error.TypeError;
     const n_raw = args[0].int;
     if (n_raw < 0) return error.TypeError;
@@ -2001,6 +2127,38 @@ pub fn repeat(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
     const result = try allocator.create(value_mod.PersistentList);
     result.* = .{ .items = items };
     return Value{ .list = result };
+}
+
+/// mapcat : (mapcat f coll) → lazy concat of (map f coll)
+pub fn mapcat(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const fn_val = args[0];
+    const coll_val = args[1];
+
+    // lazy-seq/コレクション問わず lazy mapcat を返す
+    const ls = try allocator.create(value_mod.LazySeq);
+    ls.* = value_mod.LazySeq.initTransform(.mapcat, fn_val, coll_val);
+    return Value{ .lazy_seq = ls };
+}
+
+/// iterate : (iterate f x) → 無限 lazy-seq (x (f x) (f (f x)) ...)
+pub fn iterate(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const ls = try allocator.create(value_mod.LazySeq);
+    ls.* = value_mod.LazySeq.initIterate(args[0], args[1]);
+    return Value{ .lazy_seq = ls };
+}
+
+/// cycle : (cycle coll) → 無限 lazy-seq（coll の要素を繰り返す）
+pub fn cycle(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const items = (try getItemsRealized(allocator, args[0])) orelse return error.TypeError;
+    if (items.len == 0) return value_mod.nil;
+    // items を永続化（元の参照が消えても安全なようにコピー）
+    const owned = try allocator.dupe(Value, items);
+    const ls = try allocator.create(value_mod.LazySeq);
+    ls.* = value_mod.LazySeq.initCycle(owned, 0);
+    return Value{ .lazy_seq = ls };
 }
 
 /// distinct : 重複を除いたリストを返す
@@ -3876,6 +4034,9 @@ const builtins = [_]BuiltinDef{
     .{ .name = "seq", .func = seq },
     .{ .name = "vec", .func = vecFn },
     .{ .name = "repeat", .func = repeat },
+    .{ .name = "iterate", .func = iterate },
+    .{ .name = "cycle", .func = cycle },
+    .{ .name = "mapcat", .func = mapcat },
     .{ .name = "distinct", .func = distinct },
     .{ .name = "flatten", .func = flatten },
     // 文字列
