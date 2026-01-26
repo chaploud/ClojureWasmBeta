@@ -48,6 +48,7 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .quote_node => |n| n.form,
         .throw_node => return error.TypeError, // TODO: 例外処理
         .apply_node => |n| runApply(n, ctx),
+        .partial_node => |n| runPartial(n, ctx),
     };
 }
 
@@ -164,6 +165,11 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
     }
 
     // 関数を呼び出し
+    return callWithArgs(fn_val, args, ctx);
+}
+
+/// 関数を引数付きで呼び出し（partial_fn サポート付き）
+fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Value {
     return switch (fn_val) {
         .fn_val => |f| blk: {
             // 組み込み関数
@@ -208,6 +214,16 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
             // ボディを評価
             const body: *const Node = @ptrCast(@alignCast(arity.body));
             break :blk run(body, &fn_ctx);
+        },
+        .partial_fn => |p| blk: {
+            // partial_fn: 部分適用された引数と新しい引数を結合
+            const total_len = p.args.len + args.len;
+            var all_args = ctx.allocator.alloc(Value, total_len) catch return error.OutOfMemory;
+            @memcpy(all_args[0..p.args.len], p.args);
+            @memcpy(all_args[p.args.len..], args);
+
+            // 元の関数を呼び出し（再帰的にpartial_fnもサポート）
+            break :blk callWithArgs(p.fn_val, all_args, ctx);
         },
         else => error.TypeError,
     };
@@ -262,45 +278,29 @@ fn runApply(node: *const node_mod.ApplyNode, ctx: *Context) EvalError!Value {
     @memcpy(all_args[0..middle_vals.len], middle_vals);
     @memcpy(all_args[middle_vals.len..], seq_items);
 
-    // 関数を呼び出し
-    return switch (fn_val) {
-        .fn_val => |f| blk: {
-            // 組み込み関数
-            if (f.builtin) |builtin_ptr| {
-                const builtin: core.BuiltinFn = @ptrCast(@alignCast(builtin_ptr));
-                break :blk builtin(ctx.allocator, all_args) catch return error.TypeError;
-            }
+    // 関数を呼び出し（partial_fn もサポート）
+    return callWithArgs(fn_val, all_args, ctx);
+}
 
-            // ユーザー定義関数
-            const arity = f.findArity(all_args.len) orelse return error.ArityError;
+/// partial 評価
+fn runPartial(node: *const node_mod.PartialNode, ctx: *Context) EvalError!Value {
+    // 関数を評価
+    const fn_val = try run(node.fn_node, ctx);
 
-            // 新しいコンテキストを作成
-            var fn_ctx = Context.init(ctx.allocator, ctx.env);
+    // 引数を評価
+    var partial_args = ctx.allocator.alloc(Value, node.args.len) catch return error.OutOfMemory;
+    for (node.args, 0..) |arg, i| {
+        partial_args[i] = try run(arg, ctx);
+    }
 
-            // クロージャ環境をバインド
-            if (f.closure_bindings) |bindings| {
-                fn_ctx = fn_ctx.withBindings(bindings) catch return error.OutOfMemory;
-            }
-
-            // 引数をバインド
-            if (arity.variadic) {
-                // 可変長: 固定引数 + rest リスト
-                const fixed_count = arity.params.len - 1;
-                var bindings_arr = ctx.allocator.alloc(Value, arity.params.len) catch return error.OutOfMemory;
-                @memcpy(bindings_arr[0..fixed_count], all_args[0..fixed_count]);
-                const rest_list = value_mod.PersistentList.fromSlice(ctx.allocator, all_args[fixed_count..]) catch return error.OutOfMemory;
-                bindings_arr[fixed_count] = Value{ .list = rest_list };
-                fn_ctx = fn_ctx.withBindings(bindings_arr) catch return error.OutOfMemory;
-            } else {
-                fn_ctx = fn_ctx.withBindings(all_args) catch return error.OutOfMemory;
-            }
-
-            // ボディを評価
-            const body: *const Node = @ptrCast(@alignCast(arity.body));
-            break :blk run(body, &fn_ctx);
-        },
-        else => error.TypeError,
+    // PartialFn を作成
+    const partial_fn = ctx.allocator.create(value_mod.PartialFn) catch return error.OutOfMemory;
+    partial_fn.* = .{
+        .fn_val = fn_val,
+        .args = partial_args,
     };
+
+    return Value{ .partial_fn = partial_fn };
 }
 
 // === テスト ===

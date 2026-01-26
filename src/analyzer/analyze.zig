@@ -149,6 +149,8 @@ pub const Analyzer = struct {
                 return self.analyzeDefmacro(items);
             } else if (std.mem.eql(u8, sym_name, "apply")) {
                 return self.analyzeApply(items);
+            } else if (std.mem.eql(u8, sym_name, "partial")) {
+                return self.analyzePartial(items);
             }
         }
 
@@ -596,6 +598,34 @@ pub const Analyzer = struct {
         return node;
     }
 
+    fn analyzePartial(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (partial f arg1 arg2 ...)
+        // 最低2引数（関数と1つ以上の引数）
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "partial requires at least 2 arguments", .{});
+        }
+
+        // 関数を解析
+        const fn_node = try self.analyze(items[1]);
+
+        // 部分適用する引数
+        var args = self.allocator.alloc(*Node, items.len - 2) catch return error.OutOfMemory;
+        for (items[2..], 0..) |item, i| {
+            args[i] = try self.analyze(item);
+        }
+
+        const partial_data = self.allocator.create(node_mod.PartialNode) catch return error.OutOfMemory;
+        partial_data.* = .{
+            .fn_node = fn_node,
+            .args = args,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .partial_node = partial_data };
+        return node;
+    }
+
     fn analyzeCall(self: *Analyzer, items: []const Form) err.Error!*Node {
         // (fn arg1 arg2 ...)
         const fn_node = try self.analyze(items[0]);
@@ -848,7 +878,7 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .vector = forms };
             },
-            .char_val, .map, .set, .fn_val, .fn_proto, .var_val => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .char_val, .map, .set, .fn_val, .partial_fn, .fn_proto, .var_val => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

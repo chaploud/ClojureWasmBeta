@@ -545,3 +545,30 @@ test "compare: 複数アリティ fn" {
     // 3つのアリティ
     try expectIntBoth(allocator, &env, "((fn ([] 100) ([x] x) ([x y z] (+ x y z))) 1 2 3)", 6);
 }
+
+test "compare: partial" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本的な partial
+    try expectIntBoth(allocator, &env, "((partial + 10) 5)", 15);
+
+    // 複数の部分適用引数
+    try expectIntBoth(allocator, &env, "((partial + 10 20) 5)", 35);
+
+    // let で束縛
+    try expectIntBoth(allocator, &env, "(let [add5 (partial + 5)] (add5 10))", 15);
+
+    // ユーザー定義関数への partial
+    try expectIntBoth(allocator, &env, "((partial (fn [x y] (+ x y)) 100) 23)", 123);
+
+    // ネストした partial
+    try expectIntBoth(allocator, &env, "((partial (partial + 1) 2) 3)", 6);
+
+    // apply と partial の組み合わせ
+    try expectIntBoth(allocator, &env, "(apply (partial + 10) [1 2 3])", 16);
+}

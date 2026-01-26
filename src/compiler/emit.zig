@@ -83,6 +83,7 @@ pub const Compiler = struct {
             .quote_node => |node| try self.emitQuote(node),
             .throw_node => return error.InvalidNode, // TODO
             .apply_node => |node| try self.emitApply(node),
+            .partial_node => |node| try self.emitPartial(node),
         }
     }
 
@@ -368,6 +369,19 @@ pub const Compiler = struct {
 
         // apply 命令（オペランド: 中間引数の数）
         try self.chunk.emit(.apply, @intCast(node.args.len));
+    }
+
+    fn emitPartial(self: *Compiler, node: *const node_mod.PartialNode) CompileError!void {
+        // 関数をコンパイル
+        try self.compile(node.fn_node);
+
+        // 部分適用する引数をコンパイル
+        for (node.args) |arg| {
+            try self.compile(arg);
+        }
+
+        // partial 命令（オペランド: 引数の数）
+        try self.chunk.emit(.partial, @intCast(node.args.len));
     }
 
     // === ヘルパー ===

@@ -317,6 +317,12 @@ pub const Fn = struct {
     }
 };
 
+/// 部分適用された関数
+pub const PartialFn = struct {
+    fn_val: Value, // 元の関数（fn_val または partial_fn）
+    args: []const Value, // 部分適用された引数
+};
+
 // === Value 本体 ===
 
 /// Runtime値
@@ -342,6 +348,7 @@ pub const Value = union(enum) {
 
     // === 関数 ===
     fn_val: *Fn,
+    partial_fn: *PartialFn, // 部分適用された関数
 
     // === VM用 ===
     fn_proto: FnProtoPtr, // コンパイル済み関数プロトタイプ
@@ -423,6 +430,7 @@ pub const Value = union(enum) {
                 break :blk true;
             },
             .fn_val => |a| a == other.fn_val, // 関数は参照等価
+            .partial_fn => |a| a == other.partial_fn, // 参照等価
             .fn_proto => |a| a == other.fn_proto, // 参照等価
             .var_val => |a| a == other.var_val, // 参照等価
         };
@@ -444,6 +452,7 @@ pub const Value = union(enum) {
             .map => "map",
             .set => "set",
             .fn_val => "function",
+            .partial_fn => "function", // partial も関数として表示
             .fn_proto => "fn-proto",
             .var_val => "var",
         };
@@ -538,6 +547,7 @@ pub const Value = union(enum) {
                     try writer.writeAll("#<fn>");
                 }
             },
+            .partial_fn => try writer.writeAll("#<partial-fn>"),
             .fn_proto => try writer.writeAll("#<fn-proto>"),
             .var_val => try writer.writeAll("#<var>"),
         }

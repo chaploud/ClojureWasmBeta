@@ -284,6 +284,11 @@ pub const VM = struct {
                     const arity_count = instr.operand;
                     try self.createMultiClosure(@intCast(arity_count));
                 },
+                .partial => {
+                    // partial 関数を作成
+                    const arg_count = instr.operand;
+                    try self.createPartialFn(@intCast(arg_count));
+                },
 
                 // ═══════════════════════════════════════════════════════
                 // [H] loop/recur
@@ -476,6 +481,29 @@ pub const VM = struct {
                 self.sp = fn_idx;
                 try self.push(result);
             },
+            .partial_fn => |p| {
+                // partial_fn: 部分適用された引数と新しい引数を結合して呼び出し
+                const partial_args = p.args;
+                const new_args = self.stack[fn_idx + 1 .. self.sp];
+                const total_args = partial_args.len + new_args.len;
+
+                // 引数を一時保存
+                var combined_args = self.allocator.alloc(Value, total_args) catch return error.OutOfMemory;
+                defer self.allocator.free(combined_args);
+
+                @memcpy(combined_args[0..partial_args.len], partial_args);
+                @memcpy(combined_args[partial_args.len..], new_args);
+
+                // スタックを巻き戻して新しい引数をプッシュ
+                self.sp = fn_idx;
+                try self.push(p.fn_val);
+                for (combined_args) |arg| {
+                    try self.push(arg);
+                }
+
+                // 元の関数を呼び出し（再帰的にpartial_fnもサポート）
+                try self.callValue(total_args);
+            },
             else => return error.TypeError,
         }
     }
@@ -582,6 +610,30 @@ pub const VM = struct {
         };
 
         try self.push(Value{ .fn_val = fn_obj });
+    }
+
+    /// partial 関数を作成
+    fn createPartialFn(self: *VM, arg_count: usize) VMError!void {
+        // スタック: [fn, arg1, arg2, ..., argN] (argN がトップ)
+        // 引数を取り出す（逆順で）
+        var args = self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
+        var i = arg_count;
+        while (i > 0) {
+            i -= 1;
+            args[i] = self.pop();
+        }
+
+        // 関数を取り出す
+        const fn_val = self.pop();
+
+        // PartialFn を作成
+        const partial = self.allocator.create(value_mod.PartialFn) catch return error.OutOfMemory;
+        partial.* = .{
+            .fn_val = fn_val,
+            .args = args,
+        };
+
+        try self.push(Value{ .partial_fn = partial });
     }
 
     /// def を実行

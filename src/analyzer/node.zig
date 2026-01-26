@@ -128,6 +128,14 @@ pub const ApplyNode = struct {
     stack: SourceInfo,
 };
 
+/// partial ノード
+/// (partial f args...)
+pub const PartialNode = struct {
+    fn_node: *Node, // 関数
+    args: []const *Node, // 部分適用する引数
+    stack: SourceInfo,
+};
+
 // === Node 本体 ===
 
 /// 実行可能ノード
@@ -161,6 +169,7 @@ pub const Node = union(enum) {
 
     // 高階関数
     apply_node: *ApplyNode,
+    partial_node: *PartialNode,
 
     /// スタック情報を取得
     pub fn stack(self: Node) SourceInfo {
@@ -179,6 +188,7 @@ pub const Node = union(enum) {
             .quote_node => |n| n.stack,
             .throw_node => |n| n.stack,
             .apply_node => |n| n.stack,
+            .partial_node => |n| n.stack,
         };
     }
 
@@ -199,6 +209,7 @@ pub const Node = union(enum) {
             .quote_node => "quote",
             .throw_node => "throw",
             .apply_node => "apply",
+            .partial_node => "partial",
         };
     }
 };
