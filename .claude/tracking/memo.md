@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.4 シーケンス操作 完了** - map, filter, take, drop, range 等が動作。
+**Phase 8.5 制御フロー・スレッディングマクロ・ユーティリティ関数 完了**
 
 ### 完了した機能
 
@@ -22,21 +22,25 @@
 | 8.2 | 高階関数 (apply, partial, comp, reduce) |
 | 8.3 | 分配束縛（シーケンシャル `[a b]`、マップ `{:keys [a]}`) |
 | 8.4 | シーケンス操作 (map, filter, take, drop, range 等) |
+| 8.5 | 制御フローマクロ・スレッディングマクロ・ユーティリティ関数 |
 
 ### 組み込み関数
 
 ```
 算術: +, -, *, /, inc, dec
-比較: =, <, >, <=, >=
-論理: not
+比較: =, <, >, <=, >=, not=
+論理: not, and, or
 述語: nil?, number?, integer?, float?, string?, keyword?,
-      symbol?, fn?, coll?, list?, vector?, map?, set?, empty?, contains?
+      symbol?, fn?, coll?, list?, vector?, map?, set?, empty?, contains?,
+      some?, zero?, pos?, neg?, even?, odd?
 コレクション: first, rest, cons, conj, count, nth, get, list, vector
 マップ: hash-map, assoc, dissoc, keys, vals
 シーケンス: take, drop, range, concat, into, reverse, seq, vec,
            repeat, distinct, flatten
+数値: max, min, abs, mod
 文字列: str
 出力: println, pr-str
+ユーティリティ: identity
 ```
 
 ### 特殊形式
@@ -47,48 +51,29 @@
 高階: apply, partial, comp, reduce, map, filter
 ```
 
-### シーケンス操作（8.4 で追加）
+### 組み込みマクロ（8.5 で追加）
 
-```clojure
-;; map / filter（特殊ノード: ユーザー関数を呼び出し）
-(map inc [1 2 3])                        ; => (2 3 4)
-(filter (fn [x] (> x 2)) [1 2 3 4 5])   ; => (3 4 5)
-
-;; 組み込みシーケンス関数
-(take 3 (range 10))                      ; => (0 1 2)
-(drop 2 [1 2 3 4 5])                     ; => (3 4 5)
-(range 5)                                ; => (0 1 2 3 4)
-(range 2 8)                              ; => (2 3 4 5 6 7)
-(range 0 10 3)                           ; => (0 3 6 9)
-(concat [1 2] [3 4])                     ; => (1 2 3 4)
-(into [] (list 1 2 3))                   ; => [1 2 3]
-(reverse [1 2 3])                        ; => (3 2 1)
-(seq [1 2 3])                            ; => (1 2 3) / (seq []) => nil
-(vec (list 1 2 3))                       ; => [1 2 3]
-(repeat 3 :x)                           ; => (:x :x :x)
-(distinct [1 2 1 3])                     ; => (1 2 3)
-(flatten [[1 2] [3 [4 5]]])             ; => (1 2 3 4 5)
-
-;; 複合パイプライン
-(reduce + 0 (take 3 (map inc (range 10))))               ; => 6
-(reduce + 0 (filter (fn [x] (> x 5)) (range 10)))        ; => 30
+```
+制御フロー: cond, when, when-not, if-let, when-let, and, or
+スレッディング: ->, ->>
 ```
 
-**注意**: map/filter は現在 Eager 実装（即座にリスト全体を生成）。
-真の LazySeq（無限シーケンス対応）は将来のフェーズで実装。
+実装方式: Analyzer 内で Form→Form 変換（マクロ展開）後に再帰解析。
+新しい Node 型は不要（既存の if, let, do 等に展開）。
 
 ---
 
 ## 次回タスク
 
-### Phase 8.5: プロトコル or その他機能拡充
+### Phase 8.6 以降の候補
 
 候補:
-- プロトコル (defprotocol, extend-type)
 - try/catch/finally (例外処理)
 - Atom (状態管理)
-- cond, when, when-not, if-let, when-let (制御フロー)
-- threading macro (->, ->>)
+- プロトコル (defprotocol, extend-type)
+- LazySeq（真の遅延シーケンス）
+- 文字列操作拡充 (subs, str/join, etc.)
+- 正規表現
 
 ---
 
@@ -96,10 +81,10 @@
 
 | Phase | 内容 | 依存 |
 |-------|------|------|
-| 8.5 | プロトコル or 機能拡充 | - |
-| 8.6 | LazySeq（真の遅延シーケンス）| 無限シーケンスに必要 |
-| 9 | GC | LazySeq導入後に必須 |
-| 10 | Wasm連携 | 言語機能充実後 |
+| 8.6+ | 機能拡充 (try/catch, Atom, プロトコル等) | - |
+| 9 | LazySeq（真の遅延シーケンス）| 無限シーケンスに必要 |
+| 10 | GC | LazySeq導入後に必須 |
+| 11 | Wasm連携 | 言語機能充実後 |
 
 詳細: `docs/reference/architecture.md`
 
@@ -116,7 +101,7 @@
 - char_val は Form に対応していない（valueToForm でエラー）
 
 ### メモリ管理
-- **メモリリーク（Phase 9 GC で対応予定）**:
+- **メモリリーク（Phase 10 GC で対応予定）**:
   - evaluator.zig の args 配列（バインディングスタック改善で対応）
   - Value 所有権（Var 破棄時に内部 Fn が解放されない）
   - context.withBinding の配列（バインディング毎に新配列を確保）
@@ -128,6 +113,10 @@
 - map/filter は Eager 実装（リスト全体を即座に生成）
 - LazySeq が必要な場合（無限シーケンス、遅延実行）は別途実装が必要
 - `(range)` 引数なし（無限シーケンス）は未サポート
+
+### 組み込みマクロ
+- and/or は短絡評価（let + if に展開）
+- 合成シンボル名 `__and__`, `__or__` を使用（衝突の可能性は低いが gensym が理想）
 
 ---
 

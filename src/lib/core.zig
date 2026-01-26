@@ -305,6 +305,150 @@ pub fn notFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     };
 }
 
+/// not= : 等しくないかどうか
+pub fn notEq(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    return if (args[0].eql(args[1])) value_mod.false_val else value_mod.true_val;
+}
+
+/// identity : 引数をそのまま返す
+pub fn identity(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return args[0];
+}
+
+/// some? : nil でないかどうか
+pub fn isSome(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0].isNil()) value_mod.false_val else value_mod.true_val;
+}
+
+/// zero? : 0 かどうか
+pub fn isZero(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .int => |n| if (n == 0) value_mod.true_val else value_mod.false_val,
+        .float => |n| if (n == 0.0) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// pos? : 正数かどうか
+pub fn isPos(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .int => |n| if (n > 0) value_mod.true_val else value_mod.false_val,
+        .float => |n| if (n > 0.0) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// neg? : 負数かどうか
+pub fn isNeg(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .int => |n| if (n < 0) value_mod.true_val else value_mod.false_val,
+        .float => |n| if (n < 0.0) value_mod.true_val else value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// even? : 偶数かどうか
+pub fn isEven(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .int => |n| if (@mod(n, 2) == 0) value_mod.true_val else value_mod.false_val,
+        else => error.TypeError,
+    };
+}
+
+/// odd? : 奇数かどうか
+pub fn isOdd(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .int => |n| if (@mod(n, 2) != 0) value_mod.true_val else value_mod.false_val,
+        else => error.TypeError,
+    };
+}
+
+/// max : 最大値
+pub fn max(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len < 1) return error.ArityError;
+    var result = args[0];
+    for (args[1..]) |arg| {
+        const is_less = switch (result) {
+            .int => |a| switch (arg) {
+                .int => |b| a < b,
+                .float => |b| @as(f64, @floatFromInt(a)) < b,
+                else => return error.TypeError,
+            },
+            .float => |a| switch (arg) {
+                .int => |b| a < @as(f64, @floatFromInt(b)),
+                .float => |b| a < b,
+                else => return error.TypeError,
+            },
+            else => return error.TypeError,
+        };
+        if (is_less) result = arg;
+    }
+    return result;
+}
+
+/// min : 最小値
+pub fn min(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len < 1) return error.ArityError;
+    var result = args[0];
+    for (args[1..]) |arg| {
+        const is_greater = switch (result) {
+            .int => |a| switch (arg) {
+                .int => |b| a > b,
+                .float => |b| @as(f64, @floatFromInt(a)) > b,
+                else => return error.TypeError,
+            },
+            .float => |a| switch (arg) {
+                .int => |b| a > @as(f64, @floatFromInt(b)),
+                .float => |b| a > b,
+                else => return error.TypeError,
+            },
+            else => return error.TypeError,
+        };
+        if (is_greater) result = arg;
+    }
+    return result;
+}
+
+/// abs : 絶対値
+pub fn abs(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .int => |n| value_mod.intVal(if (n < 0) -n else n),
+        .float => |n| value_mod.floatVal(@abs(n)),
+        else => error.TypeError,
+    };
+}
+
+/// mod : 剰余
+pub fn modFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .int or args[1] != .int) return error.TypeError;
+    const a = args[0].int;
+    const b = args[1].int;
+    if (b == 0) return error.DivisionByZero;
+    return value_mod.intVal(@mod(a, b));
+}
+
 // ============================================================
 // 述語
 // ============================================================
@@ -1443,6 +1587,13 @@ const builtins = [_]BuiltinDef{
     .{ .name = ">=", .func = gte },
     // 論理
     .{ .name = "not", .func = notFn },
+    .{ .name = "not=", .func = notEq },
+    // ユーティリティ
+    .{ .name = "identity", .func = identity },
+    .{ .name = "abs", .func = abs },
+    .{ .name = "mod", .func = modFn },
+    .{ .name = "max", .func = max },
+    .{ .name = "min", .func = min },
     // 述語
     .{ .name = "nil?", .func = isNil },
     .{ .name = "number?", .func = isNumber },
@@ -1458,6 +1609,12 @@ const builtins = [_]BuiltinDef{
     .{ .name = "map?", .func = isMap },
     .{ .name = "set?", .func = isSet },
     .{ .name = "empty?", .func = isEmpty },
+    .{ .name = "some?", .func = isSome },
+    .{ .name = "zero?", .func = isZero },
+    .{ .name = "pos?", .func = isPos },
+    .{ .name = "neg?", .func = isNeg },
+    .{ .name = "even?", .func = isEven },
+    .{ .name = "odd?", .func = isOdd },
     // コンストラクタ
     .{ .name = "list", .func = list },
     .{ .name = "vector", .func = vector },

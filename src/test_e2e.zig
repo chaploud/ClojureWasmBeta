@@ -881,3 +881,109 @@ test "compare: sequence operations" {
         \\(reduce + 0 (filter (fn [x] (> x 5)) (range 10)))
     , 30);
 }
+
+// ============================================================
+// Phase 8.5: 制御フローマクロ・スレッディングマクロ・ユーティリティ関数
+// ============================================================
+
+test "compare: control flow macros" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // cond
+    try expectIntBoth(allocator, &env, "(cond true 1 true 2)", 1);
+    try expectIntBoth(allocator, &env, "(cond false 1 true 2)", 2);
+    try expectNilBoth(allocator, &env, "(cond false 1 false 2)");
+
+    // when / when-not
+    try expectIntBoth(allocator, &env, "(when true 42)", 42);
+    try expectNilBoth(allocator, &env, "(when false 42)");
+    try expectIntBoth(allocator, &env, "(when-not false 42)", 42);
+    try expectNilBoth(allocator, &env, "(when-not true 42)");
+
+    // if-let
+    try expectIntBoth(allocator, &env, "(if-let [x 1] x 0)", 1);
+    try expectIntBoth(allocator, &env, "(if-let [x nil] x 0)", 0);
+
+    // when-let
+    try expectIntBoth(allocator, &env, "(when-let [x 10] x)", 10);
+    try expectNilBoth(allocator, &env, "(when-let [x nil] x)");
+
+    // and
+    try expectBoolBoth(allocator, &env, "(and true true)", true);
+    try expectBoolBoth(allocator, &env, "(and true false)", false);
+    try expectBoolBoth(allocator, &env, "(and false true)", false);
+    try expectIntBoth(allocator, &env, "(and 1 2 3)", 3);
+
+    // or
+    try expectIntBoth(allocator, &env, "(or nil 2 3)", 2);
+    try expectIntBoth(allocator, &env, "(or 1 2)", 1);
+    try expectNilBoth(allocator, &env, "(or nil nil)");
+}
+
+test "compare: threading macros" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // -> (thread-first)
+    try expectIntBoth(allocator, &env, "(-> 5 inc inc)", 7);
+    try expectIntBoth(allocator, &env, "(-> 10 (- 3))", 7);
+
+    // ->> (thread-last)
+    try expectIntBoth(allocator, &env, "(->> 5 (+ 3))", 8);
+    try expectIntBoth(allocator, &env,
+        \\(->> (range 5) (map inc) (reduce + 0))
+    , 15);
+}
+
+test "compare: utility functions" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // not=
+    try expectBoolBoth(allocator, &env, "(not= 1 2)", true);
+    try expectBoolBoth(allocator, &env, "(not= 1 1)", false);
+
+    // identity
+    try expectIntBoth(allocator, &env, "(identity 42)", 42);
+
+    // some?
+    try expectBoolBoth(allocator, &env, "(some? 1)", true);
+    try expectBoolBoth(allocator, &env, "(some? nil)", false);
+
+    // 数値述語
+    try expectBoolBoth(allocator, &env, "(zero? 0)", true);
+    try expectBoolBoth(allocator, &env, "(zero? 1)", false);
+    try expectBoolBoth(allocator, &env, "(pos? 5)", true);
+    try expectBoolBoth(allocator, &env, "(pos? -1)", false);
+    try expectBoolBoth(allocator, &env, "(neg? -3)", true);
+    try expectBoolBoth(allocator, &env, "(neg? 0)", false);
+    try expectBoolBoth(allocator, &env, "(even? 4)", true);
+    try expectBoolBoth(allocator, &env, "(even? 3)", false);
+    try expectBoolBoth(allocator, &env, "(odd? 3)", true);
+    try expectBoolBoth(allocator, &env, "(odd? 4)", false);
+
+    // max / min
+    try expectIntBoth(allocator, &env, "(max 3 7 2)", 7);
+    try expectIntBoth(allocator, &env, "(min 3 7 2)", 2);
+
+    // abs
+    try expectIntBoth(allocator, &env, "(abs -5)", 5);
+    try expectIntBoth(allocator, &env, "(abs 3)", 3);
+
+    // mod
+    try expectIntBoth(allocator, &env, "(mod 10 3)", 1);
+    try expectIntBoth(allocator, &env, "(mod 9 3)", 0);
+}
