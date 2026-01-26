@@ -72,9 +72,8 @@ pub const Form = union(enum) {
     // 現状はスライスで簡易実装
     list: []const Form,
     vector: []const Form,
-    // TODO: map, set 追加
-    // map: *FormMap,
-    // set: *FormSet,
+    map: []const Form, // [k1, v1, k2, v2, ...] 形式
+    set: []const Form,
 
     // === Reader専用構文 ===
     // TODO: 以下を追加
@@ -115,6 +114,8 @@ pub const Form = union(enum) {
             .keyword => "keyword",
             .list => "list",
             .vector => "vector",
+            .map => "map",
+            .set => "set",
         };
     }
 
@@ -169,6 +170,27 @@ pub const Form = union(enum) {
                     try item.format("", .{}, writer);
                 }
                 try writer.writeByte(']');
+            },
+            .map => |items| {
+                try writer.writeByte('{');
+                var i: usize = 0;
+                while (i < items.len) : (i += 2) {
+                    if (i > 0) try writer.writeAll(", ");
+                    try items[i].format("", .{}, writer);
+                    try writer.writeByte(' ');
+                    if (i + 1 < items.len) {
+                        try items[i + 1].format("", .{}, writer);
+                    }
+                }
+                try writer.writeByte('}');
+            },
+            .set => |items| {
+                try writer.writeAll("#{");
+                for (items, 0..) |item, i| {
+                    if (i > 0) try writer.writeByte(' ');
+                    try item.format("", .{}, writer);
+                }
+                try writer.writeByte('}');
             },
         }
     }

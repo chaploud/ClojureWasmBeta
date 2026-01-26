@@ -339,17 +339,18 @@ pub const Reader = struct {
 
     /// マップ {}
     fn readMap(self: *Reader) err.Error!Form {
-        _ = try self.readDelimited(.rbrace);
-        // TODO: マップ型を実装したら対応
-        // 現時点ではベクターとして返す（キー値ペアのフラットリスト）
-        return .nil; // 仮実装
+        const items = try self.readDelimited(.rbrace);
+        // マップは偶数個の要素が必要 [k1, v1, k2, v2, ...]
+        if (items.len % 2 != 0) {
+            return err.parseError(.invalid_token, "map literal must have even number of forms", .{});
+        }
+        return Form{ .map = items };
     }
 
     /// セット #{}
     fn readSet(self: *Reader) err.Error!Form {
-        _ = try self.readDelimited(.rbrace);
-        // TODO: セット型を実装したら対応
-        return .nil; // 仮実装
+        const items = try self.readDelimited(.rbrace);
+        return Form{ .set = items };
     }
 
     /// 閉じ括弧までの要素を読み取る

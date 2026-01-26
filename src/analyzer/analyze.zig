@@ -79,6 +79,8 @@ pub const Analyzer = struct {
             // コレクション
             .list => |items| self.analyzeList(items),
             .vector => |items| self.analyzeVector(items),
+            .map => |items| self.analyzeMap(items),
+            .set => |items| self.analyzeSet(items),
         };
     }
 
@@ -188,6 +190,41 @@ pub const Analyzer = struct {
         const vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
         vec.* = .{ .items = analyzed };
         return self.makeConstant(.{ .vector = vec });
+    }
+
+    fn analyzeMap(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // マップリテラル {k1 v1 k2 v2 ...}
+        // items は偶数個であることが Reader で保証されている
+        var analyzed = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+        for (items, 0..) |item, i| {
+            const node = try self.analyze(item);
+            // 定数のみサポート（現時点）
+            switch (node.*) {
+                .constant => |val| analyzed[i] = val,
+                else => return err.parseError(.invalid_token, "Map literal must contain constants", .{}),
+            }
+        }
+
+        const m = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+        m.* = .{ .entries = analyzed };
+        return self.makeConstant(.{ .map = m });
+    }
+
+    fn analyzeSet(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // セットリテラル #{...}
+        var analyzed = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+        for (items, 0..) |item, i| {
+            const node = try self.analyze(item);
+            // 定数のみサポート（現時点）
+            switch (node.*) {
+                .constant => |val| analyzed[i] = val,
+                else => return err.parseError(.invalid_token, "Set literal must contain constants", .{}),
+            }
+        }
+
+        const s = self.allocator.create(value_mod.PersistentSet) catch return error.OutOfMemory;
+        s.* = .{ .items = analyzed };
+        return self.makeConstant(.{ .set = s });
     }
 
     // === special forms ===
@@ -1052,6 +1089,24 @@ pub const Analyzer = struct {
                 const vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
                 vec.* = .{ .items = vals };
                 break :blk .{ .vector = vec };
+            },
+            .map => |items| blk: {
+                var vals = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+                for (items, 0..) |item, i| {
+                    vals[i] = try self.formToValue(item);
+                }
+                const m = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+                m.* = .{ .entries = vals };
+                break :blk .{ .map = m };
+            },
+            .set => |items| blk: {
+                var vals = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+                for (items, 0..) |item, i| {
+                    vals[i] = try self.formToValue(item);
+                }
+                const s = self.allocator.create(value_mod.PersistentSet) catch return error.OutOfMemory;
+                s.* = .{ .items = vals };
+                break :blk .{ .set = s };
             },
         };
     }

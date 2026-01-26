@@ -210,6 +210,25 @@ pub const PersistentMap = struct {
         new_entries[self.entries.len + 1] = val;
         return .{ .entries = new_entries };
     }
+
+    pub fn dissoc(self: PersistentMap, allocator: std.mem.Allocator, key: Value) !PersistentMap {
+        // キーを探す
+        var i: usize = 0;
+        while (i < self.entries.len) : (i += 2) {
+            if (key.eql(self.entries[i])) {
+                // キーを削除
+                if (self.entries.len == 2) {
+                    return .{ .entries = &[_]Value{} };
+                }
+                var new_entries = try allocator.alloc(Value, self.entries.len - 2);
+                @memcpy(new_entries[0..i], self.entries[0..i]);
+                @memcpy(new_entries[i..], self.entries[i + 2 ..]);
+                return .{ .entries = new_entries };
+            }
+        }
+        // キーが見つからなければそのまま返す
+        return self;
+    }
 };
 
 /// 永続セット

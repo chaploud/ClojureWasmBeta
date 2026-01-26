@@ -597,7 +597,7 @@ pub fn count(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
         .nil => 0,
         .list => |l| @intCast(l.items.len),
         .vector => |v| @intCast(v.items.len),
-        .map => |m| @intCast(m.entries.len),
+        .map => |m| @intCast(m.count()),
         .set => |s| @intCast(s.items.len),
         .string => |s| @intCast(s.data.len),
         else => return error.TypeError,
@@ -898,8 +898,183 @@ pub fn get(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
             if (idx < 0 or idx >= lst.items.len) return not_found;
             return lst.items[@intCast(idx)];
         },
-        // マップは未実装（現在 nil を返す仮実装）
+        .map => |m| {
+            // マップはキーでアクセス
+            return m.get(key) orelse not_found;
+        },
+        .set => |s| {
+            // セットは要素の存在確認
+            for (s.items) |item| {
+                if (key.eql(item)) return key;
+            }
+            return not_found;
+        },
         else => not_found,
+    };
+}
+
+/// assoc : マップにキー値を追加/更新
+pub fn assoc(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 3 or (args.len - 1) % 2 != 0) return error.ArityError;
+
+    const coll = args[0];
+
+    switch (coll) {
+        .nil => {
+            // nil に assoc すると新しいマップを作成
+            const entries = try allocator.alloc(Value, args.len - 1);
+            @memcpy(entries, args[1..]);
+            const m = try allocator.create(value_mod.PersistentMap);
+            m.* = .{ .entries = entries };
+            return Value{ .map = m };
+        },
+        .map => |m| {
+            var result = m.*;
+            var i: usize = 1;
+            while (i < args.len) : (i += 2) {
+                result = try result.assoc(allocator, args[i], args[i + 1]);
+            }
+            const new_map = try allocator.create(value_mod.PersistentMap);
+            new_map.* = result;
+            return Value{ .map = new_map };
+        },
+        .vector => |vec| {
+            // ベクターの assoc はインデックス更新
+            if (args.len != 3) return error.ArityError;
+            if (args[1] != .int) return error.TypeError;
+            const idx = args[1].int;
+            if (idx < 0 or idx > vec.items.len) return error.IndexOutOfBounds;
+            const uidx: usize = @intCast(idx);
+
+            var new_items: []Value = undefined;
+            if (uidx == vec.items.len) {
+                // 末尾に追加
+                new_items = try allocator.alloc(Value, vec.items.len + 1);
+                @memcpy(new_items[0..vec.items.len], vec.items);
+                new_items[vec.items.len] = args[2];
+            } else {
+                // 既存要素を更新
+                new_items = try allocator.dupe(Value, vec.items);
+                new_items[uidx] = args[2];
+            }
+            const new_vec = try allocator.create(value_mod.PersistentVector);
+            new_vec.* = .{ .items = new_items };
+            return Value{ .vector = new_vec };
+        },
+        else => return error.TypeError,
+    }
+}
+
+/// dissoc : マップからキーを削除
+pub fn dissoc(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+
+    const coll = args[0];
+    if (coll == .nil) return value_mod.nil;
+    if (coll != .map) return error.TypeError;
+
+    const m = coll.map;
+    var result = m.*;
+
+    for (args[1..]) |key| {
+        result = try result.dissoc(allocator, key);
+    }
+
+    const new_map = try allocator.create(value_mod.PersistentMap);
+    new_map.* = result;
+    return Value{ .map = new_map };
+}
+
+/// keys : マップのキーをシーケンスで返す
+pub fn keys(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+
+    const coll = args[0];
+    if (coll == .nil) return value_mod.nil;
+    if (coll != .map) return error.TypeError;
+
+    const m = coll.map;
+    const count_val = m.count();
+    if (count_val == 0) return value_mod.nil;
+
+    const key_vals = try allocator.alloc(Value, count_val);
+    var i: usize = 0;
+    var j: usize = 0;
+    while (j < m.entries.len) : (j += 2) {
+        key_vals[i] = m.entries[j];
+        i += 1;
+    }
+
+    const lst = try allocator.create(value_mod.PersistentList);
+    lst.* = .{ .items = key_vals };
+    return Value{ .list = lst };
+}
+
+/// vals : マップの値をシーケンスで返す
+pub fn vals(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+
+    const coll = args[0];
+    if (coll == .nil) return value_mod.nil;
+    if (coll != .map) return error.TypeError;
+
+    const m = coll.map;
+    const count_val = m.count();
+    if (count_val == 0) return value_mod.nil;
+
+    const val_vals = try allocator.alloc(Value, count_val);
+    var i: usize = 0;
+    var j: usize = 1;
+    while (j < m.entries.len) : (j += 2) {
+        val_vals[i] = m.entries[j];
+        i += 1;
+    }
+
+    const lst = try allocator.create(value_mod.PersistentList);
+    lst.* = .{ .items = val_vals };
+    return Value{ .list = lst };
+}
+
+/// hash-map : キー値ペアからマップを作成
+pub fn hashMap(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len % 2 != 0) return error.ArityError;
+
+    if (args.len == 0) {
+        const m = try allocator.create(value_mod.PersistentMap);
+        m.* = value_mod.PersistentMap.empty();
+        return Value{ .map = m };
+    }
+
+    const entries = try allocator.dupe(Value, args);
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// contains? : コレクションにキーが含まれるか
+pub fn containsKey(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+
+    const coll = args[0];
+    const key = args[1];
+
+    return switch (coll) {
+        .nil => value_mod.false_val,
+        .map => |m| if (m.get(key) != null) value_mod.true_val else value_mod.false_val,
+        .set => |s| blk: {
+            for (s.items) |item| {
+                if (key.eql(item)) break :blk value_mod.true_val;
+            }
+            break :blk value_mod.false_val;
+        },
+        .vector => |vec| blk: {
+            if (key != .int) break :blk value_mod.false_val;
+            const idx = key.int;
+            if (idx >= 0 and idx < vec.items.len) break :blk value_mod.true_val;
+            break :blk value_mod.false_val;
+        },
+        else => value_mod.false_val,
     };
 }
 
@@ -948,6 +1123,7 @@ const builtins = [_]BuiltinDef{
     // コンストラクタ
     .{ .name = "list", .func = list },
     .{ .name = "vector", .func = vector },
+    .{ .name = "hash-map", .func = hashMap },
     // コレクション
     .{ .name = "first", .func = first },
     .{ .name = "rest", .func = rest },
@@ -956,6 +1132,11 @@ const builtins = [_]BuiltinDef{
     .{ .name = "count", .func = count },
     .{ .name = "nth", .func = nth },
     .{ .name = "get", .func = get },
+    .{ .name = "assoc", .func = assoc },
+    .{ .name = "dissoc", .func = dissoc },
+    .{ .name = "keys", .func = keys },
+    .{ .name = "vals", .func = vals },
+    .{ .name = "contains?", .func = containsKey },
     // 文字列
     .{ .name = "str", .func = strFn },
     // 出力

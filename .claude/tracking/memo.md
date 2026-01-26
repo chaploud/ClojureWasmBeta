@@ -30,8 +30,9 @@
 比較: =, <, >, <=, >=
 論理: not
 述語: nil?, number?, integer?, float?, string?, keyword?,
-      symbol?, fn?, coll?, list?, vector?, map?, set?, empty?
+      symbol?, fn?, coll?, list?, vector?, map?, set?, empty?, contains?
 コレクション: first, rest, cons, conj, count, nth, get, list, vector
+マップ: hash-map, assoc, dissoc, keys, vals
 文字列: str
 出力: println, pr-str
 ```
@@ -105,7 +106,6 @@ map, filter, take に必須。
 
 ### Reader/Form
 - 有理数は float で近似（Ratio 型は将来実装）
-- マップ/セットは Reader で nil を返す仮実装
 
 ### Value/Runtime
 - コレクションは配列ベースの簡易実装（永続データ構造は将来）

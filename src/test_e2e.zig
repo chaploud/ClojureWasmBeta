@@ -702,3 +702,41 @@ test "compare: destructuring" {
     // ネスト分配
     try expectIntBoth(allocator, &env, "((fn [[a [b c]]] (+ a b c)) [1 [2 3]])", 6);
 }
+
+test "compare: maps" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // マップリテラル
+    try expectIntBoth(allocator, &env, "(count {:a 1 :b 2 :c 3})", 3);
+
+    // get
+    try expectIntBoth(allocator, &env, "(get {:a 1 :b 2} :a)", 1);
+    try expectIntBoth(allocator, &env, "(get {:a 1 :b 2} :b)", 2);
+    try expectIntBoth(allocator, &env, "(get {:a 1 :b 2} :c 99)", 99);
+
+    // assoc
+    try expectIntBoth(allocator, &env, "(get (assoc {:a 1} :b 2) :b)", 2);
+    try expectIntBoth(allocator, &env, "(get (assoc {:a 1} :a 10) :a)", 10);
+    try expectIntBoth(allocator, &env, "(count (assoc {:a 1} :b 2))", 2);
+
+    // dissoc
+    try expectIntBoth(allocator, &env, "(count (dissoc {:a 1 :b 2} :a))", 1);
+    try expectIntBoth(allocator, &env, "(get (dissoc {:a 1 :b 2} :a) :b)", 2);
+
+    // keys, vals
+    try expectIntBoth(allocator, &env, "(count (keys {:a 1 :b 2}))", 2);
+    try expectIntBoth(allocator, &env, "(count (vals {:a 1 :b 2}))", 2);
+
+    // hash-map
+    try expectIntBoth(allocator, &env, "(get (hash-map :x 10 :y 20) :x)", 10);
+    try expectIntBoth(allocator, &env, "(count (hash-map :a 1 :b 2 :c 3))", 3);
+
+    // contains?
+    try expectBoolBoth(allocator, &env, "(contains? {:a 1 :b 2} :a)", true);
+    try expectBoolBoth(allocator, &env, "(contains? {:a 1 :b 2} :c)", false);
+}
