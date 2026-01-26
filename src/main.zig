@@ -7,6 +7,10 @@
 //!   clj-wasm -e "(def x 10)" -e "(+ x 5)"     # 複数式を連続評価
 //!   clj-wasm --backend=vm -e "(+ 1 2)"        # VMバックエンドで評価
 //!   clj-wasm --compare -e "(+ 1 2)"           # 両バックエンドで評価して比較
+//!
+//! メモリ管理:
+//!   - persistent: Env, Var, Namespace, def された値（プロセス終了まで保持）
+//!   - scratch: Reader/Analyzer の中間構造（式ごとに解放）
 
 const std = @import("std");
 const clj = @import("ClojureWasmBeta");
@@ -18,6 +22,7 @@ const Env = clj.Env;
 const Value = clj.Value;
 const EvalEngine = clj.EvalEngine;
 const Backend = clj.Backend;
+const Allocators = clj.Allocators;
 const core = clj.core;
 const engine_mod = clj.engine;
 
@@ -29,13 +34,14 @@ const CliError = error{
 };
 
 pub fn main() !void {
+    // 引数解析用の一時アロケータ（プロセス終了で自動解放）
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    const gpa_allocator = gpa.allocator();
 
     // 引数を解析
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    const args = try std.process.argsAlloc(gpa_allocator);
+    defer std.process.argsFree(gpa_allocator, args);
 
     // stdout/stderr（バッファ付き）
     const stdout_file = std.fs.File.stdout();
@@ -49,7 +55,7 @@ pub fn main() !void {
 
     // オプション解析
     var expressions: std.ArrayListUnmanaged([]const u8) = .empty;
-    defer expressions.deinit(allocator);
+    defer expressions.deinit(gpa_allocator);
     var backend: Backend = .tree_walk; // デフォルト
     var compare_mode = false;
 
@@ -58,7 +64,7 @@ pub fn main() !void {
         if (std.mem.eql(u8, args[i], "-e")) {
             i += 1;
             if (i < args.len) {
-                try expressions.append(allocator, args[i]);
+                try expressions.append(gpa_allocator, args[i]);
             } else {
                 stderr.writeAll("Error: -e requires an expression\n") catch {};
                 stderr.flush() catch {};
@@ -98,22 +104,31 @@ pub fn main() !void {
         return;
     }
 
-    // 環境を初期化
-    var env = Env.init(allocator);
+    // 寿命別アロケータを初期化
+    // persistent: Env, Var, def された値（GPA でリーク検出可能）
+    // scratch: Reader/Analyzer の中間構造（式ごとに Arena でリセット）
+    var allocs = Allocators.init(gpa_allocator);
+    defer allocs.deinit();
+
+    // 環境を初期化（persistent アロケータを使用）
+    var env = Env.init(allocs.persistent());
     defer env.deinit();
     try env.setupBasic();
     try core.registerCore(&env);
 
     // 各式を評価
     for (expressions.items) |expr| {
+        // scratch をリセット（前回の Form/Node を解放）
+        allocs.resetScratch();
+
         if (compare_mode) {
-            runCompare(allocator, &env, expr, stdout, stderr) catch |err| {
+            runCompare(&allocs, &env, expr, stdout, stderr) catch |err| {
                 stderr.print("Error: {any}\n", .{err}) catch {};
                 stderr.flush() catch {};
                 std.process.exit(1);
             };
         } else {
-            runWithBackend(allocator, &env, expr, backend, stdout) catch |err| {
+            runWithBackend(&allocs, &env, expr, backend, stdout) catch |err| {
                 stderr.print("Error: {any}\n", .{err}) catch {};
                 stderr.flush() catch {};
                 std.process.exit(1);
@@ -125,22 +140,22 @@ pub fn main() !void {
 
 /// 指定バックエンドで式を評価して結果を出力
 fn runWithBackend(
-    allocator: std.mem.Allocator,
+    allocs: *Allocators,
     env: *Env,
     source: []const u8,
     backend: Backend,
     writer: *std.Io.Writer,
 ) !void {
-    // Reader
-    var reader = Reader.init(allocator, source);
+    // Reader（scratch アロケータ - Form は一時的）
+    var reader = Reader.init(allocs.scratch(), source);
     const form = try reader.read() orelse return error.EmptyInput;
 
-    // Analyzer
-    var analyzer = Analyzer.init(allocator, env);
+    // Analyzer（scratch アロケータ - Node は一時的）
+    var analyzer = Analyzer.init(allocs.scratch(), env);
     const node = try analyzer.analyze(form);
 
-    // Engine で評価
-    var eng = EvalEngine.init(allocator, env, backend);
+    // Engine で評価（persistent アロケータ - 結果の Value は永続的かもしれない）
+    var eng = EvalEngine.init(allocs.persistent(), env, backend);
     const result = try eng.run(node);
 
     // 結果を出力
@@ -150,22 +165,22 @@ fn runWithBackend(
 
 /// 両バックエンドで評価して比較
 fn runCompare(
-    allocator: std.mem.Allocator,
+    allocs: *Allocators,
     env: *Env,
     source: []const u8,
     writer: *std.Io.Writer,
     err_writer: *std.Io.Writer,
 ) !void {
-    // Reader
-    var reader = Reader.init(allocator, source);
+    // Reader（scratch アロケータ）
+    var reader = Reader.init(allocs.scratch(), source);
     const form = try reader.read() orelse return error.EmptyInput;
 
-    // Analyzer
-    var analyzer = Analyzer.init(allocator, env);
+    // Analyzer（scratch アロケータ）
+    var analyzer = Analyzer.init(allocs.scratch(), env);
     const node = try analyzer.analyze(form);
 
-    // 両バックエンドで評価
-    const result = try engine_mod.runAndCompare(allocator, env, node);
+    // 両バックエンドで評価（persistent アロケータ）
+    const result = try engine_mod.runAndCompare(allocs.persistent(), env, node);
 
     // TreeWalk の結果を出力
     try writer.writeAll("tree_walk: ");

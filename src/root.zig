@@ -61,6 +61,9 @@ pub const Namespace = namespace.Namespace;
 pub const env_mod = @import("runtime/env.zig");
 pub const Env = env_mod.Env;
 
+pub const allocators_mod = @import("runtime/allocators.zig");
+pub const Allocators = allocators_mod.Allocators;
+
 pub const context = @import("runtime/context.zig");
 pub const Context = context.Context;
 

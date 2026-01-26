@@ -7,24 +7,14 @@
 
 ## 前回完了
 
-- Phase 8.0.5: 評価エンジン抽象化 ✓
-  - engine.zig 新設（Backend enum, EvalEngine struct）
-  - CLI --backend=tree_walk|vm オプション
-  - CLI --compare オプション（両バックエンドで実行して比較）
-  - test_e2e.zig 統合（evalWithBackend, evalBothAndCompare）
-
-- Phase 8.1: VM を TreeWalk に同期 ✓
-  - ユーザー定義関数の VM 実行
-    - `createClosure` で正しいアリティ情報を設定
-    - `callValue` で `FnProto` を取得してバイトコード実行
-  - クロージャ対応
-    - `createClosure` でフレームのローカル変数をキャプチャ
-    - `callValue` でクロージャ環境をスタックに展開
-  - loop/recur 対応
-    - `recur` オペコードでループ変数を更新
-    - `jump` で後方ジャンプ
-  - 再帰 execute 問題の修正
-    - `entry_frame_count` を記録し、`ret` で適切に return
+- Phase 8.1.5: メモリ管理改善 ✓
+  - Allocators 構造体を導入 (`src/runtime/allocators.zig`)
+    - persistent: 長寿命（Var, Namespace, 組み込み関数）
+    - scratch: 一時的（Form, Node）
+  - main.zig を新パターンに修正
+    - Reader/Analyzer は scratch アロケータ使用
+    - 式評価ごとに `resetScratch()` で解放
+  - メモリ管理ドキュメント作成 (`docs/reference/memory_strategy.md`)
 
 ---
 
@@ -52,4 +42,6 @@
 - 可変長引数（& rest）は解析のみ、評価は未実装
 - BuiltinFn は value.zig では anyopaque、core.zig で型定義、evaluator.zig でキャスト
 - char_val は Form に対応していない（valueToForm でエラー）
-- メモリリーク警告が出る（GC フェーズで対応予定）
+- **メモリリーク（Phase 9 GC で対応予定）**:
+  - evaluator.zig の args 配列（バインディングスタック改善で対応）
+  - Value 所有権（Var 破棄時に内部 Fn が解放されない）
