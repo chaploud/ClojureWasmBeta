@@ -663,6 +663,26 @@ test "readAll" {
     try std.testing.expectEqual(@as(i64, 3), forms[2].int);
 }
 
+test "] [ パターン: (let [x 1] [x])" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var r = Reader.init(allocator, "(let [x 1] [x])");
+    const form = (try r.read()).?;
+    // リスト: (let [x 1] [x])
+    try std.testing.expect(form == .list);
+    try std.testing.expectEqual(@as(usize, 3), form.list.len);
+    // form.list[0] = let
+    try std.testing.expect(form.list[0] == .symbol);
+    // form.list[1] = [x 1]
+    try std.testing.expect(form.list[1] == .vector);
+    try std.testing.expectEqual(@as(usize, 2), form.list[1].vector.len);
+    // form.list[2] = [x]
+    try std.testing.expect(form.list[2] == .vector);
+    try std.testing.expectEqual(@as(usize, 1), form.list[2].vector.len);
+}
+
 test "symbolic ##Inf, ##NaN" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();

@@ -766,3 +766,19 @@ test "行番号トラッキング" {
     const tok3 = t.next();
     try std.testing.expectEqual(@as(u32, 3), tok3.line);
 }
+
+test "] [ トークン連続" {
+    var t = Tokenizer.init("(let [x 1] [x])");
+    // 期待: lparen, symbol(let), lbracket, symbol(x), integer(1), rbracket, lbracket, symbol(x), rbracket, rparen
+    try std.testing.expectEqual(TokenKind.lparen, t.next().kind);
+    try std.testing.expectEqual(TokenKind.symbol, t.next().kind); // let
+    try std.testing.expectEqual(TokenKind.lbracket, t.next().kind);
+    try std.testing.expectEqual(TokenKind.symbol, t.next().kind); // x
+    try std.testing.expectEqual(TokenKind.integer, t.next().kind); // 1
+    try std.testing.expectEqual(TokenKind.rbracket, t.next().kind);
+    try std.testing.expectEqual(TokenKind.lbracket, t.next().kind);
+    try std.testing.expectEqual(TokenKind.symbol, t.next().kind); // x
+    try std.testing.expectEqual(TokenKind.rbracket, t.next().kind);
+    try std.testing.expectEqual(TokenKind.rparen, t.next().kind);
+    try std.testing.expectEqual(TokenKind.eof, t.next().kind);
+}

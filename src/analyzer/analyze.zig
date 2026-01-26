@@ -211,55 +211,84 @@ pub const Analyzer = struct {
     }
 
     fn analyzeVector(self: *Analyzer, items: []const Form) err.Error!*Node {
-        // ベクターリテラル
-        var analyzed = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+        // ベクターリテラル: まず全要素を解析
+        var nodes = self.allocator.alloc(*Node, items.len) catch return error.OutOfMemory;
+        var all_const = true;
         for (items, 0..) |item, i| {
-            const node = try self.analyze(item);
-            // 定数のみサポート（現時点）
-            switch (node.*) {
-                .constant => |val| analyzed[i] = val,
-                else => return err.parseError(.invalid_token, "Vector literal must contain constants", .{}),
+            nodes[i] = try self.analyze(item);
+            if (nodes[i].* != .constant) {
+                all_const = false;
             }
         }
 
-        const vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
-        vec.* = .{ .items = analyzed };
-        return self.makeConstant(.{ .vector = vec });
+        if (all_const) {
+            // 全定数: 即値ベクターを構築
+            var values = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+            for (nodes, 0..) |n, i| {
+                values[i] = n.constant;
+            }
+            const vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
+            vec.* = .{ .items = values };
+            return self.makeConstant(.{ .vector = vec });
+        }
+
+        // 非定数要素あり: (vector item1 item2 ...) 呼び出しに変換
+        return self.makeBuiltinCall("vector", nodes);
     }
 
     fn analyzeMap(self: *Analyzer, items: []const Form) err.Error!*Node {
         // マップリテラル {k1 v1 k2 v2 ...}
         // items は偶数個であることが Reader で保証されている
-        var analyzed = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+        var nodes = self.allocator.alloc(*Node, items.len) catch return error.OutOfMemory;
+        var all_const = true;
         for (items, 0..) |item, i| {
-            const node = try self.analyze(item);
-            // 定数のみサポート（現時点）
-            switch (node.*) {
-                .constant => |val| analyzed[i] = val,
-                else => return err.parseError(.invalid_token, "Map literal must contain constants", .{}),
+            nodes[i] = try self.analyze(item);
+            if (nodes[i].* != .constant) {
+                all_const = false;
             }
         }
 
-        const m = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
-        m.* = .{ .entries = analyzed };
-        return self.makeConstant(.{ .map = m });
+        if (all_const) {
+            var values = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+            for (nodes, 0..) |n, i| {
+                values[i] = n.constant;
+            }
+            const m = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+            m.* = .{ .entries = values };
+            return self.makeConstant(.{ .map = m });
+        }
+
+        // 非定数要素あり: (hash-map k1 v1 k2 v2 ...) 呼び出しに変換
+        return self.makeBuiltinCall("hash-map", nodes);
     }
 
     fn analyzeSet(self: *Analyzer, items: []const Form) err.Error!*Node {
         // セットリテラル #{...}
-        var analyzed = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+        var nodes = self.allocator.alloc(*Node, items.len) catch return error.OutOfMemory;
+        var all_const = true;
         for (items, 0..) |item, i| {
-            const node = try self.analyze(item);
-            // 定数のみサポート（現時点）
-            switch (node.*) {
-                .constant => |val| analyzed[i] = val,
-                else => return err.parseError(.invalid_token, "Set literal must contain constants", .{}),
+            nodes[i] = try self.analyze(item);
+            if (nodes[i].* != .constant) {
+                all_const = false;
             }
         }
 
-        const s = self.allocator.create(value_mod.PersistentSet) catch return error.OutOfMemory;
-        s.* = .{ .items = analyzed };
-        return self.makeConstant(.{ .set = s });
+        if (all_const) {
+            var values = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+            for (nodes, 0..) |n, i| {
+                values[i] = n.constant;
+            }
+            const s = self.allocator.create(value_mod.PersistentSet) catch return error.OutOfMemory;
+            s.* = .{ .items = values };
+            return self.makeConstant(.{ .set = s });
+        }
+
+        // 非定数要素あり: (set (vector item1 item2 ...)) に変換
+        // set は1引数(コレクション)を取るため、まず vector を作ってから set に渡す
+        const vec_call = try self.makeBuiltinCall("vector", nodes);
+        const set_args = self.allocator.alloc(*Node, 1) catch return error.OutOfMemory;
+        set_args[0] = vec_call;
+        return self.makeBuiltinCall("set", set_args);
     }
 
     // === special forms ===
@@ -2224,6 +2253,26 @@ pub const Analyzer = struct {
                 .stack = .{},
             },
         };
+        return node;
+    }
+
+    /// 組み込み関数呼び出しノードを構築: (fn_name arg1 arg2 ...)
+    fn makeBuiltinCall(self: *Analyzer, fn_name: []const u8, args: []*Node) err.Error!*Node {
+        const runtime_sym = RuntimeSymbol.init(fn_name);
+        const v = self.env.resolve(runtime_sym) orelse {
+            return err.parseError(.undefined_symbol, "Unable to resolve builtin function", .{});
+        };
+        const fn_node = try self.makeVarRef(v);
+
+        const call_data = self.allocator.create(node_mod.CallNode) catch return error.OutOfMemory;
+        call_data.* = .{
+            .fn_node = fn_node,
+            .args = args,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .call_node = call_data };
         return node;
     }
 
