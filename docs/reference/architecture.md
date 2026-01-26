@@ -111,7 +111,7 @@ src/
 
 ## ロードマップ
 
-### 完了フェーズ (Phase 1 - 8.16)
+### 完了フェーズ
 
 | Phase | 内容 |
 |-------|------|
@@ -120,49 +120,63 @@ src/
 | 6 | マクロシステム (defmacro) |
 | 7 | CLI (-e, 複数式, 状態保持) |
 | 8.0 | VM基盤 (Bytecode, Compiler, VM, --compare) |
-| 8.1 | クロージャ完成, 複数アリティfn, 可変長引数 |
-| 8.2 | 高階関数 (apply, partial, comp, reduce) |
-| 8.3 | 分配束縛（シーケンシャル・マップ） |
-| 8.4 | シーケンス操作 (map, filter, take, drop, range 等) |
-| 8.5 | 制御フローマクロ・スレッディングマクロ |
-| 8.6 | try/catch/finally 例外処理 |
-| 8.7 | Atom 状態管理 |
-| 8.8 | 文字列操作拡充 |
-| 8.9 | defn・dotimes・doseq・if-not・comment |
-| 8.10 | condp・case・some->・some->>・as->・mapv・filterv |
-| 8.11 | キーワードを関数として使用 |
-| 8.12 | every?/some/not-every?/not-any? |
-| 8.13 | バグ修正・安定化 |
-| 8.14 | マルチメソッド (defmulti, defmethod) |
-| 8.15 | プロトコル (defprotocol, extend-type, extend-protocol) |
-| 8.16 | ユーティリティ関数・HOF・マクロ拡充 |
+| 8.1-8.20 | VM機能拡充（クロージャ、HOF、シーケンス、マクロ、例外、Atom、文字列、マルチメソッド、プロトコル、letfn、動的リテラル 等） |
+| 9-9.2 | LazySeq — 遅延シーケンス基盤、遅延 map/filter/concat、遅延ジェネレータ |
+| 11 | PURE バッチ — 述語(23)+コレクション/ユーティリティ(17)+ビット演算/HOF(17) = +57関数 |
+
+> 詳細な完了フェーズ履歴: `.claude/tracking/memo.md`
 
 ### 今後のフェーズ
 
-#### Phase 9: LazySeq（真の遅延シーケンス）
+残り 243 todo を 4 層（PURE / DESIGN / SUBSYSTEM / JVM_ADAPT）に分類し、
+設計不要の PURE → 新型が要る DESIGN → 新サブシステムの SUBSYSTEM の順で進める。
+GC は旧計画で Phase 10 だったが、ArenaAllocator でバッチ実行に問題がないため
+言語機能充実後（Phase 23）に延期。
 
-現在の map/filter は Eager 実装。無限シーケンスに対応するには遅延評価が必要。
+#### Phase 12: PURE 残り（~55 件）
 
-- Value: LazySeq型追加
-- lazy-seq マクロ / cons 関数
-- realize / force 処理
-- ISeq プロトコル相当の実装
+既存基盤の組み合わせで実装可能。設計不要。
 
-#### Phase 10: GC
+- 述語: bytes?, class?, decimal?, ratio?, rational?, record? 等
+- HOF: juxt, memoize, trampoline
+- シーケンス: lazy-cat, tree-seq, partition-by, replicate
+- 算術: *', +', -', dec', inc'（オーバーフロー安全）
+- ユーティリティ: gensym, clojure-version, newline, printf, println-str
+- ハッシュ: hash-combine, hash-ordered-coll, hash-unordered-coll, mix-collection-hash
+- マルチメソッド拡張: get-method, methods, remove-method, remove-all-methods, prefer-method, prefers
+- 型変換: char, byte, short, long, float, num, find-keyword, parse-uuid, random-uuid, comparator
 
-遅延シーケンス導入後に必須となる。
+#### Phase 13-18: DESIGN（~75 件）
 
-- Mark-Sweep GC
-- Arena から移行
-- ルート追跡（スタック、Var、クロージャ）
+新しいデータ構造・パターンが要るが、サブシステムは不要。
 
-#### Phase 11: Wasm連携
+| Phase | 内容 |
+|-------|------|
+| 13 | delay/force, volatile, transient |
+| 14 | reduced/transduce 基盤（Reduced ラッパー型、completing, cat, eduction） |
+| 15 | Atom 拡張・Var 操作・メタデータ（watch, validator, var-get/set, alter-meta!） |
+| 16 | defrecord・deftype・defstruct |
+| 17 | 階層システム（derive, ancestors, descendants, isa?） |
+| 18 | 動的束縛（binding, with-bindings）, sorted コレクション（赤黒木）, promise |
 
-言語機能が充実してから意味を持つ。
+#### Phase 19-22: SUBSYSTEM（~100 件）
 
-- Component Model対応
-- .wasmロード・呼び出し
-- 型マッピング (Clojure ↔ Wasm)
+新しいサブシステムの構築が必要。
+
+| Phase | 内容 |
+|-------|------|
+| 19 | 正規表現（re-find, re-matches, re-seq 等）— Zig に標準なし、要検討 |
+| 20 | 名前空間システム（ns, require, use, refer, load 等）— マルチファイル対応 |
+| 21 | I/O（slurp, spit, read-line, *in*/*out*/*err*, with-open 等） |
+| 22 | Reader/Eval（read, read-string, eval, macroexpand 等）— セルフホスティング基盤 |
+
+#### Phase 23: GC
+
+ArenaAllocator でバッチ実行は問題なし。長時間 REPL 対応時に実装。
+
+#### Phase LAST: Wasm 連携
+
+言語機能充実後。Component Model 対応、.wasm ロード・呼び出し、型マッピング。
 
 ---
 

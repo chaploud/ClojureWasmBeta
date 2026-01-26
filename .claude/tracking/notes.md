@@ -51,9 +51,9 @@
 
 ## シーケンス操作
 
-- map/filter は Eager 実装（リスト全体を即座に生成）
+- map/filter は Eager 版と Lazy 版の両方が存在（Phase 9.1 で遅延版を追加）
 - **LazySeq 実装済み**: `(lazy-seq body)` 特殊形式、cons 形式の遅延保持
-- `(range)` 引数なし（無限シーケンス）は未サポート（lazy-range パターンで代替可能）
+- `(range)` 引数なし（無限シーケンス）対応済み（Phase 9.2 で遅延 range を実装）
 
 ## LazySeq（Phase 9 で追加）
 

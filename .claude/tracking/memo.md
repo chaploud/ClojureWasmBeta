@@ -6,7 +6,9 @@
 
 ## 現在地点
 
-**Phase 11 進行中 — PURE 述語・ユーティリティバッチ**
+**Phase 11 完了 — 次は Phase 12 (PURE 残り)**
+
+### 完了フェーズ
 
 | Phase | 内容 |
 |-------|------|
@@ -38,83 +40,63 @@
 | 9 | LazySeq — 真の遅延シーケンス（無限シーケンス対応） |
 | 9.1 | Lazy map/filter/concat — 遅延変換・連結 |
 | 9.2 | iterate/repeat/cycle/range()/mapcat — 遅延ジェネレータ・lazy mapcat |
-| 11 | PURE述語バッチ(23)+コレクション/ユーティリティ(17)+ビット演算等(17) = +57関数 |
+| 11 | PURE述語(23)+コレクション/ユーティリティ(17)+ビット演算等(17) = +57関数 |
 
-実装状況: 289 done / 174 skip / 243 todo
+### 実装状況
+
+289 done / 170 skip / 243 todo
+
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
 ---
 
 ## ロードマップ
 
-### 論点整理
+### 残タスクの分類
 
-残り 300 todo の Var は以下の 4 層に分かれる:
+残り 243 todo は以下の 4 層に分かれる:
 
-| 層 | 数 | 性質 |
+| 層 | 推定数 | 性質 |
 |---|---|---|
-| **PURE** | ~120 | 既存基盤の組み合わせ。設計不要。述語・シーケンス操作・ユーティリティ |
-| **DESIGN** | ~86 | 新しいデータ構造・パターンが要るが、サブシステムは不要 |
-| **SUBSYSTEM** | ~80 | 新サブシステムが必要（正規表現、名前空間、I/O） |
+| **PURE** | ~55 | 既存基盤の組み合わせ。設計不要。述語・HOF・ユーティリティ |
+| **DESIGN** | ~75 | 新しいデータ構造・パターンが要るが、サブシステムは不要 |
+| **SUBSYSTEM** | ~100 | 新サブシステムが必要（正規表現、名前空間、I/O、動的Var） |
 | **JVM_ADAPT** | ~10 | JVM 概念を簡略化移植（型変換・型チェック） |
 
-**設計判断が必要な論点:**
+> Phase 11 で PURE ~60件を一括実装し、バッチ方式の有効性を確認済み。
+> 残り PURE を片付けてから DESIGN → SUBSYSTEM へ進む。
 
-1. **GC のタイミング**: LazySeq 導入でヒープ割り当てが急増。Arena 一括解放モデルでは
-   長時間 REPL セッションでメモリが際限なく増える。しかしシンプルな GC で十分。
-2. **PURE の一括実装**: 120 件は設計不要だが量が多い。バッチで進める。
-3. **DESIGN 層の優先順位**: delay/force（簡単）→ volatile（簡単）→ transient（性能）
-   → defrecord（実用性）→ 階層システム（multimethod 完成）→ Var 拡張（binding 等）
-4. **SUBSYSTEM の取捨**: 正規表現（最重要）→ 名前空間（マルチファイル必須）
-   → I/O（実用プログラム必須）→ reader/eval（セルフホスティング基盤）。
-   正規表現は Zig 標準ライブラリにないため外部実装 or 自前が要る。
-5. **JVM 概念の代替**: `byte`/`short`/`long` 等の型変換は Zig のキャスト相当に簡略化。
-   `instance?`/`class` は内部タグ検査。深追いせず最小限で。
-6. **skip にしない方針**: 明確に JVM 固有（proxy, agent, STM, Java array, unchecked-*,
-   BigDecimal）のみ skip。迷うものは実装する。
+### 方針変更メモ
 
----
+1. **GC を後回し**: 旧計画では Phase 10 だったが、ArenaAllocator でバッチ実行は問題なし。
+   GC が必要になるのは長時間 REPL セッション時。言語機能充実を優先し、GC は Phase 20 台へ延期。
+2. **PURE → DESIGN → SUBSYSTEM**: 設計不要の PURE を先に片付け、土台を固めてから
+   新しい型やサブシステムに着手する順序に変更。
+3. **フェーズ番号の整理**: Phase 10 (旧GC) を廃止、Phase 12 から連番で再割り当て。
 
 ### フェーズ計画
 
 ```
-Phase 10: GC（シンプル版）
-  └ mark-and-sweep or arena + 世代管理
-  └ LazySeq のサンク→実体化で不要になった参照を回収
+Phase 12: PURE 残り — シーケンス・HOF・ユーティリティ（~55 件）
+  └ lazy-cat, tree-seq, partition-by, comparator, replicate
+  └ juxt, memoize, trampoline, random-sample, gensym
+  └ *', +', -', dec', inc'（オーバーフロー安全算術）
+  └ clojure-version, newline, printf, println-str
+  └ hash-combine, hash-ordered-coll, hash-unordered-coll, mix-collection-hash
+  └ multimethod 拡張: get-method, methods, remove-method, remove-all-methods,
+    prefer-method, prefers
+  └ 残り述語: bytes?, class?, decimal?, ratio?, rational?, record? 等
+  └ find-keyword, parse-uuid, random-uuid, char, byte, short, long, float, num
 
-Phase 11: PURE 述語バッチ（~30 件）
-  └ any?, boolean?, int?, double?, char?, ident?, indexed?,
-    map-entry?, NaN?, infinite?, nat-int?, neg-int?, pos-int?,
-    simple-ident?, simple-keyword?, simple-symbol?,
-    qualified-ident?, qualified-keyword?, qualified-symbol?,
-    special-symbol?, ifn?, identical?, record?, inst?,
-    delay?, reduced?, tagged-literal?, uri?, uuid?, var?
-
-Phase 12: PURE シーケンス・コレクション操作バッチ（~40 件）
-  └ remove, list*, split-with, nthnext, nthrest, reductions,
-    repeatedly, lazy-cat, tree-seq, partition-by, dedupe,
-    bounded-count, rseq, empty, sequence,
-    reduce-kv, merge-with, update-in, update-keys, update-vals,
-    hash-set, array-map, key, val,
-    bit-and-not, bit-clear, bit-flip, bit-set, bit-test,
-    unsigned-bit-shift-right, compare, comparator,
-    interleave, interpose, take-while/drop-while lazy 化
-
-Phase 13: PURE ユーティリティ・HOF バッチ（~40 件）
-  └ juxt, memoize, trampoline, max-key, min-key,
-    rand-nth, random-sample, gensym, parse-long, parse-double,
-    parse-boolean, identical?, find-keyword,
-    reduced, unreduced, ensure-reduced, completing,
-    transduce, cat, eduction,
-    println-str, printf, newline, clojure-version,
-    -', +', *', dec', inc',
-    hash-combine, hash-ordered-coll, hash-unordered-coll,
-    multimethod 拡張 (remove-method, get-method 等)
-
-Phase 14: DESIGN — delay/force, volatile, transient
+Phase 13: DESIGN — delay/force, volatile, transient
   └ delay/delay?/force: サンクラッパー（LazySeq より単純）
   └ volatile!/volatile?/vreset!/vswap!: ミュータブルボックス
   └ transient/persistent!/conj!/assoc!/dissoc!/disj!/pop!: 一時的ミュータブルコレクション
+
+Phase 14: DESIGN — reduced/transduce 基盤
+  └ reduced/reduced?/unreduced/ensure-reduced: Reduced ラッパー型
+  └ completing, transduce, cat, eduction, halt-when
+  └ iteration（遅延ステートフルイテレータ）
 
 Phase 15: DESIGN — Atom 拡張・Var 操作・メタデータ
   └ add-watch, remove-watch, get-validator, set-validator!
@@ -124,40 +106,55 @@ Phase 15: DESIGN — Atom 拡張・Var 操作・メタデータ
 
 Phase 16: DESIGN — defrecord・deftype
   └ プロトコルと組み合わせた名前付きレコード型
+  └ defstruct, create-struct, struct, struct-map, accessor（簡易版）
   └ record?, instance?
 
 Phase 17: DESIGN — 階層システム
   └ make-hierarchy, derive, underive, ancestors, descendants, parents, isa?
   └ マルチメソッドの完全なディスパッチ階層
 
-Phase 18: SUBSYSTEM — 正規表現
+Phase 18: DESIGN — 動的束縛・sorted コレクション
+  └ binding, with-bindings, set!, with-local-vars, bound-fn 等（束縛フレームスタック）
+  └ sorted-map, sorted-map-by, sorted-set, sorted-set-by（赤黒木）
+  └ promise, deliver
+
+Phase 19: SUBSYSTEM — 正規表現
   └ re-pattern, re-find, re-matches, re-seq, re-matcher, re-groups
   └ Zig で正規表現エンジン実装 or PCRE バインディング
 
-Phase 19: DESIGN — 動的束縛・sorted コレクション
-  └ binding, with-bindings, set! 等（束縛フレームスタック）
-  └ sorted-map, sorted-map-by, sorted-set, sorted-set-by（赤黒木）
-
 Phase 20: SUBSYSTEM — 名前空間システム
-  └ ns, in-ns, require, use, refer, load, load-file
-  └ マルチファイルプログラム対応
+  └ ns, in-ns, require, use, refer, refer-clojure, load, load-file
+  └ all-ns, find-ns, create-ns, remove-ns, ns-name, ns-publics, ns-map 等
+  └ resolve, ns-resolve, requiring-resolve, alias, ns-aliases
+  └ *ns* 動的 Var
 
 Phase 21: SUBSYSTEM — I/O
   └ *in*, *out*, *err*, slurp, spit, read-line, flush
-  └ with-open, with-out-str, with-in-str, line-seq
+  └ with-open, with-out-str, with-in-str, line-seq, file-seq
+  └ print 系動的 Var: *print-length*, *print-level*, *flush-on-newline* 等
 
 Phase 22: SUBSYSTEM — Reader/Eval
-  └ read, read-string, eval, macroexpand, macroexpand-1
-  └ セルフホスティング基盤
+  └ read, read-string, read+string, eval, macroexpand, macroexpand-1
+  └ load-string, load-reader
+  └ *read-eval*, *data-readers*, *default-data-reader-fn*
+
+Phase 23: GC（シンプル版）
+  └ mark-and-sweep or arena + 世代管理
+  └ 長時間 REPL 対応（言語機能は ArenaAllocator で十分動作済み）
 
 Phase LAST: Wasm 連携
   └ 言語機能充実後
+  └ Component Model 対応、.wasm ロード・呼び出し、型マッピング
 ```
 
 ---
 
-## 将来のフェーズ
+## 設計判断の控え
 
-上記ロードマップ参照。Wasm 連携が最後。
+1. **正規表現**: Zig 標準ライブラリにないため外部実装 or 自前が要る。
+2. **skip 方針**: 明確に JVM 固有（proxy, agent, STM, Java array, unchecked-*, BigDecimal）のみ skip。
+   迷うものは実装する。
+3. **JVM 型変換**: byte/short/long/float 等は Zig キャスト相当に簡略化。
+   instance?/class は内部タグ検査。深追いせず最小限で。
 
 詳細: `docs/reference/architecture.md`
