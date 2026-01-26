@@ -118,6 +118,44 @@ return switch (self) { .nil => true, else => false };
 - **配列 > ポインタ**: NodeId = u32 でインデックス参照
 - **構造体は小さく**: Token は 8-16 バイト以内
 
+## IDE連携ツール（ZLS / Emacs MCP）
+
+Zig コードの探索・変更時は IDE 連携ツールを**積極的に活用**し、コンテキスト消費を抑えること。
+
+### 使えるツールと用途
+
+| ツール | 用途 | 使い方 |
+|--------|------|--------|
+| `imenu-list-symbols` | ファイル内の関数・構造体を一覧 | ファイルを全文読む前に構造を把握 |
+| `xref-find-references` | シンボルの全参照箇所を検索 | 型・関数の変更前に影響範囲を特定 |
+| `getDiagnostics` | コンパイルエラー・警告を取得 | 編集後、`zig build` 前にエラーを検出 |
+
+### 活用パターン
+
+**ファイルの構造把握（Read の前に）:**
+```
+imenu-list-symbols(file_path: "src/lib/core.zig")
+→ 全関数の名前と行番号が返る → 必要な関数だけを Read で読む
+```
+
+**リファクタリング前の影響調査:**
+```
+xref-find-references(identifier: "Value", file_path: "src/runtime/value.zig")
+→ Value を使う全ファイル・全行が返る → 変更の影響範囲を把握
+```
+
+**編集後の即座のエラー検出:**
+```
+getDiagnostics(uri: "file:///path/to/edited.zig")
+→ コンパイルエラーがあればビルド前に検出
+```
+
+### 注意事項
+
+- `xref-find-apropos` と `treesit-info` は Zig では未動作（tags / tree-sitter 未設定）
+- `xref-find-references` は大量の結果を返す場合がある（Value 等のコア型）
+- ZLS LSP プラグインが有効な場合、go-to-definition 等の追加ツールが使える可能性がある
+
 ## 参照
 
 - 本家Clojure: `~/Documents/OSS/clojure`
