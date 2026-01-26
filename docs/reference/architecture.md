@@ -1,7 +1,7 @@
 # アーキテクチャ設計
 
 ClojureWasmBeta の全体アーキテクチャ。
-ツリーウォーク評価器から始め、将来的にバイトコードVM、GC、Wasm連携へ拡張。
+ツリーウォーク評価器から始め、バイトコードVM、データ抽象層、GC、Wasm連携へ拡張。
 
 ## 処理フロー
 
@@ -21,9 +21,9 @@ Source Code
 └──────────────────────────────────────────────────────────────┘
      ↓ Node
 ┌──────────────────────────────────────────────────────────────┐
-│ src/runtime/                                                  │
-│   TreeWalkEval (Phase 4) または VMEval (Phase 8)              │
-│   Node を評価して Value を生成                                │
+│ src/compiler/ + src/runtime/                                  │
+│   TreeWalkEval または Compiler → VM                           │
+│   Node を評価/実行して Value を生成                           │
 └──────────────────────────────────────────────────────────────┘
      ↓ Value
 ┌──────────────────────────────────────────────────────────────┐
@@ -33,355 +33,269 @@ Source Code
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## 設計方針: ツリーウォーク → バイトコードVM
+## 設計方針
 
-最初はツリーウォーク型インタプリタで実装し、後にバイトコードVMへ移行する。
+### デュアルバックエンド戦略
 
-**ツリーウォークを先にする理由:**
-- 実装がシンプルでデバッグしやすい
-- Clojure の正しい振る舞いを確認しやすい
-- sci（Small Clojure Interpreter）も同様のアプローチ
+TreeWalk評価器とバイトコードVMを並行して維持し、`--compare`で回帰検出。
 
-**二度手間を避ける設計:**
 ```
-Form → Analyzer → Node → [eval インターフェース] → Value
+Form → Analyzer → Node → [Backend切り替え] → Value
                               ↑
                     ┌─────────┴─────────┐
                     │                   │
-              TreeWalkEval          VMEval
-              (Phase 4)            (Phase 8)
+              TreeWalkEval            Compiler
+              (正確性重視)               ↓
+                                    Bytecode
+                                       ↓
+                                      VM
+                                  (性能重視)
 ```
 
-- Analyzer (Form → Node) は共通
-- eval を抽象化し、後から差し替え可能に
+- **TreeWalk**: 新機能の正しい振る舞いを確立
+- **VM**: TreeWalkと同じ結果を返すことを検証しながら実装
+- **`--compare`オプション**: 両バックエンドで実行し結果を比較
+
+### コア vs ライブラリの区別
+
+**重要**: Clojureでは多くの「標準関数」が実際にはコア実装を要求する。
+
+| 区分 | 例 | 追加方法 |
+|------|-----|---------|
+| **純粋なlib追加** | println, str, subs | core.zig に関数追加のみ |
+| **コア改修必要** | map, filter, reduce | LazySeq型 + 新Node + VM対応 |
+| **新しい抽象** | defprotocol, defrecord | Value型拡張 + Analyzer + VM |
+
+「lib追加で済む」と思っても実際はコア改修が必要なケースが多い。
+
+---
 
 ## ディレクトリ構成
 
 ```
 src/
 ├── base/               # 共通基盤
-│   ├── error.zig       # エラー型
-│   ├── allocator.zig   # アロケータ抽象化 (将来)
-│   └── intern.zig      # 文字列インターニング (将来)
+│   └── error.zig       # エラー型
 │
-├── reader/             # Phase 1: Source → Form
+├── reader/             # Source → Form
 │   ├── tokenizer.zig   # トークン化
 │   ├── reader.zig      # S式構築
 │   └── form.zig        # Form型定義
 │
-├── analyzer/           # Phase 2: Form → Node
+├── analyzer/           # Form → Node
 │   ├── node.zig        # Node型定義
-│   ├── analyze.zig     # 解析メイン (将来)
-│   └── macroexpand.zig # マクロ展開 (将来)
+│   └── analyze.zig     # 解析・マクロ展開
 │
-├── compiler/           # Phase 3a: Node → Bytecode (将来)
+├── compiler/           # Node → Bytecode
 │   ├── bytecode.zig    # バイトコード定義
-│   ├── emit.zig        # コード生成
-│   └── optimize.zig    # 最適化パス
+│   └── emit.zig        # コード生成
 │
-├── vm/                 # Phase 3b: Bytecode 実行 (将来)
-│   ├── vm.zig          # VMメインループ
-│   ├── stack.zig       # 値スタック
-│   └── ops.zig         # オペコード実装
+├── vm/                 # Bytecode実行
+│   └── vm.zig          # VMメインループ
 │
 ├── runtime/            # 実行時サポート
 │   ├── value.zig       # Value型
 │   ├── var.zig         # Var
 │   ├── namespace.zig   # Namespace
 │   ├── env.zig         # グローバル環境
-│   └── context.zig     # 評価コンテキスト
+│   ├── context.zig     # 評価コンテキスト
+│   ├── evaluator.zig   # TreeWalk評価器
+│   ├── engine.zig      # Backend切り替え
+│   └── allocators.zig  # 寿命別アロケータ
 │
-├── gc/                 # ガベージコレクション (将来)
-│   ├── gc.zig          # GCインターフェース
-│   ├── arena.zig       # Arenaアロケータ
-│   └── tracing.zig     # Mark-Sweep GC
+├── lib/                # Clojure標準ライブラリ
+│   └── core.zig        # clojure.core 組み込み関数
 │
-├── wasm/               # Wasm Component Model (将来)
-│   ├── loader.zig      # .wasmロード
-│   ├── component.zig   # Component API
-│   ├── types.zig       # 型マッピング
-│   └── call.zig        # 関数呼び出しブリッジ
-│
-└── lib/                # Clojure 標準ライブラリ
-    ├── core.zig        # clojure.core
-    ├── string.zig      # clojure.string (将来)
-    └── set.zig         # clojure.set (将来)
+└── main.zig            # CLI
 ```
 
-## コンポーネント詳細
-
-### Reader (src/reader/)
-
-ソースコードを Form（構文木）に変換。
-
-- **Tokenizer**: 文字列 → トークン列
-- **Reader**: トークン列 → Form
-- **Form**: 構文表現（Symbol, List, Vector, etc.）
-
-### Analyzer (src/analyzer/)
-
-Form を実行可能な Node に変換。
-
-- **マクロ展開**: マクロを展開
-- **シンボル解決**: Var/ローカル変数を解決
-- **構文解析**: special form (if, let, fn, etc.) を Node に
-
-### Compiler (src/compiler/) [将来]
-
-Node からバイトコードを生成。
-
-- **Emit**: Node → Bytecode
-- **Optimize**: 定数畳み込み、TCO、デッドコード除去
-
-### VM (src/vm/) [将来]
-
-バイトコードを実行するスタックベースVM。
-
-- **値スタック**: 演算のためのスタック
-- **コールフレーム**: 関数呼び出し管理
-- **オペコード**: 各命令の実装
-
-### GC (src/gc/) [将来]
-
-メモリ管理。
-
-| 戦略 | 特徴 | 用途 |
-|------|------|------|
-| Arena | 一括解放、シンプル | 初期実装、短命オブジェクト |
-| Mark-Sweep | 到達可能性ベース | 長時間実行 |
-| Generational | 世代別 | 高性能（将来） |
-
-### Wasm Component Model (src/wasm/) [将来]
-
-.wasm ファイルをロードして Clojure から呼び出し。
-
-```clojure
-;; Clojure での使用例
-(def math (wasm/load "math.wasm"))
-(wasm/call math "add" 1 2)  ; => 3
-(wasm/exports math)         ; => ["add" "sub" "mul" "div"]
-
-;; 型マッピング
-;; Clojure int    → Wasm i64
-;; Clojure float  → Wasm f64
-;; Clojure string → Wasm string
-;; Clojure vector → Wasm list<T>
-```
-
-**双方向呼び出し:**
-- Clojure → Wasm: `wasm/call`
-- Wasm → Clojure: インポート関数として Clojure 関数を公開
-
-## 依存関係
-
-```
-base ←─────────────────────────────────────────────────┐
-  ↑                                                    │
-reader ←── analyzer ←── compiler ←── vm               │
-              ↑                       ↑                │
-              └───── runtime ─────────┴── gc ──────────┤
-                        ↑                              │
-                      wasm ────────────────────────────┘
-                        ↑
-                       lib
-```
+---
 
 ## ロードマップ
 
-### Phase 1: Reader ✓
-- [x] Tokenizer
-- [x] Form 設計
-- [x] Reader（S式構築）
+### 完了フェーズ
 
-### Phase 2: Runtime 基盤 ✓
-- [x] Value 型
-- [x] Var, Namespace
-- [x] Env（グローバル環境）
+#### Phase 1-4: 基盤構築 ✓
+- Reader (Tokenizer, Form)
+- Runtime基盤 (Value, Var, Namespace, Env)
+- Analyzer (Node, special forms, シンボル解決)
+- TreeWalk評価器
 
-### Phase 3: Analyzer ✓
-- [x] Node 型
-- [x] special forms（if, let, fn, def, do, quote, loop, recur）
-- [x] シンボル解決
+#### Phase 5: ユーザー定義関数 ✓
+- fn クロージャ
+- def された関数呼び出し
 
-### Phase 4: ツリーウォーク評価器 ✓
-- [x] Context（ローカルバインディング管理）
-- [x] Evaluator 実装
-- [x] 組み込み関数（算術、比較、述語、コレクション、出力）
+#### Phase 6: マクロシステム ✓
+- defmacro
+- Analyzer内での自動展開
 
-### Phase 5: ユーザー定義関数 ✓
-- [x] 統合テスト（Reader → Analyzer → Evaluator）
-- [x] ユーザー定義関数（fn クロージャ実装）
-- [x] def された関数の呼び出し
+#### Phase 7: CLI ✓
+- `-e` オプション
+- 複数式の連続評価
+- 状態保持
 
-### Phase 6: マクロシステム ✓
-- [x] defmacro
-- [x] macroexpand（Analyzer内で自動展開）
-- [x] Analyzer 拡張（マクロ展開）
+#### Phase 8.0: VM基盤 ✓
+- バイトコード定義 (OpCode約50個)
+- Compiler (Node → Bytecode)
+- スタックベースVM
+- engine.zig (Backend切り替え、--compare)
 
-### Phase 7: CLI ✓
-- [x] `-e` オプション（式評価）
-- [x] 複数式の連続評価
-- [x] 状態保持（def の値を次の -e で使用可能）
+#### Phase 8.1: クロージャ・関数完成 ✓
+- VMでのクロージャ実行
+- 複数アリティfn
+- 可変長引数 (& rest)
 
-### Phase 8: Compiler + VM (進行中)
-- [x] バイトコード定義（OpCode, Instruction, Chunk, FnProto）
-- [x] Emit（Node → Bytecode）- Compiler 構造体
-- [x] VM 実装（基盤）- スタックベース、フレーム管理
-- [x] OpCode 完全設計（約50個、カテゴリ別予約）
-
-#### Phase 8.0.5: 評価エンジン抽象化 ✓
-- [x] engine.zig 新設（Backend切り替え）
-- [x] CLI --backend オプション
-- [x] テスト統合（両バックエンドで実行・比較）
-- [ ] ベンチマーク対応（リリースビルド直接実行）- 将来
-
-#### Phase 8.1: クロージャ完成
-- [ ] upvalue_load, upvalue_store
-- [ ] ユーザー定義関数の VM 実行
-
-#### Phase 8.2: コレクションリテラル
-- [ ] vec_new, map_new, set_new, list_new
-
-#### Phase 8.3: 末尾呼び出し最適化
-- [ ] tail_call, apply
-
-### Phase 9: GC
-- [ ] Mark-Sweep GC
-- [ ] Arena から移行
-
-### Phase 10: Wasm 連携
-- [ ] Component Model 対応
-- [ ] .wasm ロード・呼び出し
-- [ ] 型マッピング（Clojure ↔ Wasm）
-
-### 後回し
-- **互換性テスト基盤** - 本家 Clojure との入出力比較
-- **REPL** - Phase 7 以降、必要に応じて
+#### Phase 8.2: 高階関数 ✓
+- apply
+- partial
+- comp
+- reduce
 
 ---
 
-## マクロシステムについて
+### 進行中・今後のフェーズ
 
-マクロ展開には循環依存がある:
-- `macroexpand` にはマクロ関数の **eval** が必要
-- `analyze` には `macroexpand` が必要
+#### Phase 8.3: 分配束縛 (Destructuring) ← 次の最優先
 
-**解決策:** Phase 3 では special forms のみ対応し、Phase 6 でマクロを追加。
-基本的な eval が動いてからマクロシステムを導入する。
+Clojureの実用性に直結。これがないと多くのコードが書けない。
 
----
+```clojure
+;; ベクター分配
+(let [[a b c] [1 2 3]] ...)
+(fn [[x y] z] ...)
 
-## CLI について
+;; マップ分配
+(let [{:keys [name age]} person] ...)
+(fn [{:keys [x y] :as point}] ...)
 
-本家 `clj` コマンドの挙動を参考にする:
-
-```bash
-clj -M -e "(def x 10)" -e "(+ x 5)"
-# => #'user/x
-# => 15
-
-clj -M -e "(do (println \"hello\") 42)"
-# => hello
-# => 42
+;; ネスト分配
+(let [[a [b c]] [[1 2] [3 4]]] ...)
 ```
 
-- 各 `-e` の評価値を出力
-- 副作用（println 等）は発生時に出力
-- 複数 `-e` 間で状態保持
+**必要な変更**:
+- Analyzer: let, fn 引数の分配パターン解析
+- 新Node: DestructureBindingNode
+- Evaluator/VM: 分配バインディング処理
+
+#### Phase 8.4: 遅延シーケンス (Lazy Sequences)
+
+map, filter, take など基本的なシーケンス操作の前提。
+
+```clojure
+(take 5 (range))           ; 無限シーケンスから5つ
+(map inc [1 2 3])          ; 遅延変換
+(filter even? (range 100)) ; 遅延フィルタ
+```
+
+**必要な変更**:
+- Value: LazySeq型追加
+- lazy-seq マクロ / cons 関数
+- realize / force 処理
+- ISeq プロトコル相当の実装
+
+#### Phase 8.5: プロトコル (Protocols)
+
+型ベースの多態性。多くのコア関数の拡張性がこれに依存。
+
+```clojure
+(defprotocol ILookup
+  (get [this key]))
+
+(extend-type PersistentVector
+  ILookup
+  (get [this key] (nth this key)))
+```
+
+**必要な変更**:
+- Value: Protocol型追加
+- defprotocol, extend-type 特殊形式
+- 型→プロトコル実装のディスパッチテーブル
+
+#### Phase 9: GC
+
+遅延シーケンス導入後に必須となる。
+
+- Mark-Sweep GC
+- Arena から移行
+- ルート追跡（スタック、Var、クロージャ）
+
+#### Phase 10: Wasm連携
+
+言語機能が充実してから意味を持つ。
+
+- Component Model対応
+- .wasmロード・呼び出し
+- 型マッピング (Clojure ↔ Wasm)
 
 ---
 
-## VM 設計
+## 現在の実装状況
 
-### 設計方針
+### 組み込み関数 (core.zig)
 
-**スタックベース VM** を採用（レジスタマシンではない）。
+```
+算術:      +, -, *, /
+比較:      =, <, >, <=, >=
+述語:      nil?, number?, integer?, float?, string?, keyword?,
+           symbol?, fn?, coll?, list?, vector?, map?, set?, empty?
+コレクション: first, rest, cons, conj, count, nth, list, vector
+出力:      println, pr-str
+```
 
-| 選択 | 理由 |
-|-----|------|
-| スタックベース | GC ルート追跡が容易、Wasm と親和性あり |
-| 固定命令サイズ | OpCode(u8) + operand(u16) = 3バイト |
-| JVM 非互換 | Clojure 意味論のみ実装、JVM 詳細は不要 |
+### 特殊形式 (Analyzer)
 
-**参考にしたもの:**
-- Lua 5.x（スタックベース、シンプル）
-- "Crafting Interpreters"（Chunk 構造、ジャンプパッチング）
-- Python bytecode（定数テーブル）
+```
+制御:      if, do, let, loop, recur
+関数:      fn, def, defmacro
+引用:      quote
+高階:      apply, partial, comp, reduce
+```
 
-**参考にしないもの:**
-- JVM bytecode（複雑、クラスベース OOP 前提）
-- LuaJIT（レジスタマシン、JIT 前提）
-- V8（JIT 前提、hidden class など不要）
+### 未実装の重要機能
 
-### OpCode カテゴリ
+| 機能 | 影響度 | 依存関係 |
+|------|--------|----------|
+| 分配束縛 | 高 | なし（すぐ着手可能） |
+| 遅延シーケンス | 高 | map/filter/take に必須 |
+| プロトコル | 高 | 型の拡張性に必須 |
+| try/catch/finally | 中 | 例外処理 |
+| Atom/Ref | 中 | 状態管理 |
+| メタデータ | 低 | ^{:doc ...} 等 |
+| マルチメソッド | 低 | 値ベースディスパッチ |
 
-| 範囲 | カテゴリ | 用途 |
-|-----|---------|------|
-| 0x00-0x0F | 定数・リテラル | nil, true, false, 定数ロード |
+---
+
+## VM設計
+
+### 基本方針
+
+- **スタックベース**: GCルート追跡が容易、Wasmと親和性あり
+- **固定命令サイズ**: OpCode(u8) + operand(u16) = 3バイト
+- **Clojure意味論のみ**: JVM詳細は実装しない
+
+### OpCodeカテゴリ
+
+| 範囲 | カテゴリ | 主なOpCode |
+|-----|---------|-----------|
+| 0x00-0x0F | 定数・リテラル | const_load, nil, true_val, false_val |
 | 0x10-0x1F | スタック操作 | pop, dup, swap |
-| 0x20-0x2F | ローカル変数 | let バインディング |
-| 0x30-0x3F | クロージャ変数 | upvalue（外側スコープ参照） |
-| 0x40-0x4F | Var 操作 | def, Var 参照、動的バインディング |
-| 0x50-0x5F | 制御フロー | jump, 条件分岐 |
-| 0x60-0x6F | 関数 | call, ret, closure, tail_call |
-| 0x70-0x7F | loop/recur | Clojure 特有のループ |
-| 0x80-0x8F | コレクション生成 | [], {}, #{} リテラル |
-| 0x90-0x9F | コレクション操作 | nth, get, conj 等（将来最適化） |
-| 0xA0-0xAF | 例外処理 | try/catch/finally |
-| 0xC0-0xCF | メタデータ | with-meta, meta |
-| 0xF0-0xFF | 予約・デバッグ | nop, debug |
-
-### 実装ロードマップ
-
-```
-Phase 8.0 (完了): 基本 OpCode（20個）
-  - 定数、スタック、ローカル、Var、制御フロー、関数基本
-
-Phase 8.1: クロージャ完成
-  - upvalue_load, upvalue_store
-  - クロージャキャプチャ処理
-
-Phase 8.2: コレクションリテラル
-  - vec_new, map_new, set_new, list_new
-
-Phase 8.3: 末尾呼び出し最適化
-  - tail_call, apply
-
-Phase 9 (GC 後): 例外処理
-  - try_begin, catch_begin, finally_begin, throw_ex
-
-Phase 10: メタデータ
-  - with_meta, meta
-```
-
-### Wasm 連携との親和性
-
-Wasm もスタックベース VM のため、設計上の親和性が高い。
-
-```
-Clojure Value ←→ Wasm 型変換レイヤー ←→ Wasm Component
-```
-
-- OpCode 追加なし: Wasm 関数は組み込み関数として登録
-- `call` OpCode で統一的に呼び出し可能
-
-### 組み込み関数 vs OpCode
-
-頻出操作は OpCode 化を検討するが、基本は組み込み関数で実装。
-
-| 操作 | 方針 | 理由 |
-|-----|------|------|
-| +, -, *, / | 組み込み関数 | 多態性（数値型ごと）が必要 |
-| nth, get | 将来 OpCode 化 | 頻出だが、まず組み込みで |
-| first, rest | 将来 OpCode 化 | シーケンス操作の中核 |
-| conj, assoc | 組み込み関数 | コレクション型で振る舞いが異なる |
+| 0x20-0x2F | ローカル変数 | local_load, local_store |
+| 0x30-0x3F | クロージャ変数 | upvalue_load, upvalue_store |
+| 0x40-0x4F | Var操作 | var_load, def, def_macro |
+| 0x50-0x5F | 制御フロー | jump, jump_if_false, jump_if_true |
+| 0x60-0x6F | 関数 | call, ret, closure, partial, comp, reduce |
+| 0x70-0x7F | loop/recur | loop_start, recur |
+| 0x80-0x8F | コレクション生成 | list_new, vec_new, map_new, set_new |
+| 0x90-0x9F | コレクション操作 | nth, get, first, rest, conj, assoc, count |
+| 0xA0-0xAF | 例外処理 | try_begin, catch_begin, finally_begin, throw_ex |
+| 0xC0-0xCF | メタデータ | with_meta, meta |
 
 ---
 
 ## 参考資料
 
 - 型設計: `docs/reference/type_design.md`
-- エラー設計: `docs/reference/error_design.md`
-- Zig ガイド: `docs/reference/zig_guide.md`
+- Zigガイド: `docs/reference/zig_guide.md`
+- 進捗メモ: `.claude/tracking/memo.md`
 - sci: `~/Documents/OSS/sci`
-- 本家 Clojure: `~/Documents/OSS/clojure`
+- 本家Clojure: `~/Documents/OSS/clojure`

@@ -2,39 +2,88 @@
 
 ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラックボックス）を目指す。
 
+## 現在の状態（Phase 8.2 完了）
+
+**評価器の骨格は完成**。デュアルバックエンド（TreeWalk + VM）で基本的な評価が動作。
+ただし「Clojureらしさ」を支えるデータ抽象層（分配束縛、遅延シーケンス、プロトコル）は未実装。
+
+### 次の優先タスク
+
+1. **Phase 8.3: 分配束縛** ← 最優先（実用性に直結）
+2. Phase 8.4: 遅延シーケンス（map/filter/take の前提）
+3. Phase 8.5: プロトコル（型の拡張性）
+
+詳細: `docs/reference/architecture.md`
+
 ## 実装方針
 
-- **現段階**: 全てをZigで実装（Tokenizer, Reader, Eval, 組み込み関数）
-- **将来**: JavaInterOp/JVM前提を排除した.cljをロード可能に（手書きマクロ等で書き換え）
-- 本家.cljを「そのまま」読む方針は取らない（JavaInterOp再実装は無限地獄）
-- 第一目標はcore.clj、他の名前空間も同様にJava依存を排除
+- **全てをZigで実装**（Tokenizer, Reader, Analyzer, Evaluator, VM, 組み込み関数）
+- **JavaInterop再実装は行わない**（無限地獄を避ける）
+- 本家.cljを「そのまま」読む方針は取らない
+- Java依存を排除した形でcore機能を再実装
 
-## イテレーションワークフロー
+### コア vs ライブラリの区別（重要）
 
-**スキル実行**: `/continue` で自律的にイテレーションを進行
+多くの「標準関数」は実際にはコア改修を要求する：
 
-**手動実行時**:
-- **開始時**: `.claude/tracking/memo.md` を確認
-- **終了時**: memo.md を更新し、意味のある単位で `git commit`
+| 区分 | 例 | 必要な作業 |
+|------|-----|-----------|
+| 純粋なlib追加 | println, str | core.zig に関数追加のみ |
+| コア改修必要 | map, filter | LazySeq型 + 新Node + VM対応 |
+| 新しい抽象 | defprotocol | Value型拡張 + Analyzer + VM |
+
+## セッションの進め方
+
+### 開始時
+1. `.claude/tracking/memo.md` を確認（必須）
+2. 現在のタスクと申し送りを把握
+
+### 開発中
+1. **TreeWalk で正しい振る舞いを実装**
+2. **VM を同期**（同じ結果を返すように）
+3. **`--compare` で回帰検出**
+4. テスト追加 → コミット
+
+### 終了時
+1. memo.md を更新
+2. 意味のある単位で `git commit`
 
 ## ドキュメント構成
 
 | パス | 内容 | 参照タイミング |
 |-----|------|--------------|
-| `.claude/tracking/memo.md` | 前回完了・次回タスク・注意点 | 毎セッション（必須） |
-| `docs/reference/architecture.md` | ロードマップ・全体設計 | フェーズ移行時・設計確認時 |
-| `docs/reference/type_design.md` | 3フェーズ型設計 | 必要時のみ |
-| `docs/reference/zig_guide.md` | Zig高速化テクニック | 必要時のみ |
-| `status/tokens.yaml` | トークン対応状況 | Reader実装時 |
-| `status/vars.yaml` | Var対応状況 | 関数実装時 |
+| `.claude/tracking/memo.md` | 現在地点・次回タスク・申し送り | 毎セッション（必須） |
+| `docs/reference/architecture.md` | ロードマップ・全体設計・未実装機能一覧 | フェーズ移行時・設計確認時 |
+| `docs/reference/type_design.md` | 3フェーズ型設計 (Form→Node→Value) | 必要時のみ |
+| `docs/reference/zig_guide.md` | Zig 0.15.2 の落とし穴・パターン | 必要時のみ |
+
+## 評価エンジン（デュアルバックエンド）
+
+```
+Node → [Backend切り替え] → Value
+              ↑
+    ┌─────────┴─────────┐
+    │                   │
+TreeWalkEval          Compiler → VM
+(正確性重視)          (性能重視)
+```
+
+```bash
+# デフォルト（tree_walk）
+./zig-out/bin/ClojureWasmBeta -e "(+ 1 2)"
+
+# VM バックエンド
+./zig-out/bin/ClojureWasmBeta --backend=vm -e "(+ 1 2)"
+
+# 両方で実行して比較（開発時に有用）
+./zig-out/bin/ClojureWasmBeta --compare -e "(+ 1 2)"
+```
 
 ## コーディング規約
 
 - **日本語コメント**: ソースコード内は日本語
 - **コミットメッセージ**: 日本語
 - **識別子**: 英語
-- **YAML**: `yamllint` でエラーなし（`.yamllint` 設定あり）
-  - ステータス値: `todo` → `wip` → `partial` → `done`（または `skip`）
 
 ## Zig 0.15.2 ガイド
 
@@ -51,88 +100,16 @@ var map: std.AutoHashMapUnmanaged(u32, []const u8) = .empty;
 defer map.deinit(allocator);
 try map.put(allocator, key, value);
 
-// ✅ stdout
-const stdout = std.fs.File.stdout();
-stdout.writeAll("output\n") catch {};
-
-// ✅ StaticStringMap（comptime）
-const keywords = std.StaticStringMap(Keyword).initComptime(.{
-    .{ "if", .if_kw },
-    .{ "else", .else_kw },
-});
-```
-
-```zig
-// ❌ 存在しないAPI
-// std.io.getStdOut()
-// std.ComptimeStringMap
-```
-
-### 落とし穴
-
-```zig
-// ❌ stdout 取得（バッファ必須）
-const stdout = std.io.getStdOut().writer();
-
-// ✅ バッファ付き writer
+// ✅ stdout（バッファ必須）
 var buf: [4096]u8 = undefined;
 var writer = std.fs.File.stdout().writer(&buf);
 const stdout = &writer.interface;
 try stdout.flush();  // 忘れずに
 
-// ❌ format メソッドを持つ型の {} 出力
-try writer.print("loc: {}", .{self.location});  // ambiguous format string
-
-// ✅ 明示的に format 呼び出し
-try writer.writeAll("loc: ");
-try self.location.format("", .{}, writer);
-
-// ❌ メソッド名と同名のローカル変数
-pub fn next(self: *T) {
-    const next = self.peek();  // シャドウイングエラー
-}
-
-// ✅ 別名を使う
-pub fn next(self: *T) {
-    const next_char = self.peek();
-}
-
-// ❌ tagged union で == 比較（不安定）
-return self == .nil;
-
-// ✅ switch で判定
+// ✅ tagged union の判定は switch
 return switch (self) { .nil => true, else => false };
+// ❌ self == .nil は不安定
 ```
-
-## 評価エンジン（並行開発）
-
-**2つのバックエンドを並行開発**:
-- **TreeWalk** (`evaluator.zig`): 安定版、デバッグしやすい
-- **BytecodeVM** (`vm.zig` + `compiler/`): 高速化目標
-
-**engine.zig** で抽象化し、切り替え可能:
-```zig
-var eng = EvalEngine.init(allocator, env, .tree_walk);  // or .vm
-const result = try eng.run(node);
-```
-
-**CLI オプション**:
-```bash
-# デフォルト（tree_walk）
-./zig-out/bin/ClojureWasmBeta -e "(+ 1 2)"
-
-# VM バックエンド
-./zig-out/bin/ClojureWasmBeta --backend=vm -e "(+ 1 2)"
-
-# 両方で実行して比較（開発時に有用）
-./zig-out/bin/ClojureWasmBeta --compare -e "(+ 1 2)"
-```
-
-**開発指針**:
-- 新機能は**まず TreeWalk で実装**（動作確認しやすい）
-- TreeWalk で動いたら VM にも実装
-- `--compare` で両バックエンドの結果一致を検証
-- ベンチマークは `zig build -Doptimize=ReleaseFast` 後、バイナリ直接実行
 
 ## 設計原則
 
