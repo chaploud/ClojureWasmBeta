@@ -65,6 +65,19 @@ pub const Context = struct {
         };
     }
 
+    /// 単一バインディングを追加したコンテキストを作成
+    pub fn withBinding(self: *const Context, val: Value) !Context {
+        const combined = try self.allocator.alloc(Value, self.bindings.len + 1);
+        @memcpy(combined[0..self.bindings.len], self.bindings);
+        combined[self.bindings.len] = val;
+
+        return Context{
+            .env = self.env,
+            .allocator = self.allocator,
+            .bindings = combined,
+        };
+    }
+
     /// バインディングを置き換えたコンテキストを作成（recur 用）
     pub fn replaceBindings(self: *const Context, start_idx: usize, new_values: []const Value) !Context {
         const new_bindings = try self.allocator.dupe(Value, self.bindings);

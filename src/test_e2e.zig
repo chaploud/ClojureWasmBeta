@@ -643,3 +643,62 @@ test "compare: reduce" {
     // リストでも動作
     try expectIntBoth(allocator, &env, "(reduce + '(1 2 3 4))", 10);
 }
+
+test "compare: destructuring" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // === シーケンシャル分配 ===
+
+    // 基本的な分配
+    try expectIntBoth(allocator, &env, "(let [[a] [1]] a)", 1);
+    try expectIntBoth(allocator, &env, "(let [[a b] [1 2]] (+ a b))", 3);
+    try expectIntBoth(allocator, &env, "(let [[a b c] [1 2 3]] (+ a b c))", 6);
+
+    // ネスト分配
+    try expectIntBoth(allocator, &env, "(let [[a [b c]] [1 [2 3]]] (+ a b c))", 6);
+
+    // :as 分配
+    try expectIntBoth(allocator, &env, "(let [[a b :as all] [1 2]] (count all))", 2);
+    try expectIntBoth(allocator, &env, "(let [[a b :as all] [1 2]] (+ a b (first all)))", 4);
+
+    // & rest 分配
+    try expectIntBoth(allocator, &env, "(let [[x & rest] [1 2 3 4]] x)", 1);
+    try expectIntBoth(allocator, &env, "(let [[x & rest] [1 2 3 4]] (count rest))", 3);
+    try expectIntBoth(allocator, &env, "(let [[x & rest] [1 2 3 4]] (first rest))", 2);
+
+    // & rest と :as の組み合わせ
+    // x=1, rest=(2 3), all=[1 2 3] -> 1 + 2 + 3 = 6
+    try expectIntBoth(allocator, &env, "(let [[x & rest :as all] [1 2 3]] (+ x (count rest) (count all)))", 6);
+
+    // リストの分配
+    try expectIntBoth(allocator, &env, "(let [[a b] '(10 20)] (+ a b))", 30);
+
+    // === 順次バインディング ===
+
+    // 後続のバインディングが前のバインディングを参照
+    try expectIntBoth(allocator, &env, "(let [x 1 y x] y)", 1);
+    try expectIntBoth(allocator, &env, "(let [x 1 y x z (+ x y)] z)", 2);
+
+    // 分配と順次バインディングの組み合わせ
+    try expectIntBoth(allocator, &env, "(let [[a b] [1 2] c (+ a b)] c)", 3);
+
+    // === fn 引数の分配 ===
+
+    // 基本的な fn 引数分配
+    try expectIntBoth(allocator, &env, "((fn [[a b]] (+ a b)) [1 2])", 3);
+    try expectIntBoth(allocator, &env, "((fn [[a b c]] (+ a b c)) [1 2 3])", 6);
+
+    // fn 引数分配と & rest
+    try expectIntBoth(allocator, &env, "((fn [[x & rest]] (+ x (count rest))) [1 2 3 4])", 4);
+
+    // 通常パラメータと分配パラメータの混在
+    try expectIntBoth(allocator, &env, "((fn [x [a b]] (+ x a b)) 10 [1 2])", 13);
+
+    // ネスト分配
+    try expectIntBoth(allocator, &env, "((fn [[a [b c]]] (+ a b c)) [1 [2 3]])", 6);
+}

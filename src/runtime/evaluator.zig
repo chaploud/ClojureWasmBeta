@@ -78,28 +78,32 @@ fn runDo(node: *const node_mod.DoNode, ctx: *Context) EvalError!Value {
 }
 
 /// let 評価
+/// バインディングは順次評価・バインド（後続のバインディングが前のバインディングを参照可能）
 fn runLet(node: *const node_mod.LetNode, ctx: *Context) EvalError!Value {
-    // バインディングの値を評価
-    var binding_vals = ctx.allocator.alloc(Value, node.bindings.len) catch return error.OutOfMemory;
-    for (node.bindings, 0..) |binding, i| {
-        binding_vals[i] = try run(binding.init, ctx);
+    var current_ctx = ctx.*;
+
+    // 各バインディングを順次評価してコンテキストに追加
+    for (node.bindings) |binding| {
+        const val = try run(binding.init, &current_ctx);
+        current_ctx = current_ctx.withBinding(val) catch return error.OutOfMemory;
     }
 
     // 新しいコンテキストでボディを評価
-    var new_ctx = ctx.withBindings(binding_vals) catch return error.OutOfMemory;
-    return run(node.body, &new_ctx);
+    return run(node.body, &current_ctx);
 }
 
 /// loop 評価
+/// バインディングは順次評価・バインド（後続のバインディングが前のバインディングを参照可能）
 fn runLoop(node: *const node_mod.LoopNode, ctx: *Context) EvalError!Value {
-    // 初期バインディングの値を評価
-    var binding_vals = ctx.allocator.alloc(Value, node.bindings.len) catch return error.OutOfMemory;
-    for (node.bindings, 0..) |binding, i| {
-        binding_vals[i] = try run(binding.init, ctx);
+    // 各バインディングを順次評価してコンテキストに追加
+    var current_ctx = ctx.*;
+    for (node.bindings) |binding| {
+        const val = try run(binding.init, &current_ctx);
+        current_ctx = current_ctx.withBinding(val) catch return error.OutOfMemory;
     }
 
     const start_idx = ctx.bindings.len;
-    var loop_ctx = ctx.withBindings(binding_vals) catch return error.OutOfMemory;
+    var loop_ctx = current_ctx;
 
     // loop 本体を繰り返し評価
     while (true) {

@@ -7,8 +7,8 @@
 
 ## 現在地点
 
-**Phase 8.2 完了** - 評価器の骨格が完成した段階。
-「Clojureらしさ」を支えるデータ抽象層（分配束縛、遅延シーケンス、プロトコル）はまだない。
+**Phase 8.3 シーケンシャル分配 完了** - ベクター分配、fn 引数分配が動作。
+マップ分配 `{:keys [...]}` は未実装。
 
 ### 完了した機能
 
@@ -21,6 +21,7 @@
 | 8.0 | VM基盤 (Bytecode, Compiler, VM, --compare) |
 | 8.1 | クロージャ完成, 複数アリティfn, 可変長引数 |
 | 8.2 | 高階関数 (apply, partial, comp, reduce) |
+| 8.3 | シーケンシャル分配 `[a b]` `[x & rest]` `[a :as all]` |
 
 ### 組み込み関数
 
@@ -41,36 +42,46 @@
 高階: apply, partial, comp, reduce
 ```
 
+### 分配束縛（8.3 で追加）
+
+```clojure
+;; let での分配
+(let [[a b c] [1 2 3]] (+ a b c))      ; => 6
+(let [[x & rest] [1 2 3 4]] rest)      ; => (2 3 4)
+(let [[a b :as all] [1 2]] all)        ; => [1 2]
+(let [[a [b c]] [1 [2 3]]] (+ a b c))  ; => 6 (ネスト)
+
+;; fn 引数での分配
+((fn [[a b]] (+ a b)) [1 2])           ; => 3
+((fn [x [a b]] (+ x a b)) 10 [1 2])    ; => 13
+
+;; 順次バインディング（後続が前のバインディングを参照）
+(let [x 1 y x] y)                      ; => 1
+```
+
 ---
 
 ## 次回タスク
 
-### Phase 8.3: 分配束縛 (Destructuring) ← 最優先
+### Phase 8.3 続き: マップ分配
 
-これがないと実用的なClojureコードが書けない。
+シーケンシャル分配は完了。マップ分配は別途実装が必要。
 
-**実装対象**:
 ```clojure
-;; ベクター分配
-(let [[a b c] [1 2 3]] (+ a b c))
-(let [[x & rest] [1 2 3 4]] rest)
-(let [[a b :as all] [1 2]] all)
-
-;; マップ分配
+;; 未実装
 (let [{:keys [name age]} {:name "Alice" :age 30}] name)
 (let [{x :x y :y} {:x 1 :y 2}] (+ x y))
 (let [{:keys [a] :or {a 0}} {}] a)
-
-;; fn 引数での分配
-(fn [[x y]] (+ x y))
-(fn [{:keys [x y]}] (+ x y))
 ```
 
 **必要な変更**:
-1. Analyzer: 分配パターンの解析
-2. 新ノード or 既存LetNode拡張
-3. Evaluator: 分配バインディング処理
-4. VM: 対応するバイトコード
+1. Analyzer: マップパターンの解析
+2. 新しい expandMapPattern 関数
+3. マップの get 関数が必要（現在未実装）
+
+### Phase 8.4: 遅延シーケンス (LazySeq)
+
+map, filter, take に必須。
 
 ---
 
@@ -78,6 +89,7 @@
 
 | Phase | 内容 | 依存 |
 |-------|------|------|
+| 8.3+ | マップ分配 | get 関数が必要 |
 | 8.4 | 遅延シーケンス (LazySeq) | map/filter/take に必須 |
 | 8.5 | プロトコル | 型の拡張性に必須 |
 | 9 | GC | LazySeq導入後に必須 |
@@ -102,6 +114,7 @@
 - **メモリリーク（Phase 9 GC で対応予定）**:
   - evaluator.zig の args 配列（バインディングスタック改善で対応）
   - Value 所有権（Var 破棄時に内部 Fn が解放されない）
+  - context.withBinding の配列（バインディング毎に新配列を確保）
 
 ### VM
 - createClosure: frame.base > 0 のみキャプチャ（トップレベルクロージャバグ修正済み）

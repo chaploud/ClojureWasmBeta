@@ -35,6 +35,12 @@ const LocalBinding = struct {
     idx: u32,
 };
 
+/// 分配パターン情報（fn パラメータ用）
+const DestructurePattern = struct {
+    idx: usize,
+    pattern: Form,
+};
+
 /// Analyzer
 /// Form を Node に変換
 pub const Analyzer = struct {
@@ -253,24 +259,23 @@ pub const Analyzer = struct {
 
         // ローカルバインディングをスタックに追加
         const start_locals = self.locals.items.len;
-        var bindings = self.allocator.alloc(node_mod.LetBinding, binding_pairs.len / 2) catch return error.OutOfMemory;
+
+        // 分配束縛を展開してバインディングリストを構築
+        var bindings_list: std.ArrayListUnmanaged(node_mod.LetBinding) = .empty;
+        defer bindings_list.deinit(self.allocator);
 
         var i: usize = 0;
         while (i < binding_pairs.len) : (i += 2) {
-            const sym_form = binding_pairs[i];
-            if (sym_form != .symbol) {
-                return err.parseError(.invalid_binding, "let binding name must be a symbol", .{});
-            }
-
-            const name = sym_form.symbol.name;
+            const pattern = binding_pairs[i];
             const init_node = try self.analyze(binding_pairs[i + 1]);
 
-            // ローカルに追加
-            const idx: u32 = @intCast(self.locals.items.len);
-            self.locals.append(self.allocator, .{ .name = name, .idx = idx }) catch return error.OutOfMemory;
-
-            bindings[i / 2] = .{ .name = name, .init = init_node };
+            // パターンを展開してバインディングを追加
+            try self.expandBindingPattern(pattern, init_node, &bindings_list);
         }
+
+        // バインディングを確定
+        const bindings = self.allocator.alloc(node_mod.LetBinding, bindings_list.items.len) catch return error.OutOfMemory;
+        @memcpy(bindings, bindings_list.items);
 
         // ボディを解析
         const body = if (items.len == 2)
@@ -303,6 +308,163 @@ pub const Analyzer = struct {
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = .{ .let_node = let_data };
         return node;
+    }
+
+    /// バインディングパターンを展開
+    /// symbol: 単純バインディング
+    /// vector: シーケンシャル分配
+    /// (将来) map: 連想分配
+    fn expandBindingPattern(
+        self: *Analyzer,
+        pattern: Form,
+        init_node: *Node,
+        bindings: *std.ArrayListUnmanaged(node_mod.LetBinding),
+    ) err.Error!void {
+        switch (pattern) {
+            .symbol => |sym| {
+                // 単純バインディング: name = init
+                const name = sym.name;
+                const idx: u32 = @intCast(self.locals.items.len);
+                self.locals.append(self.allocator, .{ .name = name, .idx = idx }) catch return error.OutOfMemory;
+                bindings.append(self.allocator, .{ .name = name, .init = init_node }) catch return error.OutOfMemory;
+            },
+            .vector => |elems| {
+                // シーケンシャル分配: [a b c] = coll
+                try self.expandSequentialPattern(elems, init_node, bindings);
+            },
+            else => {
+                return err.parseError(.invalid_binding, "binding pattern must be a symbol or vector", .{});
+            },
+        }
+    }
+
+    /// シーケンシャル分配を展開
+    /// [a b c] -> a = (nth coll 0), b = (nth coll 1), c = (nth coll 2)
+    /// [a b & rest] -> a = (nth coll 0), b = (nth coll 1), rest = (drop 2 coll)
+    /// [a b :as all] -> a = (nth coll 0), b = (nth coll 1), all = coll
+    fn expandSequentialPattern(
+        self: *Analyzer,
+        elems: []const Form,
+        init_node: *Node,
+        bindings: *std.ArrayListUnmanaged(node_mod.LetBinding),
+    ) err.Error!void {
+        // まず全体を一時変数にバインド（複数回評価を避ける）
+        const temp_name = "__destructure_seq__";
+        const temp_idx: u32 = @intCast(self.locals.items.len);
+        self.locals.append(self.allocator, .{ .name = temp_name, .idx = temp_idx }) catch return error.OutOfMemory;
+        bindings.append(self.allocator, .{ .name = temp_name, .init = init_node }) catch return error.OutOfMemory;
+
+        // 一時変数への参照ノードを作成
+        const temp_ref = try self.makeLocalRef(temp_name, temp_idx);
+
+        var pos: usize = 0;
+        var i: usize = 0;
+        while (i < elems.len) : (i += 1) {
+            const elem = elems[i];
+
+            // & rest チェック
+            if (elem == .symbol and std.mem.eql(u8, elem.symbol.name, "&")) {
+                // 次の要素が rest パラメータ
+                if (i + 1 >= elems.len) {
+                    return err.parseError(.invalid_binding, "& must be followed by a binding", .{});
+                }
+                const rest_pattern = elems[i + 1];
+
+                // rest = (drop pos coll) - 簡易実装として nthnext を使う
+                // nthnext がないので、一時的に rest 関数を複数回呼ぶ形で実装
+                const rest_init = try self.makeNthRest(temp_ref, pos);
+                try self.expandBindingPattern(rest_pattern, rest_init, bindings);
+
+                i += 1; // rest パターンをスキップ
+
+                // :as チェック（& rest の後にも :as がある可能性）
+                if (i + 1 < elems.len) {
+                    const maybe_as = elems[i + 1];
+                    if (maybe_as == .keyword and std.mem.eql(u8, maybe_as.keyword.name, "as")) {
+                        if (i + 2 >= elems.len) {
+                            return err.parseError(.invalid_binding, ":as must be followed by a symbol", .{});
+                        }
+                        const as_pattern = elems[i + 2];
+                        try self.expandBindingPattern(as_pattern, temp_ref, bindings);
+                        i += 2;
+                    }
+                }
+                continue;
+            }
+
+            // :as チェック
+            if (elem == .keyword and std.mem.eql(u8, elem.keyword.name, "as")) {
+                if (i + 1 >= elems.len) {
+                    return err.parseError(.invalid_binding, ":as must be followed by a symbol", .{});
+                }
+                const as_pattern = elems[i + 1];
+                try self.expandBindingPattern(as_pattern, temp_ref, bindings);
+                i += 1; // as パターンをスキップ
+                continue;
+            }
+
+            // 通常要素: elem = (nth coll pos)
+            const nth_init = try self.makeNth(temp_ref, pos);
+            try self.expandBindingPattern(elem, nth_init, bindings);
+            pos += 1;
+        }
+    }
+
+    /// (nth coll idx) を生成
+    fn makeNth(self: *Analyzer, coll_node: *Node, idx: usize) err.Error!*Node {
+        // nth Var を取得
+        const nth_sym = RuntimeSymbol.init("nth");
+        const nth_var = self.env.resolve(nth_sym) orelse return err.parseError(.undefined_symbol, "nth not found", .{});
+
+        const fn_node = try self.makeVarRef(nth_var);
+        const idx_node = try self.makeConstant(value_mod.intVal(@intCast(idx)));
+
+        const args = self.allocator.alloc(*Node, 2) catch return error.OutOfMemory;
+        args[0] = coll_node;
+        args[1] = idx_node;
+
+        const call_data = self.allocator.create(node_mod.CallNode) catch return error.OutOfMemory;
+        call_data.* = .{
+            .fn_node = fn_node,
+            .args = args,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .call_node = call_data };
+        return node;
+    }
+
+    /// rest 部分を取得（pos 番目以降）
+    /// 簡易実装: rest を pos 回呼び出す
+    fn makeNthRest(self: *Analyzer, coll_node: *Node, pos: usize) err.Error!*Node {
+        if (pos == 0) {
+            return coll_node;
+        }
+
+        // rest Var を取得
+        const rest_sym = RuntimeSymbol.init("rest");
+        const rest_var = self.env.resolve(rest_sym) orelse return err.parseError(.undefined_symbol, "rest not found", .{});
+
+        var current = coll_node;
+        for (0..pos) |_| {
+            const fn_node = try self.makeVarRef(rest_var);
+            const args = self.allocator.alloc(*Node, 1) catch return error.OutOfMemory;
+            args[0] = current;
+
+            const call_data = self.allocator.create(node_mod.CallNode) catch return error.OutOfMemory;
+            call_data.* = .{
+                .fn_node = fn_node,
+                .args = args,
+                .stack = .{},
+            };
+
+            const node = self.allocator.create(Node) catch return error.OutOfMemory;
+            node.* = .{ .call_node = call_data };
+            current = node;
+        }
+
+        return current;
     }
 
     fn analyzeFn(self: *Analyzer, items: []const Form) err.Error!*Node {
@@ -379,36 +541,122 @@ pub const Analyzer = struct {
         return node;
     }
 
+    /// fn の単一アリティを解析
+    /// パラメータに分配束縛が含まれる場合は、ボディを let でラップして展開
     fn analyzeFnArity(self: *Analyzer, params_form: []const Form, body_forms: []const Form) err.Error!node_mod.FnArity {
         // パラメータを解析
         var params = std.ArrayListUnmanaged([]const u8).empty;
         var variadic = false;
 
+        // 分配パターンがあるパラメータを記録
+        var destructure_patterns = std.ArrayListUnmanaged(DestructurePattern).empty;
+        defer destructure_patterns.deinit(self.allocator);
+
         // fn 本体では新しいスコープを開始
-        // クロージャ環境は現在のローカル数を保存して評価時に復元
-        const closure_size = self.locals.items.len;
         const start_locals = self.locals.items.len;
 
+        var param_idx: usize = 0;
         for (params_form) |p| {
-            if (p != .symbol) {
-                return err.parseError(.invalid_binding, "fn parameter must be a symbol", .{});
+            switch (p) {
+                .symbol => |sym| {
+                    const param_name = sym.name;
+
+                    if (std.mem.eql(u8, param_name, "&")) {
+                        variadic = true;
+                        continue;
+                    }
+
+                    params.append(self.allocator, param_name) catch return error.OutOfMemory;
+
+                    // ローカルに追加
+                    const idx: u32 = @intCast(self.locals.items.len);
+                    self.locals.append(self.allocator, .{ .name = param_name, .idx = idx }) catch return error.OutOfMemory;
+                },
+                .vector => {
+                    // 分配パターン → 合成パラメータ名を生成
+                    const synthetic_name = try self.makeSyntheticParamName(param_idx);
+                    params.append(self.allocator, synthetic_name) catch return error.OutOfMemory;
+
+                    // 後で展開するためにパターンを記録
+                    destructure_patterns.append(self.allocator, .{ .idx = param_idx, .pattern = p }) catch return error.OutOfMemory;
+
+                    // 合成パラメータをローカルに追加
+                    const idx: u32 = @intCast(self.locals.items.len);
+                    self.locals.append(self.allocator, .{ .name = synthetic_name, .idx = idx }) catch return error.OutOfMemory;
+                },
+                else => {
+                    return err.parseError(.invalid_binding, "fn parameter must be a symbol or vector pattern", .{});
+                },
             }
-
-            const param_name = p.symbol.name;
-
-            if (std.mem.eql(u8, param_name, "&")) {
-                variadic = true;
-                continue;
-            }
-
-            params.append(self.allocator, param_name) catch return error.OutOfMemory;
-
-            // ローカルに追加
-            // パラメータのインデックスはクロージャ環境のサイズから開始
-            const idx: u32 = @intCast(self.locals.items.len);
-            self.locals.append(self.allocator, .{ .name = param_name, .idx = idx }) catch return error.OutOfMemory;
+            param_idx += 1;
         }
-        _ = closure_size;
+
+        // ボディを解析
+        var body: *Node = undefined;
+
+        // 分配パターンがある場合、ボディを let でラップ
+        if (destructure_patterns.items.len > 0) {
+            body = try self.wrapBodyWithDestructure(params.items, destructure_patterns.items, body_forms);
+        } else {
+            body = if (body_forms.len == 0)
+                try self.makeConstant(value_mod.nil)
+            else if (body_forms.len == 1)
+                try self.analyze(body_forms[0])
+            else blk: {
+                var statements = self.allocator.alloc(*Node, body_forms.len) catch return error.OutOfMemory;
+                for (body_forms, 0..) |item, i| {
+                    statements[i] = try self.analyze(item);
+                }
+                const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
+                do_data.* = .{ .statements = statements, .stack = .{} };
+                const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
+                do_node.* = .{ .do_node = do_data };
+                break :blk do_node;
+            };
+        }
+
+        // ローカルをポップ
+        self.locals.shrinkRetainingCapacity(start_locals);
+
+        return .{
+            .params = params.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
+            .variadic = variadic,
+            .body = body,
+        };
+    }
+
+    /// 合成パラメータ名を生成
+    fn makeSyntheticParamName(self: *Analyzer, idx: usize) err.Error![]const u8 {
+        var buf: [32]u8 = undefined;
+        const name = std.fmt.bufPrint(&buf, "__p{d}__", .{idx}) catch return error.OutOfMemory;
+        return self.allocator.dupe(u8, name) catch return error.OutOfMemory;
+    }
+
+    /// fn ボディを分配束縛の let でラップ
+    /// (fn [[a b]] body) -> let [__p0__ param] で分配して body
+    fn wrapBodyWithDestructure(
+        self: *Analyzer,
+        params: []const []const u8,
+        patterns: []const DestructurePattern,
+        body_forms: []const Form,
+    ) err.Error!*Node {
+        // 分配バインディングを構築
+        var bindings_list: std.ArrayListUnmanaged(node_mod.LetBinding) = .empty;
+        defer bindings_list.deinit(self.allocator);
+
+        for (patterns) |entry| {
+            // 合成パラメータへの参照を作成
+            const param_name = params[entry.idx];
+            const local = self.findLocal(param_name) orelse return err.parseError(.undefined_symbol, "internal error: param not found", .{});
+            const param_ref = try self.makeLocalRef(local.name, local.idx);
+
+            // パターンを展開
+            try self.expandBindingPattern(entry.pattern, param_ref, &bindings_list);
+        }
+
+        // バインディングを確定
+        const bindings = self.allocator.alloc(node_mod.LetBinding, bindings_list.items.len) catch return error.OutOfMemory;
+        @memcpy(bindings, bindings_list.items);
 
         // ボディを解析
         const body = if (body_forms.len == 0)
@@ -427,14 +675,17 @@ pub const Analyzer = struct {
             break :blk do_node;
         };
 
-        // ローカルをポップ
-        self.locals.shrinkRetainingCapacity(start_locals);
-
-        return .{
-            .params = params.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
-            .variadic = variadic,
+        // let ノードを作成
+        const let_data = self.allocator.create(node_mod.LetNode) catch return error.OutOfMemory;
+        let_data.* = .{
+            .bindings = bindings,
             .body = body,
+            .stack = .{},
         };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .let_node = let_data };
+        return node;
     }
 
     fn analyzeDef(self: *Analyzer, items: []const Form) err.Error!*Node {
