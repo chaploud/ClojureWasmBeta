@@ -196,7 +196,15 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
             if (f.builtin) |builtin_ptr| {
                 // anyopaque から BuiltinFn にキャスト
                 const builtin: core.BuiltinFn = @ptrCast(@alignCast(builtin_ptr));
-                break :blk builtin(ctx.allocator, args) catch return error.TypeError;
+                break :blk builtin(ctx.allocator, args) catch |e| {
+                    return switch (e) {
+                        error.ArityError => error.ArityError,
+                        error.DivisionByZero => error.DivisionByZero,
+                        error.OutOfMemory => error.OutOfMemory,
+                        error.UserException => error.UserException,
+                        else => error.TypeError,
+                    };
+                };
             }
 
             // ユーザー定義関数
@@ -333,26 +341,26 @@ fn runTry(node: *const node_mod.TryNode, ctx: *Context) EvalError!Value {
             return result;
         } else {
             // catch なし: finally だけ実行してエラーを再 throw
-            runFinallyIgnoreResult(node.finally_body, ctx);
+            try runFinallyIgnoreResult(node.finally_body, ctx);
             return the_err;
         }
     }
 
     // 成功: finally を実行して結果を返す
-    runFinallyIgnoreResult(node.finally_body, ctx);
+    try runFinallyIgnoreResult(node.finally_body, ctx);
     return result;
 }
 
 /// finally 実行（結果を透過）
 fn runFinally(finally_body: ?*const Node, ctx: *Context, inner_result: EvalError!Value) EvalError!Value {
-    runFinallyIgnoreResult(finally_body, ctx);
+    try runFinallyIgnoreResult(finally_body, ctx);
     return inner_result;
 }
 
-/// finally 実行（結果を無視）
-fn runFinallyIgnoreResult(finally_body: ?*const Node, ctx: *Context) void {
+/// finally 実行（結果を無視、エラーは伝搬）
+fn runFinallyIgnoreResult(finally_body: ?*const Node, ctx: *Context) EvalError!void {
     if (finally_body) |finally_n| {
-        _ = run(finally_n, ctx) catch {};
+        _ = try run(finally_n, ctx);
     }
 }
 
@@ -484,9 +492,10 @@ fn runComp(node: *const node_mod.CompNode, ctx: *Context) EvalError!Value {
 
     // 0引数の場合は identity を返す
     if (node.fns.len == 0) {
-        // identity 関数をビルトインから取得（なければエラー）
-        // 簡易実装: identity 相当の fn を作成する代わりに nil を返す
-        // TODO: 実際の identity 実装
+        const sym = value_mod.Symbol.init("identity");
+        if (ctx.env.resolve(sym)) |v| {
+            return v.deref();
+        }
         return value_mod.nil;
     }
 

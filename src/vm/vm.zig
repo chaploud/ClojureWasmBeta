@@ -30,6 +30,7 @@ pub const VMError = error{
     OutOfMemory,
     InvalidInstruction,
     UserException,
+    DivisionByZero,
 };
 
 /// スタックサイズ
@@ -477,7 +478,15 @@ pub const VM = struct {
                 if (f.builtin) |builtin_ptr| {
                     const builtin: core.BuiltinFn = @ptrCast(@alignCast(builtin_ptr));
                     const args = self.stack[fn_idx + 1 .. self.sp];
-                    const result = builtin(self.allocator, args) catch return error.TypeError;
+                    const result = builtin(self.allocator, args) catch |e| {
+                        return switch (e) {
+                            error.ArityError => error.ArityError,
+                            error.DivisionByZero => error.DivisionByZero,
+                            error.OutOfMemory => error.OutOfMemory,
+                            error.UserException => error.UserException,
+                            else => error.TypeError,
+                        };
+                    };
 
                     // スタックを巻き戻し
                     self.sp = fn_idx;
@@ -805,9 +814,14 @@ pub const VM = struct {
     /// comp 関数を作成
     fn createCompFn(self: *VM, fn_count: usize) VMError!void {
         // スタック: [f1, f2, f3, ...] (最後の関数がトップ)
-        // 0個の場合は identity を返す（nil として代用）
+        // 0個の場合は identity を返す
         if (fn_count == 0) {
-            try self.push(value_mod.nil);
+            const sym = value_mod.Symbol.init("identity");
+            if (self.env.resolve(sym)) |v| {
+                try self.push(v.deref());
+            } else {
+                try self.push(value_mod.nil);
+            }
             return;
         }
 
@@ -1036,44 +1050,123 @@ pub const VM = struct {
         return true;
     }
 
-    /// callValue のラッパー: UserException をハンドラに転送
+    /// callValue のラッパー: 例外をハンドラに転送
     fn callValueWithExceptionHandling(self: *VM, arg_count: usize) VMError!void {
         self.callValue(arg_count) catch |e| {
-            if (e == error.UserException and self.handleThrowFromError()) return;
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                // 内部エラーを Value に変換して catch ハンドラに転送
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
             return e;
         };
     }
 
-    /// applyValue のラッパー: UserException をハンドラに転送
+    /// applyValue のラッパー: 例外をハンドラに転送
     fn applyValueWithExceptionHandling(self: *VM, middle_count: usize) VMError!void {
         self.applyValue(middle_count) catch |e| {
-            if (e == error.UserException and self.handleThrowFromError()) return;
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
             return e;
         };
     }
 
-    /// executeReduce のラッパー: UserException をハンドラに転送
+    /// executeReduce のラッパー: 例外をハンドラに転送
     fn executeReduceWithExceptionHandling(self: *VM, has_init: bool) VMError!void {
         self.executeReduce(has_init) catch |e| {
-            if (e == error.UserException and self.handleThrowFromError()) return;
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
             return e;
         };
     }
 
-    /// executeMap のラッパー: UserException をハンドラに転送
+    /// executeMap のラッパー: 例外をハンドラに転送
     fn executeMapWithExceptionHandling(self: *VM) VMError!void {
         self.executeMap() catch |e| {
-            if (e == error.UserException and self.handleThrowFromError()) return;
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
             return e;
         };
     }
 
-    /// executeFilter のラッパー: UserException をハンドラに転送
+    /// executeFilter のラッパー: 例外をハンドラに転送
     fn executeFilterWithExceptionHandling(self: *VM) VMError!void {
         self.executeFilter() catch |e| {
-            if (e == error.UserException and self.handleThrowFromError()) return;
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
             return e;
         };
+    }
+
+    /// 内部エラーを Value マップに変換（TreeWalk の internalErrorToValue と同等）
+    /// {:type :type-error, :message "..."} 形式
+    fn internalErrorToValue(self: *VM, e: VMError) Value {
+        const type_str: []const u8 = switch (e) {
+            error.TypeError => "type-error",
+            error.ArityError => "arity-error",
+            error.UndefinedVar => "undefined-symbol",
+            error.DivisionByZero => "division-by-zero",
+            error.StackOverflow => "stack-overflow",
+            error.StackUnderflow => "stack-underflow",
+            error.OutOfMemory => "out-of-memory",
+            error.InvalidInstruction => "invalid-instruction",
+            error.UserException => "user-exception",
+        };
+
+        // {:type :type-error, :message "..."} マップを作成
+        const map_ptr = self.allocator.create(value_mod.PersistentMap) catch return value_mod.nil;
+        const entries = self.allocator.alloc(Value, 4) catch return value_mod.nil;
+
+        // :type キー
+        const type_kw = self.allocator.create(value_mod.Keyword) catch return value_mod.nil;
+        type_kw.* = value_mod.Keyword.init("type");
+        entries[0] = Value{ .keyword = type_kw };
+
+        // :type 値（キーワード）
+        const err_type_kw = self.allocator.create(value_mod.Keyword) catch return value_mod.nil;
+        err_type_kw.* = value_mod.Keyword.init(type_str);
+        entries[1] = Value{ .keyword = err_type_kw };
+
+        // :message キー
+        const msg_kw = self.allocator.create(value_mod.Keyword) catch return value_mod.nil;
+        msg_kw.* = value_mod.Keyword.init("message");
+        entries[2] = Value{ .keyword = msg_kw };
+
+        // :message 値（文字列）
+        const msg_str = self.allocator.create(value_mod.String) catch return value_mod.nil;
+        msg_str.* = value_mod.String.init(type_str);
+        entries[3] = Value{ .string = msg_str };
+
+        map_ptr.* = .{ .entries = entries };
+        return Value{ .map = map_ptr };
     }
 
     /// UserException エラーから例外値を取得してハンドラに転送
@@ -1134,10 +1227,17 @@ pub const VM = struct {
         try self.push(new_val);
     }
 
-    /// executeSwapAtom のラッパー: UserException をハンドラに転送
+    /// executeSwapAtom のラッパー: 例外をハンドラに転送
     fn executeSwapAtomWithExceptionHandling(self: *VM, extra_arg_count: u16) VMError!void {
         self.executeSwapAtom(extra_arg_count) catch |e| {
-            if (e == error.UserException and self.handleThrowFromError()) return;
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
             return e;
         };
     }

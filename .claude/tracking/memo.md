@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.12 述語関数 + VM スタック管理修正 完了**
+**Phase 8.13 バグ修正・安定化 完了**
 
 ### 完了した機能
 
@@ -30,6 +30,7 @@
 | 8.10 | condp・case・some->・some->>・as->・mapv・filterv・defn docstring |
 | 8.11 | キーワードを関数として使用: `(:a {:a 1})` → `1` |
 | 8.12 | every?/some/not-every?/not-any? + VMスタック管理修正 |
+| 8.13 | バグ修正・安定化（エラー型保全, VM try/catch, comp, finally） |
 
 ### 組み込み関数
 
@@ -86,7 +87,7 @@ Atom: swap!
 
 ## 次回タスク
 
-### Phase 8.12 以降の候補
+### Phase 8.13 以降の候補
 
 候補:
 - プロトコル (defprotocol, extend-type)
@@ -94,7 +95,6 @@ Atom: swap!
 - 正規表現
 - マルチメソッド (defmulti, defmethod)
 - letfn（相互再帰ローカル関数）
-- try/catch の InvalidArity バグ修正（pre-existing）
 
 ---
 
@@ -159,7 +159,7 @@ Atom: swap!
 
 ### 例外処理
 - throw は任意の Value を投げられる（Clojure 互換）
-- 内部エラー（TypeError 等）も catch で捕捉可能（TreeWalk のみ、VM は UserException のみ）
+- 内部エラー（TypeError 等）も catch で捕捉可能（TreeWalk / VM 両方対応）
 - thrown_value は threadlocal に `*anyopaque` で格納（レイヤリング維持）
 - VM: ExceptionHandler スタックで try/catch の状態を管理、ネスト対応
 - Zig 0.15.2 で `catch` + `continue` パターンが LLVM IR エラーを引き起こすため、ラッパー関数で回避

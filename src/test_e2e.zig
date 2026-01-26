@@ -112,6 +112,28 @@ fn expectNilBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8) !v
     try std.testing.expectEqual(Value.nil, result);
 }
 
+/// 両バックエンドでキーワードを期待
+fn expectKwBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8, expected: []const u8) !void {
+    const result = try evalBothAndCompare(allocator, env, source);
+    switch (result) {
+        .keyword => |kw| try std.testing.expectEqualStrings(expected, kw.name),
+        else => return error.UnexpectedValue,
+    }
+}
+
+/// 両バックエンドでエラーを期待（式が正常に評価されたらテスト失敗）
+fn expectErrorBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8) !void {
+    // TreeWalk
+    if (evalWithBackend(allocator, env, source, .tree_walk)) |_| {
+        return error.UnexpectedValue; // エラーを期待したが成功した
+    } else |_| {}
+
+    // VM
+    if (evalWithBackend(allocator, env, source, .vm)) |_| {
+        return error.UnexpectedValue;
+    } else |_| {}
+}
+
 /// テスト用の環境を初期化
 fn setupTestEnv(allocator: std.mem.Allocator) !Env {
     var env = Env.init(allocator);
@@ -986,4 +1008,358 @@ test "compare: utility functions" {
     // mod
     try expectIntBoth(allocator, &env, "(mod 10 3)", 1);
     try expectIntBoth(allocator, &env, "(mod 9 3)", 0);
+}
+
+// ============================================================
+// Phase 8.6: 例外処理
+// ============================================================
+
+test "compare: try/catch 基本" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // throw + catch
+    try expectIntBoth(allocator, &env,
+        \\(try (throw (ex-info "err" {})) (catch Exception e 42))
+    , 42);
+
+    // ex-message
+    try expectStrBoth(allocator, &env,
+        \\(try (throw (ex-info "hello" {})) (catch Exception e (ex-message e)))
+    , "hello");
+
+    // ex-data
+    try expectIntBoth(allocator, &env,
+        \\(try (throw (ex-info "err" {:code 42})) (catch Exception e (:code (ex-data e))))
+    , 42);
+
+    // body 正常時は catch をスキップ
+    try expectIntBoth(allocator, &env,
+        \\(try 99 (catch Exception e 0))
+    , 99);
+
+    // 内部エラー（DivisionByZero）を catch
+    try expectIntBoth(allocator, &env,
+        \\(try (/ 1 0) (catch Exception e 42))
+    , 42);
+
+    // 内部エラーの :type を取得
+    try expectKwBoth(allocator, &env,
+        \\(try (/ 1 0) (catch Exception e (:type e)))
+    , "division-by-zero");
+
+    // try + finally（正常時）
+    try expectIntBoth(allocator, &env,
+        \\(try 42 (finally (+ 1 2)))
+    , 42);
+}
+
+// ============================================================
+// Phase 8.7: Atom
+// ============================================================
+
+test "compare: atom 基本" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // atom? 述語
+    try expectBoolBoth(allocator, &env, "(atom? (atom 0))", true);
+    try expectBoolBoth(allocator, &env, "(atom? 42)", false);
+
+    // deref
+    try expectIntBoth(allocator, &env, "(deref (atom 10))", 10);
+
+    // atom + deref
+    try expectIntBoth(allocator, &env, "(let [a (atom 0)] (deref a))", 0);
+}
+
+// ============================================================
+// Phase 8.8: 文字列操作拡充
+// ============================================================
+
+test "compare: string operations" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // subs
+    try expectStrBoth(allocator, &env,
+        \\(subs "hello" 1)
+    , "ello");
+    try expectStrBoth(allocator, &env,
+        \\(subs "hello" 1 3)
+    , "el");
+
+    // name
+    try expectStrBoth(allocator, &env, "(name :foo)", "foo");
+    try expectStrBoth(allocator, &env,
+        \\(name "bar")
+    , "bar");
+
+    // upper-case / lower-case
+    try expectStrBoth(allocator, &env,
+        \\(upper-case "hello")
+    , "HELLO");
+    try expectStrBoth(allocator, &env,
+        \\(lower-case "WORLD")
+    , "world");
+
+    // trim
+    try expectStrBoth(allocator, &env,
+        \\(trim "  hi  ")
+    , "hi");
+
+    // blank?
+    try expectBoolBoth(allocator, &env,
+        \\(blank? "")
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(blank? "  ")
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(blank? "x")
+    , false);
+
+    // starts-with? / ends-with? / includes?
+    try expectBoolBoth(allocator, &env,
+        \\(starts-with? "hello" "he")
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(starts-with? "hello" "lo")
+    , false);
+    try expectBoolBoth(allocator, &env,
+        \\(ends-with? "hello" "lo")
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(ends-with? "hello" "he")
+    , false);
+    try expectBoolBoth(allocator, &env,
+        \\(includes? "hello world" "lo wo")
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(includes? "hello" "xyz")
+    , false);
+}
+
+// ============================================================
+// Phase 8.9: defn・追加マクロ
+// ============================================================
+
+test "compare: defn macro" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // if-not（マクロ展開のみ、def不要）
+    try expectIntBoth(allocator, &env, "(if-not false 1 2)", 1);
+    try expectIntBoth(allocator, &env, "(if-not true 1 2)", 2);
+
+    // defn（TreeWalkで定義、TreeWalkのみで検証）
+    _ = try evalExpr(allocator, &env, "(defn double [x] (* x 2))");
+    try expectInt(allocator, &env, "(double 5)", 10);
+
+    // defn + docstring
+    _ = try evalExpr(allocator, &env,
+        \\(defn greet "Greets someone" [name] (str "Hello " name))
+    );
+    const greet_result = try evalExpr(allocator, &env,
+        \\(greet "World")
+    );
+    switch (greet_result) {
+        .string => |s| try std.testing.expectEqualStrings("Hello World", s.data),
+        else => return error.UnexpectedValue,
+    }
+}
+
+// ============================================================
+// Phase 8.10: condp・case・some->・mapv・filterv
+// ============================================================
+
+test "compare: condp and case" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // condp
+    try expectStrBoth(allocator, &env,
+        \\(condp = 2
+        \\  1 "one"
+        \\  2 "two"
+        \\  3 "three")
+    , "two");
+
+    // case
+    try expectStrBoth(allocator, &env,
+        \\(case 2
+        \\  1 "one"
+        \\  2 "two"
+        \\  "default")
+    , "two");
+    try expectStrBoth(allocator, &env,
+        \\(case 99
+        \\  1 "one"
+        \\  2 "two"
+        \\  "default")
+    , "default");
+}
+
+test "compare: some-> some->> as->" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // some->
+    try expectIntBoth(allocator, &env, "(some-> 1 inc inc)", 3);
+    try expectNilBoth(allocator, &env, "(some-> nil inc)");
+
+    // some->>
+    try expectIntBoth(allocator, &env, "(some->> 5 (+ 3))", 8);
+    try expectNilBoth(allocator, &env, "(some->> nil (+ 3))");
+
+    // as->
+    try expectIntBoth(allocator, &env, "(as-> 0 x (inc x) (+ x 3))", 4);
+}
+
+test "compare: mapv filterv" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // mapv はベクターを返す
+    try expectIntBoth(allocator, &env, "(count (mapv inc [1 2 3]))", 3);
+    try expectIntBoth(allocator, &env, "(first (mapv inc [1 2 3]))", 2);
+
+    // filterv はベクターを返す
+    try expectIntBoth(allocator, &env,
+        \\(count (filterv (fn [x] (> x 2)) [1 2 3 4 5]))
+    , 3);
+}
+
+// ============================================================
+// Phase 8.11: キーワードを関数として使用
+// ============================================================
+
+test "compare: keyword as function" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // (:key map) → 値
+    try expectIntBoth(allocator, &env, "(:a {:a 1 :b 2})", 1);
+    try expectIntBoth(allocator, &env, "(:b {:a 1 :b 2})", 2);
+
+    // (:key map default)
+    try expectIntBoth(allocator, &env, "(:c {:a 1 :b 2} 99)", 99);
+
+    // 存在しないキーで default なし → nil
+    try expectNilBoth(allocator, &env, "(:z {:a 1})");
+}
+
+// ============================================================
+// Phase 8.12: 述語関数
+// ============================================================
+
+test "compare: predicate functions" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // every?
+    try expectBoolBoth(allocator, &env,
+        \\(every? (fn [x] (> x 0)) [1 2 3])
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(every? (fn [x] (> x 0)) [1 -2 3])
+    , false);
+
+    // not-every?
+    try expectBoolBoth(allocator, &env,
+        \\(not-every? (fn [x] (> x 0)) [1 2 3])
+    , false);
+    try expectBoolBoth(allocator, &env,
+        \\(not-every? (fn [x] (> x 0)) [1 -2 3])
+    , true);
+
+    // some（述語版: 最初の truthy な結果を返す）
+    try expectBoolBoth(allocator, &env,
+        \\(some (fn [x] (> x 3)) [1 2 3 4 5])
+    , true);
+    try expectNilBoth(allocator, &env,
+        \\(some (fn [x] (> x 10)) [1 2 3])
+    );
+
+    // not-any?
+    try expectBoolBoth(allocator, &env,
+        \\(not-any? (fn [x] (> x 10)) [1 2 3])
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(not-any? (fn [x] (> x 2)) [1 2 3])
+    , false);
+}
+
+// ============================================================
+// Phase 8.13: バグ修正検証
+// ============================================================
+
+test "compare: error type preservation" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // DivisionByZero はキャッチ後に型が保全される
+    try expectKwBoth(allocator, &env,
+        \\(try (/ 1 0) (catch Exception e (:type e)))
+    , "division-by-zero");
+
+    // ArityError
+    try expectKwBoth(allocator, &env,
+        \\(try (inc) (catch Exception e (:type e)))
+    , "arity-error");
+}
+
+test "compare: comp identity" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // (comp) は identity を返す
+    try expectIntBoth(allocator, &env, "((comp) 42)", 42);
+    try expectStrBoth(allocator, &env,
+        \\((comp) "hello")
+    , "hello");
 }
