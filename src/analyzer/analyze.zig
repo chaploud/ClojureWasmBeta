@@ -1406,6 +1406,20 @@ pub const Analyzer = struct {
             return try self.expandDoseq(items);
         } else if (std.mem.eql(u8, name, "comment")) {
             return Form.nil; // (comment ...) → nil
+        } else if (std.mem.eql(u8, name, "condp")) {
+            return try self.expandCondp(items);
+        } else if (std.mem.eql(u8, name, "case")) {
+            return try self.expandCase(items);
+        } else if (std.mem.eql(u8, name, "some->")) {
+            return try self.expandSomeThreadFirst(items);
+        } else if (std.mem.eql(u8, name, "some->>")) {
+            return try self.expandSomeThreadLast(items);
+        } else if (std.mem.eql(u8, name, "as->")) {
+            return try self.expandAsThread(items);
+        } else if (std.mem.eql(u8, name, "mapv")) {
+            return try self.expandMapv(items);
+        } else if (std.mem.eql(u8, name, "filterv")) {
+            return try self.expandFilterv(items);
         }
         return null;
     }
@@ -1707,8 +1721,8 @@ pub const Analyzer = struct {
     // defn / if-not / dotimes / doseq マクロ展開
     // ============================================================
 
-    /// (defn name [params] body...) → (def name (fn name [params] body...))
-    /// (defn name ([a] body1) ([a b] body2)) → (def name (fn name ([a] body1) ([a b] body2)))
+    /// (defn name "doc"? [params] body...) → (def name (fn name [params] body...))
+    /// (defn name "doc"? ([a] body1) ([a b] body2)) → (def name (fn name ([a] body1) ([a b] body2)))
     fn expandDefn(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
             return err.parseError(.invalid_arity, "defn requires a name and at least one body", .{});
@@ -1721,13 +1735,24 @@ pub const Analyzer = struct {
             else => return err.parseError(.invalid_token, "defn name must be a symbol", .{}),
         };
 
+        // docstring をスキップ（items[2] が文字列なら無視）
+        var body_start: usize = 2;
+        if (body_start < items.len and items[body_start] == .string) {
+            body_start += 1; // docstring をスキップ
+        }
+
+        if (body_start >= items.len) {
+            return err.parseError(.invalid_arity, "defn requires at least one body", .{});
+        }
+
         // (def name (fn name ...)) を構築
-        // fn 部分: items[2..] をそのまま fn に渡す
-        const fn_forms_len = 2 + (items.len - 2); // fn, name, rest...
+        // fn 部分: items[body_start..] をそのまま fn に渡す
+        const rest = items[body_start..];
+        const fn_forms_len = 2 + rest.len; // fn, name, rest...
         const fn_forms = self.allocator.alloc(Form, fn_forms_len) catch return error.OutOfMemory;
         fn_forms[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
         fn_forms[1] = name_form; // fn に名前を渡す
-        @memcpy(fn_forms[2..], items[2..]);
+        @memcpy(fn_forms[2..], rest);
 
         // (def name (fn name ...))
         const def_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
@@ -2129,6 +2154,250 @@ pub const Analyzer = struct {
         // ボディを評価
         const body: *const Node = @ptrCast(@alignCast(arity.body));
         return evaluator.run(body, &ctx) catch return err.parseError(.macro_error, "Macro expansion failed", .{});
+    }
+
+    // ============================================================
+    // condp / case / some-> / some->> / as-> / mapv / filterv
+    // ============================================================
+
+    /// (condp pred expr clause...) → (let [__p expr] (cond (pred val1 __p) result1 ...))
+    /// 各 clause: test-val result, 最後に default（奇数なら）
+    fn expandCondp(self: *Analyzer, items: []const Form) err.Error!Form {
+        // (condp pred expr clause1 clause2 ... default?)
+        if (items.len < 4) {
+            return err.parseError(.invalid_arity, "condp requires pred, expr, and at least one clause", .{});
+        }
+
+        const pred = items[1];
+        const expr = items[2];
+        const clauses = items[3..];
+
+        // (let [__condp__ expr] (cond ...))
+        const binding_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        binding_forms[0] = Form{ .symbol = form_mod.Symbol.init("__condp__") };
+        binding_forms[1] = expr;
+
+        // cond ペアを構築
+        const has_default = (clauses.len % 2 != 0);
+        const pair_count = clauses.len / 2;
+        const cond_len = 1 + pair_count * 2 + (if (has_default) @as(usize, 2) else 0);
+        const cond_forms = self.allocator.alloc(Form, cond_len) catch return error.OutOfMemory;
+        cond_forms[0] = Form{ .symbol = form_mod.Symbol.init("cond") };
+
+        var idx: usize = 1;
+        var ci: usize = 0;
+        while (ci + 1 < clauses.len) : (ci += 2) {
+            // (pred test-val __condp__)
+            const test_call = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            test_call[0] = pred;
+            test_call[1] = clauses[ci];
+            test_call[2] = Form{ .symbol = form_mod.Symbol.init("__condp__") };
+            cond_forms[idx] = Form{ .list = test_call };
+            cond_forms[idx + 1] = clauses[ci + 1];
+            idx += 2;
+        }
+        if (has_default) {
+            // :else default
+            const else_kw = self.allocator.create(value_mod.Keyword) catch return error.OutOfMemory;
+            else_kw.* = value_mod.Keyword.init("else");
+            cond_forms[idx] = Form{ .keyword = form_mod.Symbol.init("else") };
+            cond_forms[idx + 1] = clauses[clauses.len - 1];
+        }
+
+        // (let [__condp__ expr] (cond ...))
+        const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        let_forms[1] = Form{ .vector = binding_forms };
+        let_forms[2] = Form{ .list = cond_forms };
+        return Form{ .list = let_forms };
+    }
+
+    /// (case expr val1 result1 val2 result2 ... default?)
+    /// → (let [__case__ expr] (cond (= __case__ val1) result1 ... :else default))
+    fn expandCase(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 4) {
+            return err.parseError(.invalid_arity, "case requires expr and at least one clause", .{});
+        }
+
+        const expr = items[1];
+        const clauses = items[2..];
+
+        // (let [__case__ expr] (cond ...))
+        const binding_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        binding_forms[0] = Form{ .symbol = form_mod.Symbol.init("__case__") };
+        binding_forms[1] = expr;
+
+        // cond ペアを構築
+        const has_default = (clauses.len % 2 != 0);
+        const pair_count = clauses.len / 2;
+        const cond_len = 1 + pair_count * 2 + (if (has_default) @as(usize, 2) else 0);
+        const cond_forms = self.allocator.alloc(Form, cond_len) catch return error.OutOfMemory;
+        cond_forms[0] = Form{ .symbol = form_mod.Symbol.init("cond") };
+
+        var idx: usize = 1;
+        var ci: usize = 0;
+        while (ci + 1 < clauses.len) : (ci += 2) {
+            // (= __case__ val)
+            const eq_call = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            eq_call[0] = Form{ .symbol = form_mod.Symbol.init("=") };
+            eq_call[1] = Form{ .symbol = form_mod.Symbol.init("__case__") };
+            eq_call[2] = clauses[ci];
+            cond_forms[idx] = Form{ .list = eq_call };
+            cond_forms[idx + 1] = clauses[ci + 1];
+            idx += 2;
+        }
+        if (has_default) {
+            cond_forms[idx] = Form{ .keyword = form_mod.Symbol.init("else") };
+            cond_forms[idx + 1] = clauses[clauses.len - 1];
+        }
+
+        const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        let_forms[1] = Form{ .vector = binding_forms };
+        let_forms[2] = Form{ .list = cond_forms };
+        return Form{ .list = let_forms };
+    }
+
+    /// (some-> expr form1 form2 ...) → (let [__st x] (if (nil? __st) nil (let [__st form1(__st)] (if (nil? __st) nil ...))))
+    fn expandSomeThreadFirst(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "some-> requires an expression", .{});
+        }
+        return self.buildSomeThread(items[1], items[2..], true);
+    }
+
+    /// (some->> expr form1 form2 ...)
+    fn expandSomeThreadLast(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "some->> requires an expression", .{});
+        }
+        return self.buildSomeThread(items[1], items[2..], false);
+    }
+
+    /// some-> / some->> の共通実装
+    fn buildSomeThread(self: *Analyzer, initial: Form, forms: []const Form, thread_first: bool) err.Error!Form {
+        if (forms.len == 0) return initial;
+
+        // (let [__st initial] (if (nil? __st) nil (let [__st step1] (if ...))))
+        const result = initial;
+        // 逆順に内側から外側へ構築する代わりに、順に構築
+        // 最内側から構築するため、まず最終式を作り、そこから巻き戻す
+        // 実装: 再帰的に展開
+        const step_form = forms[0];
+        const threaded = try self.threadForm(Form{ .symbol = form_mod.Symbol.init("__st__") }, step_form, thread_first);
+
+        // 残りのステップを再帰的に構築
+        const rest_forms = forms[1..];
+        const inner = if (rest_forms.len > 0)
+            try self.buildSomeThread(threaded, rest_forms, thread_first)
+        else
+            threaded;
+
+        // (let [__st__ result] (if (nil? __st__) nil inner))
+        const nil_check = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        nil_check[0] = Form{ .symbol = form_mod.Symbol.init("nil?") };
+        nil_check[1] = Form{ .symbol = form_mod.Symbol.init("__st__") };
+
+        const if_forms = self.allocator.alloc(Form, 4) catch return error.OutOfMemory;
+        if_forms[0] = Form{ .symbol = form_mod.Symbol.init("if") };
+        if_forms[1] = Form{ .list = nil_check };
+        if_forms[2] = Form.nil;
+        if_forms[3] = inner;
+
+        const binding = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        binding[0] = Form{ .symbol = form_mod.Symbol.init("__st__") };
+        binding[1] = result;
+
+        const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        let_forms[1] = Form{ .vector = binding };
+        let_forms[2] = Form{ .list = if_forms };
+        return Form{ .list = let_forms };
+    }
+
+    /// スレッディング: 式をフォームに挿入
+    fn threadForm(self: *Analyzer, val: Form, form: Form, thread_first: bool) error{OutOfMemory}!Form {
+        if (form == .list) {
+            // (f a b) → (f val a b) or (f a b val)
+            const items = form.list;
+            const new_items = self.allocator.alloc(Form, items.len + 1) catch return error.OutOfMemory;
+            if (thread_first) {
+                new_items[0] = items[0];
+                new_items[1] = val;
+                @memcpy(new_items[2..], items[1..]);
+            } else {
+                @memcpy(new_items[0..items.len], items);
+                new_items[items.len] = val;
+            }
+            return Form{ .list = new_items };
+        } else {
+            // f → (f val)
+            const new_items = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            new_items[0] = form;
+            new_items[1] = val;
+            return Form{ .list = new_items };
+        }
+    }
+
+    /// (as-> expr name form1 form2 ...) → (let [name expr name form1 name form2 ...] name)
+    fn expandAsThread(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "as-> requires expr, name, and at least one form", .{});
+        }
+
+        const expr = items[1];
+        const name = items[2];
+        const forms = items[3..];
+
+        // [name expr name form1 name form2 ...]
+        const bindings_len = 2 + forms.len * 2;
+        const bindings = self.allocator.alloc(Form, bindings_len) catch return error.OutOfMemory;
+        bindings[0] = name;
+        bindings[1] = expr;
+        for (forms, 0..) |f, i| {
+            bindings[2 + i * 2] = name;
+            bindings[2 + i * 2 + 1] = f;
+        }
+
+        // (let [...] name)
+        const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        let_forms[1] = Form{ .vector = bindings };
+        let_forms[2] = name;
+        return Form{ .list = let_forms };
+    }
+
+    /// (mapv f coll) → (vec (map f coll))
+    fn expandMapv(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "mapv requires 2 arguments", .{});
+        }
+        // (vec (map f coll))
+        const map_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        map_forms[0] = Form{ .symbol = form_mod.Symbol.init("map") };
+        map_forms[1] = items[1];
+        map_forms[2] = items[2];
+
+        const vec_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        vec_forms[0] = Form{ .symbol = form_mod.Symbol.init("vec") };
+        vec_forms[1] = Form{ .list = map_forms };
+        return Form{ .list = vec_forms };
+    }
+
+    /// (filterv f coll) → (vec (filter f coll))
+    fn expandFilterv(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "filterv requires 2 arguments", .{});
+        }
+        const filter_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        filter_forms[0] = Form{ .symbol = form_mod.Symbol.init("filter") };
+        filter_forms[1] = items[1];
+        filter_forms[2] = items[2];
+
+        const vec_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        vec_forms[0] = Form{ .symbol = form_mod.Symbol.init("vec") };
+        vec_forms[1] = Form{ .list = filter_forms };
+        return Form{ .list = vec_forms };
     }
 
     /// Value を Form に変換（マクロ展開結果の再解析用）

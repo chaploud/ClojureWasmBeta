@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.9 defnマクロ・追加マクロ + クロス式メモリ安全性修正 完了**
+**Phase 8.10 実用マクロ・ユーティリティ拡充 完了**
 
 ### 完了した機能
 
@@ -27,6 +27,7 @@
 | 8.7 | Atom 状態管理 (atom, deref/@, reset!, swap!, atom?) |
 | 8.8 | 文字列操作拡充 (subs, name, namespace, join, trim 等) |
 | 8.9 | defnマクロ・dotimes・doseq・if-not・comment + メモリ安全性修正 |
+| 8.10 | condp・case・some->・some->>・as->・mapv・filterv・defn docstring |
 
 ### 組み込み関数
 
@@ -65,10 +66,12 @@ Atom: swap!
 
 ```
 制御フロー: cond, when, when-not, if-let, when-let, if-not, and, or
+条件分岐: condp, case
 繰り返し: dotimes, doseq
-定義: defn
+定義: defn (docstring対応, 複数アリティ対応)
 コメント: comment
-スレッディング: ->, ->>
+スレッディング: ->, ->>, some->, some->>, as->
+コレクション変換: mapv, filterv
 ```
 
 実装方式: Analyzer 内で Form→Form 変換（マクロ展開）後に再帰解析。
@@ -78,16 +81,16 @@ Atom: swap!
 
 ## 次回タスク
 
-### Phase 8.10 以降の候補
+### Phase 8.11 以降の候補
 
 候補:
+- キーワードを関数として使用: `(:a {:a 1})` → 1
 - プロトコル (defprotocol, extend-type)
 - LazySeq（真の遅延シーケンス）
 - 正規表現
 - マルチメソッド (defmulti, defmethod)
 - letfn（相互再帰ローカル関数）
-- defn の docstring サポート
-- defn の複数アリティサポート: `(defn f ([a] ...) ([a b] ...))`
+- every?/some/not-every?/not-any? マクロ
 
 ---
 
@@ -95,7 +98,7 @@ Atom: swap!
 
 | Phase | 内容 | 依存 |
 |-------|------|------|
-| 8.10+ | 機能拡充 (プロトコル等) | - |
+| 8.11+ | 機能拡充 (キーワード関数, プロトコル等) | - |
 | 9 | LazySeq（真の遅延シーケンス）| 無限シーケンスに必要 |
 | 10 | GC | LazySeq導入後に必須 |
 | 11 | Wasm連携 | 言語機能充実後 |
@@ -157,8 +160,11 @@ Atom: swap!
 
 ### 組み込みマクロ
 - and/or は短絡評価（let + if に展開）
-- 合成シンボル名 `__and__`, `__or__`, `__items__` 等を使用（gensym が理想）
+- 合成シンボル名 `__and__`, `__or__`, `__items__`, `__condp__`, `__case__`, `__st__` 等を使用（gensym が理想）
 - doseq の recur に `(seq (rest ...))` が必要（空リストは truthy なので nil 変換が必要）
+- condp: `(pred test-val expr)` の順で呼び出し（Clojure互換）
+- some->/some->>: 再帰的に let+if+nil? チェーンに展開
+- as->: 連続 let バインディングに展開
 
 ### CLI テスト時の注意
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある
