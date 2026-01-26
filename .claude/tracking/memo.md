@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 8.17 完了**
+**Phase 8.18 完了**
 
 | Phase | 内容 |
 |-------|------|
@@ -32,6 +32,7 @@
 | 8.15 | プロトコル (defprotocol, extend-type, extend-protocol) |
 | 8.16 | ユーティリティ関数・HOF・マクロ拡充 |
 | 8.17 | VM let-closure バグ修正 |
+| 8.18 | letfn（相互再帰ローカル関数） |
 
 実装状況の詳細: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -41,7 +42,6 @@
 
 - LazySeq（真の遅延シーケンス）
 - 正規表現
-- letfn（相互再帰ローカル関数）
 - defrecord（プロトコルと組み合わせ）
 
 ---

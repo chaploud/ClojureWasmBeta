@@ -77,6 +77,20 @@
   `frame.base == 0 && capture_count > 0` は `capture_offset` から `capture_count` 分キャプチャ
 - `(pr-str (map (let [x 10] (fn [y] (+ x y))) [1 2 3]))` 等のネスト式も正常動作
 
+## letfn（相互再帰ローカル関数）
+
+- LetfnNode: bindings (LetfnBinding[]) + body
+- Analyzer: Phase 1 で全関数名をローカルに登録 → Phase 2 で各 fn body を解析（相互参照可能）
+- Compiler `emitLetfn`:
+  1. 全関数名に nil プレースホルダを push + addLocal
+  2. 各 fn をコンパイル → local_store で上書き
+  3. `letfn_fixup` opcode で closure_bindings を更新
+- VM `letfnFixup`: 既存 closure_bindings 内の letfn スロットを実際の関数値で上書き（@constCast）
+- `locals_offset` フィールド: fn_compiler が Analyzer のグローバルインデックスで自スコープ変数を区別
+  - `emitLocalRef`: `ref.idx >= locals_offset` なら自スコープ、そうでなければ親スコープ
+  - `compileArity`: fn_compiler.locals_offset = 親の locals_offset + 親の locals 数
+  - fn_compiler.sp_depth は capture_count 分オフセット（closure_bindings がスタック先頭に配置されるため）
+
 ## 組み込みマクロ
 
 - and/or は短絡評価（let + if に展開）

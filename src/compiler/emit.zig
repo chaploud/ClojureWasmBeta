@@ -46,6 +46,10 @@ pub const Compiler = struct {
     loop_locals_base: usize,
     /// コンパイル時スタック深度（frame.base からの相対位置）
     sp_depth: u16,
+    /// Analyzer のグローバルローカルインデックスにおける、
+    /// このコンパイラの locals[0] の開始位置。
+    /// fn_compiler が親スコープ変数と自スコープ変数を区別するために使用。
+    locals_offset: u32,
 
     /// 初期化
     pub fn init(allocator: std.mem.Allocator) Compiler {
@@ -57,6 +61,7 @@ pub const Compiler = struct {
             .loop_start = null,
             .loop_locals_base = 0,
             .sp_depth = 0,
+            .locals_offset = 0,
         };
     }
 
@@ -85,6 +90,7 @@ pub const Compiler = struct {
             .loop_node => |node| try self.emitLoop(node),
             .recur_node => |node| try self.emitRecur(node),
             .fn_node => |node| try self.emitFn(node),
+            .letfn_node => |node| try self.emitLetfn(node),
             .call_node => |node| try self.emitCall(node),
             .def_node => |node| try self.emitDef(node),
             .quote_node => |node| try self.emitQuote(node),
@@ -149,12 +155,14 @@ pub const Compiler = struct {
     fn emitLocalRef(self: *Compiler, ref: node_mod.LocalRefNode) CompileError!void {
         // コンパイラの locals テーブルから実際のスロット位置を取得
         // ref.idx は Analyzer のグローバルローカルインデックス。
-        // 自スコープの locals に存在すれば slot を使用、
-        // そうでなければ idx をそのまま slot として使用
-        // （closure_bindings がフレーム先頭に配置されるため、
-        //  親スコープ変数の idx がそのまま正しい slot になる）
-        const slot = if (ref.idx < self.locals.items.len)
-            self.locals.items[ref.idx].slot
+        // locals_offset を使って自スコープ内の変数かどうかを判定:
+        //   ref.idx >= locals_offset → 自スコープ内 → locals テーブルの slot を使用
+        //   ref.idx < locals_offset → 親スコープ → idx をそのまま slot として使用
+        //     （closure_bindings がフレーム先頭に配置されるため、
+        //      親スコープ変数の idx がそのまま正しい slot になる）
+        const slot = if (ref.idx >= self.locals_offset and
+            ref.idx - self.locals_offset < self.locals.items.len)
+            self.locals.items[ref.idx - self.locals_offset].slot
         else
             @as(u16, @intCast(ref.idx));
         try self.chunk.emit(.local_load, slot);
@@ -237,6 +245,58 @@ pub const Compiler = struct {
         }
 
         // ローカルを削除
+        self.locals.shrinkRetainingCapacity(base_locals);
+        self.scope_depth -= 1;
+    }
+
+    /// letfn（相互再帰ローカル関数）
+    /// Analyzer と同じ順序でスロットを確保:
+    /// 1. 全関数名のプレースホルダを push & addLocal
+    /// 2. 各関数の fn をコンパイルして上書き
+    /// 3. letfn_fixup で相互参照を設定
+    /// 4. ボディをコンパイル
+    /// 5. scope_exit でクリーンアップ
+    fn emitLetfn(self: *Compiler, node: *const node_mod.LetfnNode) CompileError!void {
+        self.scope_depth += 1;
+        const base_locals = self.locals.items.len;
+        const fn_count = node.bindings.len;
+
+        // Phase 1: 全関数名のスロットを確保（nil プレースホルダ）
+        // Analyzer が全名前を登録してから fn body を解析するのと同じ順序
+        for (node.bindings) |binding| {
+            try self.chunk.emitOp(.nil);
+            self.sp_depth += 1;
+            try self.addLocal(binding.name);
+        }
+
+        // Phase 2: 各関数をコンパイルし、対応するスロットに上書き
+        for (node.bindings, 0..) |binding, i| {
+            // fn ノードをコンパイル（closure opcode を生成 → スタックトップに push）
+            try self.compile(binding.fn_node);
+            // 結果をローカルスロットに書き込み（上書き）
+            const local = self.locals.items[base_locals + i];
+            try self.chunk.emit(.local_store, local.slot);
+            self.sp_depth -= 1; // local_store はスタックから消費
+        }
+
+        // Phase 3: letfn_fixup で相互参照を設定
+        // operand: 上位8bit = 先頭関数のスロット位置, 下位8bit = 関数の数
+        if (fn_count > 0) {
+            const first_slot = self.locals.items[base_locals].slot;
+            const operand: u16 = (@as(u16, first_slot) << 8) | @as(u16, @intCast(fn_count));
+            try self.chunk.emit(.letfn_fixup, operand);
+        }
+
+        // Phase 4: ボディをコンパイル
+        try self.compile(node.body);
+
+        // Phase 5: スコープ終了
+        const locals_to_pop = self.locals.items.len - base_locals;
+        if (locals_to_pop > 0) {
+            try self.chunk.emit(.scope_exit, @intCast(locals_to_pop));
+            self.sp_depth -= @intCast(locals_to_pop);
+        }
+
         self.locals.shrinkRetainingCapacity(base_locals);
         self.scope_depth -= 1;
     }
@@ -346,8 +406,17 @@ pub const Compiler = struct {
         var fn_compiler = Compiler.init(self.allocator);
         defer fn_compiler.deinit();
 
-        // 引数をローカルとして追加（パラメータはスタック上に存在）
+        // fn_compiler の locals_offset を設定
+        // Analyzer のグローバルインデックスにおいて、この関数のパラメータは
+        // 親の locals_offset + 親の locals 数 から始まる
+        fn_compiler.locals_offset = self.locals_offset + @as(u32, @intCast(self.locals.items.len));
+
+        // 引数をローカルとして追加
+        // クロージャバインディングがスタック先頭に配置されるため、
+        // パラメータの sp_depth は capture_count 分オフセット
         fn_compiler.scope_depth = 1;
+        const capture_count = self.locals.items.len;
+        fn_compiler.sp_depth = @intCast(capture_count); // クロージャバインディング分
         for (arity.params) |param| {
             fn_compiler.sp_depth += 1; // パラメータがスタック上に存在
             try fn_compiler.addLocal(param);

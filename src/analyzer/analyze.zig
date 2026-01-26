@@ -145,6 +145,8 @@ pub const Analyzer = struct {
                 return self.analyzeLet(items);
             } else if (std.mem.eql(u8, sym_name, "fn") or std.mem.eql(u8, sym_name, "fn*")) {
                 return self.analyzeFn(items);
+            } else if (std.mem.eql(u8, sym_name, "letfn")) {
+                return self.analyzeLetfn(items);
             } else if (std.mem.eql(u8, sym_name, "def")) {
                 return self.analyzeDef(items);
             } else if (std.mem.eql(u8, sym_name, "quote")) {
@@ -373,6 +375,96 @@ pub const Analyzer = struct {
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = .{ .let_node = let_data };
+        return node;
+    }
+
+    /// letfn: 相互再帰ローカル関数
+    /// (letfn [(f [x] body1) (g [x] body2)] expr)
+    fn analyzeLetfn(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "letfn requires binding vector and body", .{});
+        }
+
+        // バインディングベクター
+        const bindings_form = items[1];
+        if (bindings_form != .vector) {
+            return err.parseError(.invalid_binding, "letfn bindings must be a vector", .{});
+        }
+
+        const binding_forms = bindings_form.vector;
+
+        // Phase 1: 全関数名をローカルに登録（相互参照を可能に）
+        const start_locals = self.locals.items.len;
+        var fn_names = std.ArrayListUnmanaged([]const u8).empty;
+        defer fn_names.deinit(self.allocator);
+
+        for (binding_forms) |bf| {
+            if (bf != .list) {
+                return err.parseError(.invalid_binding, "letfn binding must be a list: (name [params] body...)", .{});
+            }
+            const bf_items = bf.list;
+            if (bf_items.len < 2) {
+                return err.parseError(.invalid_binding, "letfn binding requires name and params", .{});
+            }
+            if (bf_items[0] != .symbol) {
+                return err.parseError(.invalid_binding, "letfn binding name must be a symbol", .{});
+            }
+            const name = bf_items[0].symbol.name;
+            fn_names.append(self.allocator, name) catch return error.OutOfMemory;
+
+            // ローカルに追加（idx はグローバルインデックス）
+            const idx: u32 = @intCast(self.locals.items.len);
+            self.locals.append(self.allocator, .{ .name = name, .idx = idx }) catch return error.OutOfMemory;
+        }
+
+        // Phase 2: 各関数本体を解析（全関数名がスコープ内にある状態で）
+        var bindings = self.allocator.alloc(node_mod.LetfnBinding, binding_forms.len) catch return error.OutOfMemory;
+        for (binding_forms, 0..) |bf, i| {
+            const bf_items = bf.list;
+            const name = bf_items[0].symbol.name;
+
+            // (name [params] body...) を (fn name [params] body...) として解析
+            // analyzeFn は items[0] = "fn" を想定するので、先頭に fn シンボルを追加
+            var fn_items = self.allocator.alloc(Form, bf_items.len + 1) catch return error.OutOfMemory;
+            fn_items[0] = .{ .symbol = FormSymbol.init("fn") };
+            @memcpy(fn_items[1..], bf_items);
+
+            const fn_node = try self.analyzeFn(fn_items);
+            bindings[i] = .{
+                .name = name,
+                .fn_node = fn_node,
+            };
+        }
+
+        // Phase 3: ボディを解析
+        const body = if (items.len == 2)
+            try self.makeConstant(value_mod.nil)
+        else if (items.len == 3)
+            try self.analyze(items[2])
+        else blk: {
+            var statements = self.allocator.alloc(*Node, items.len - 2) catch return error.OutOfMemory;
+            for (items[2..], 0..) |item, j| {
+                statements[j] = try self.analyze(item);
+            }
+            const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
+            do_data.* = .{ .statements = statements, .stack = .{} };
+            const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
+            do_node.* = .{ .do_node = do_data };
+            break :blk do_node;
+        };
+
+        // ローカルをポップ
+        self.locals.shrinkRetainingCapacity(start_locals);
+
+        const letfn_data = self.allocator.create(node_mod.LetfnNode) catch return error.OutOfMemory;
+        letfn_data.* = .{
+            .bindings = bindings,
+            .body = body,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .letfn_node = letfn_data };
         return node;
     }
 

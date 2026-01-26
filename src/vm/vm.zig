@@ -373,6 +373,10 @@ pub const VM = struct {
                 .loop_start => {
                     // マーカーのみ、何もしない
                 },
+                .letfn_fixup => {
+                    // letfn: ローカルスロット上の N 個のクロージャの closure_bindings を相互参照に更新
+                    try self.letfnFixup(instr.operand);
+                },
                 .recur => {
                     // recur: ループ変数を新しい値で更新
                     // オペランド: 上位8bit = loop開始オフセット、下位8bit = 引数数
@@ -902,6 +906,41 @@ pub const VM = struct {
         };
 
         try self.push(Value{ .fn_val = fn_obj });
+    }
+
+    /// letfn fixup: ローカルスロット上の N 個のクロージャの closure_bindings を相互参照に更新
+    /// operand: 上位8bit = 先頭関数のスロット位置, 下位8bit = 関数の数
+    /// 各クロージャの既存 closure_bindings 内の対応スロットを実際の関数値で更新
+    fn letfnFixup(self: *VM, operand: u16) VMError!void {
+        const base_slot: usize = operand >> 8;
+        const fn_count: usize = operand & 0xFF;
+        if (fn_count == 0) return;
+
+        const frame = &self.frames[self.frame_count - 1];
+        const fn_start = frame.base + base_slot;
+
+        // 各クロージャの closure_bindings を更新
+        for (0..fn_count) |i| {
+            const fn_val = self.stack[fn_start + i];
+            if (fn_val == .fn_val) {
+                if (fn_val.fn_val.closure_bindings) |cb| {
+                    // 既存の closure_bindings 内の letfn スロットを実際の関数値で更新
+                    const mutable_cb: []Value = @constCast(cb);
+                    for (0..fn_count) |j| {
+                        if (base_slot + j < mutable_cb.len) {
+                            mutable_cb[base_slot + j] = self.stack[fn_start + j];
+                        }
+                    }
+                } else {
+                    // closure_bindings がない場合（トップレベル letfn）: 新規作成
+                    const bindings = self.allocator.alloc(Value, fn_count) catch return error.OutOfMemory;
+                    for (0..fn_count) |j| {
+                        bindings[j] = self.stack[fn_start + j];
+                    }
+                    fn_val.fn_val.closure_bindings = bindings;
+                }
+            }
+        }
     }
 
     /// partial 関数を作成

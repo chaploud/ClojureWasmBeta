@@ -79,6 +79,19 @@ pub const FnNode = struct {
     stack: SourceInfo,
 };
 
+/// letfn バインディング（名前 + fn ノード）
+pub const LetfnBinding = struct {
+    name: []const u8,
+    fn_node: *Node, // fn_node を指す
+};
+
+/// letfn ノード（相互再帰ローカル関数）
+pub const LetfnNode = struct {
+    bindings: []const LetfnBinding,
+    body: *Node,
+    stack: SourceInfo,
+};
+
 /// 関数呼び出しノード
 pub const CallNode = struct {
     fn_node: *Node,
@@ -283,6 +296,7 @@ pub const Node = union(enum) {
 
     // 関数
     fn_node: *FnNode,
+    letfn_node: *LetfnNode,
     call_node: *CallNode,
 
     // 定義
@@ -331,6 +345,7 @@ pub const Node = union(enum) {
             .loop_node => |n| n.stack,
             .recur_node => |n| n.stack,
             .fn_node => |n| n.stack,
+            .letfn_node => |n| n.stack,
             .call_node => |n| n.stack,
             .def_node => |n| n.stack,
             .quote_node => |n| n.stack,
@@ -365,6 +380,7 @@ pub const Node = union(enum) {
             .loop_node => "loop",
             .recur_node => "recur",
             .fn_node => "fn",
+            .letfn_node => "letfn",
             .call_node => "call",
             .def_node => "def",
             .quote_node => "quote",
@@ -449,6 +465,22 @@ pub const Node = union(enum) {
                 const d = try allocator.create(FnNode);
                 d.* = .{ .name = n.name, .arities = arities, .stack = n.stack };
                 break :blk .{ .fn_node = d };
+            },
+            .letfn_node => |n| blk: {
+                const bindings = try allocator.alloc(LetfnBinding, n.bindings.len);
+                for (n.bindings, 0..) |b, i| {
+                    bindings[i] = .{
+                        .name = b.name,
+                        .fn_node = try b.fn_node.deepClone(allocator),
+                    };
+                }
+                const d = try allocator.create(LetfnNode);
+                d.* = .{
+                    .bindings = bindings,
+                    .body = try n.body.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .letfn_node = d };
             },
             .call_node => |n| blk: {
                 const d = try allocator.create(CallNode);

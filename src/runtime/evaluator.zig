@@ -44,6 +44,7 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .loop_node => |n| runLoop(n, ctx),
         .recur_node => |n| runRecur(n, ctx),
         .fn_node => |n| runFn(n, ctx),
+        .letfn_node => |n| runLetfn(n, ctx),
         .call_node => |n| runCall(n, ctx),
         .def_node => |n| runDef(n, ctx),
         .quote_node => |n| n.form,
@@ -178,6 +179,34 @@ fn runFn(node: *const node_mod.FnNode, ctx: *Context) EvalError!Value {
     fn_obj.* = value_mod.Fn.initUser(node.name, runtime_arities, closure_bindings);
 
     return Value{ .fn_val = fn_obj };
+}
+
+/// letfn 評価（相互再帰ローカル関数）
+/// 1. 全関数を作成（closure_bindings なし）
+/// 2. コンテキストに追加
+/// 3. 各関数の closure_bindings を更新（全関数を含むコンテキスト）
+fn runLetfn(node: *const node_mod.LetfnNode, ctx: *Context) EvalError!Value {
+    // Phase 1: 全関数を仮作成してコンテキストに追加
+    var current_ctx = ctx.*;
+    var fn_objects = ctx.allocator.alloc(*value_mod.Fn, node.bindings.len) catch return error.OutOfMemory;
+
+    for (node.bindings, 0..) |binding, i| {
+        // fn ノードを評価して関数値を取得
+        const fn_val = try runFn(binding.fn_node.fn_node, &current_ctx);
+        fn_objects[i] = fn_val.fn_val;
+        // コンテキストに追加（後続の関数は先行する関数を参照可能）
+        current_ctx = current_ctx.withBinding(fn_val) catch return error.OutOfMemory;
+    }
+
+    // Phase 2: 全関数の closure_bindings を更新
+    // 全関数がスコープ内にある状態の bindings でクロージャを更新
+    const full_bindings = ctx.allocator.dupe(Value, current_ctx.bindings) catch return error.OutOfMemory;
+    for (fn_objects) |fn_obj| {
+        fn_obj.closure_bindings = full_bindings;
+    }
+
+    // Phase 3: ボディを評価
+    return run(node.body, &current_ctx);
 }
 
 /// call 評価
