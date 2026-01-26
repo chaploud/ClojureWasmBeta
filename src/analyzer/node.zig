@@ -261,6 +261,14 @@ pub const GroupByNode = struct {
     stack: SourceInfo,
 };
 
+/// lazy-seq ノード
+/// (lazy-seq body)
+/// body は引数なしで呼ばれるサンク（fn body を内部生成）
+pub const LazySeqNode = struct {
+    body: *Node, // サンク本体（評価すると nil or cons セルを返す）
+    stack: SourceInfo,
+};
+
 /// defprotocol ノード
 /// (defprotocol Name (method1 [this]) (method2 [this arg]))
 pub const DefprotocolNode = struct {
@@ -353,6 +361,9 @@ pub const Node = union(enum) {
     defprotocol_node: *DefprotocolNode,
     extend_type_node: *ExtendTypeNode,
 
+    // 遅延シーケンス
+    lazy_seq_node: *LazySeqNode,
+
     /// スタック情報を取得
     pub fn stack(self: Node) SourceInfo {
         return switch (self) {
@@ -387,6 +398,7 @@ pub const Node = union(enum) {
             .defmethod_node => |n| n.stack,
             .defprotocol_node => |n| n.stack,
             .extend_type_node => |n| n.stack,
+            .lazy_seq_node => |n| n.stack,
         };
     }
 
@@ -424,6 +436,7 @@ pub const Node = union(enum) {
             .defmethod_node => "defmethod",
             .defprotocol_node => "defprotocol",
             .extend_type_node => "extend-type",
+            .lazy_seq_node => "lazy-seq",
         };
     }
 
@@ -705,6 +718,14 @@ pub const Node = union(enum) {
                     .stack = n.stack,
                 };
                 break :blk .{ .extend_type_node = d };
+            },
+            .lazy_seq_node => |n| blk: {
+                const d = try allocator.create(LazySeqNode);
+                d.* = .{
+                    .body = try n.body.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .lazy_seq_node = d };
             },
         };
         return new_node;

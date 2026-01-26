@@ -52,8 +52,25 @@
 ## シーケンス操作
 
 - map/filter は Eager 実装（リスト全体を即座に生成）
-- LazySeq が必要な場合（無限シーケンス、遅延実行）は別途実装が必要
-- `(range)` 引数なし（無限シーケンス）は未サポート
+- **LazySeq 実装済み**: `(lazy-seq body)` 特殊形式、cons 形式の遅延保持
+- `(range)` 引数なし（無限シーケンス）は未サポート（lazy-range パターンで代替可能）
+
+## LazySeq（Phase 9 で追加）
+
+- **LazySeq 構造**: サンク形式（body_fn）と cons 形式（cons_head + cons_tail）の2種類
+  - サンク形式: `(lazy-seq body)` → body を `(fn [] body)` に変換して保持
+  - cons 形式: `(cons x lazy-tail)` → head + tail をそのまま保持（tail を force しない）
+- **force メカニズム**: threadlocal コールバック（ForceFn 型）
+  - TreeWalk: `treeWalkForce` + `current_env` threadlocal
+  - VM: `vmForce` + `current_vm` threadlocal（callValue が再帰的に execute を呼ぶため同期的）
+- **インクリメンタル操作**: first/rest/take/drop は lazy-seq を一要素ずつ force
+  - `lazyFirst`: 一段だけ force して head を返す
+  - `lazyRest`: 一段だけ force して tail を返す
+  - `forceLazySeqOneStep`: サンク → cons/具体値に一段変換
+- **完全 force**: `forceLazySeq` は全要素を収集（無限シーケンスでは無限ループ）
+  - `ensureRealized`, `doall`, `count` が使用
+- **深コピー**: cons_head/cons_tail も deepClone 対象
+- **compare モード**: engine.zig で各バックエンドの force callback が有効な間に ensureRealized
 
 ## 例外処理
 

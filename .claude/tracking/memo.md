@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 8.20 完了**
+**Phase 9 完了 — LazySeq（真の遅延シーケンス）**
 
 | Phase | 内容 |
 |-------|------|
@@ -35,6 +35,7 @@
 | 8.18 | letfn（相互再帰ローカル関数） |
 | 8.19 | 実用関数・マクロ大量追加（~83関数/マクロ） |
 | 8.20 | 動的コレクションリテラル（変数を含む [x y], {:a x} 等） |
+| 9 | LazySeq — 真の遅延シーケンス（無限シーケンス対応） |
 
 実装状況の詳細: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -42,7 +43,9 @@
 
 ## 次回タスク候補
 
-- LazySeq（真の遅延シーケンス）
+- lazy map/filter（現在は eager、lazy 化で無限シーケンスとの合成が可能に）
+- `iterate`, `repeat`, `cycle` 関数（lazy-seq ベース）
+- `(range)` 引数なし（無限シーケンス、lazy-seq ベース）
 - 正規表現
 - defrecord（プロトコルと組み合わせ）
 

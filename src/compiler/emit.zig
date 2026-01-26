@@ -112,6 +112,7 @@ pub const Compiler = struct {
             .defmethod_node => |node| try self.emitDefmethod(node),
             .defprotocol_node => |node| try self.emitDefprotocol(node),
             .extend_type_node => |node| try self.emitExtendType(node),
+            .lazy_seq_node => |node| try self.emitLazySeq(node),
         }
     }
 
@@ -719,6 +720,28 @@ pub const Compiler = struct {
         try self.compile(node.coll_node);
         try self.chunk.emit(.group_by_seq, 0);
         self.sp_depth -= 1;
+    }
+
+    // === 遅延シーケンス ===
+
+    /// lazy-seq コンパイル: (lazy-seq body)
+    /// body を引数なし fn としてコンパイルし、lazy_seq オペコードで LazySeq を生成
+    fn emitLazySeq(self: *Compiler, node: *const node_mod.LazySeqNode) CompileError!void {
+        // body を (fn [] body) として扱い、FnProto を生成
+        const arity = node_mod.FnArity{
+            .params = &[_][]const u8{},
+            .variadic = false,
+            .body = node.body,
+        };
+        const proto = try self.compileArity(null, arity);
+        const proto_val = Value{ .fn_proto = proto };
+        const idx = self.chunk.addConstant(proto_val) catch return error.TooManyConstants;
+        // closure 命令でサンク関数を作成
+        try self.chunk.emit(.closure, idx);
+        self.sp_depth += 1;
+        // lazy_seq 命令でサンクから LazySeq を作成
+        try self.chunk.emitOp(.lazy_seq);
+        // スタック効果: fn をポップして lazy_seq をプッシュ（差引0）
     }
 
     // === Atom 操作 ===

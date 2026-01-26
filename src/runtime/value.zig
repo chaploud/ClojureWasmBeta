@@ -262,6 +262,38 @@ pub const PersistentSet = struct {
     }
 };
 
+// === 遅延シーケンス ===
+
+/// 遅延シーケンス（lazy-seq）
+/// サンク（引数0の関数）を保持し、初回アクセスで実体化してキャッシュ。
+/// 実体化後は cons セル（first + rest）または nil。
+pub const LazySeq = struct {
+    /// サンク: 実体化前は fn_val (呼び出すと seq の値を返す)、実体化後は null
+    body_fn: ?Value,
+    /// キャッシュ: 実体化後の値（nil or list）
+    realized: ?Value,
+    /// cons 構造: (cons head tail) の head 要素（tail は body_fn=null, realized=lazy_seq の tail）
+    cons_head: ?Value,
+    /// cons 構造の tail（lazy-seq または nil/list）
+    cons_tail: ?Value,
+
+    /// 未実体化の LazySeq を作成（サンク形式）
+    pub fn init(body_fn: Value) LazySeq {
+        return .{ .body_fn = body_fn, .realized = null, .cons_head = null, .cons_tail = null };
+    }
+
+    /// cons 形式の LazySeq を作成: (cons head lazy-tail)
+    /// head は即値、tail は遅延のまま
+    pub fn initCons(head: Value, tail: Value) LazySeq {
+        return .{ .body_fn = null, .realized = null, .cons_head = head, .cons_tail = tail };
+    }
+
+    /// 既に実体化済みかどうか
+    pub fn isRealized(self: *const LazySeq) bool {
+        return self.realized != null;
+    }
+};
+
 // === マルチメソッド ===
 
 /// マルチメソッド（defmulti/defmethod）
@@ -423,6 +455,9 @@ pub const Value = union(enum) {
     // === VM用 ===
     fn_proto: FnProtoPtr, // コンパイル済み関数プロトタイプ
 
+    // === 遅延シーケンス ===
+    lazy_seq: *LazySeq, // 遅延シーケンス
+
     // === 参照 ===
     var_val: *anyopaque, // *Var（循環依存を避けるため anyopaque）
     atom: *Atom, // Atom（ミュータブルな参照）
@@ -500,6 +535,7 @@ pub const Value = union(enum) {
                 }
                 break :blk true;
             },
+            .lazy_seq => |a| a == other.lazy_seq, // 参照等価
             .fn_val => |a| a == other.fn_val, // 関数は参照等価
             .partial_fn => |a| a == other.partial_fn, // 参照等価
             .comp_fn => |a| a == other.comp_fn, // 参照等価
@@ -527,6 +563,7 @@ pub const Value = union(enum) {
             .vector => "vector",
             .map => "map",
             .set => "set",
+            .lazy_seq => "lazy-seq",
             .fn_val => "function",
             .partial_fn => "function", // partial も関数として表示
             .comp_fn => "function", // comp も関数として表示
@@ -554,6 +591,7 @@ pub const Value = union(enum) {
             .vector => "vector",
             .map => "map",
             .set => "set",
+            .lazy_seq => "lazy-seq",
             .fn_val, .partial_fn, .comp_fn => "function",
             .multi_fn => "multi-fn",
             .protocol => "protocol",
@@ -641,6 +679,17 @@ pub const Value = union(enum) {
                     try item.format("", .{}, writer);
                 }
                 try writer.writeByte('}');
+            },
+            .lazy_seq => |ls| {
+                // 実体化済みなら中身を表示
+                if (ls.realized) |realized| {
+                    try realized.format("", .{}, writer);
+                } else if (ls.cons_head != null) {
+                    // cons 形式: 部分的に評価済み
+                    try writer.writeAll("#<lazy-seq:cons>");
+                } else {
+                    try writer.writeAll("#<lazy-seq>");
+                }
             },
             .fn_val => |f| {
                 if (f.name) |name| {
@@ -741,6 +790,17 @@ pub const Value = union(enum) {
                 const new_a = try allocator.create(Atom);
                 new_a.* = .{ .value = try a.value.deepClone(allocator) };
                 break :blk .{ .atom = new_a };
+            },
+            // LazySeq はサンクと実体化済み値を深コピー
+            .lazy_seq => |ls| blk: {
+                const new_ls = try allocator.create(LazySeq);
+                new_ls.* = .{
+                    .body_fn = if (ls.body_fn) |bf| try bf.deepClone(allocator) else null,
+                    .realized = if (ls.realized) |r| try r.deepClone(allocator) else null,
+                    .cons_head = if (ls.cons_head) |ch| try ch.deepClone(allocator) else null,
+                    .cons_tail = if (ls.cons_tail) |ct| try ct.deepClone(allocator) else null,
+                };
+                break :blk .{ .lazy_seq = new_ls };
             },
             // MultiFn, Protocol, ProtocolFn は参照をそのまま保持（persistent で作成済み）
             .multi_fn, .protocol, .protocol_fn => self,

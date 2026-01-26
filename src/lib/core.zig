@@ -17,6 +17,160 @@ const Env = env_mod.Env;
 /// 組み込み関数の型（value.zig との循環依存を避けるためここで定義）
 pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
 
+/// LazySeq force コールバック型
+/// 引数なし fn を呼び出して結果を返す。evaluator/VM がそれぞれ設定する。
+pub const ForceFn = *const fn (fn_val: Value, allocator: std.mem.Allocator) anyerror!Value;
+
+/// 現在の force コールバック（threadlocal）
+/// evaluator/VM が builtin 呼び出し前に設定する
+pub threadlocal var force_lazy_seq_fn: ?ForceFn = null;
+
+/// LazySeq を実体化する（force）
+/// サンク関数を呼び出し、結果を cached realized に格納して返す
+/// LazySeq を一段だけ force する（サンク → cons形式 or 具体値に変換）
+/// cons 形式の場合はそのまま返す（tail は force しない）
+pub fn forceLazySeqOneStep(allocator: std.mem.Allocator, ls: *value_mod.LazySeq) anyerror!void {
+    // 既に実体化済み or cons形式
+    if (ls.realized != null or ls.cons_head != null) return;
+
+    // サンク形式の場合: body_fn を呼んで結果を取得
+    const body_fn = ls.body_fn orelse {
+        // body_fn も cons_head もない → 空
+        ls.realized = value_mod.nil;
+        return;
+    };
+    const force_fn = force_lazy_seq_fn orelse return error.TypeError;
+    const result = try force_fn(body_fn, allocator);
+    ls.body_fn = null; // サンクを解放
+
+    // 結果が lazy-seq の場合、その内容を引き継ぐ
+    if (result == .lazy_seq) {
+        const inner = result.lazy_seq;
+        ls.body_fn = inner.body_fn;
+        ls.realized = inner.realized;
+        ls.cons_head = inner.cons_head;
+        ls.cons_tail = inner.cons_tail;
+        // 再帰的に一段 force（内側もサンク形式かもしれない）
+        return forceLazySeqOneStep(allocator, ls);
+    }
+
+    // 具体値（nil, list, vector）の場合
+    ls.realized = result;
+}
+
+/// LazySeq の最初の要素を取得（全体を force しない）
+pub fn lazyFirst(allocator: std.mem.Allocator, ls: *value_mod.LazySeq) anyerror!Value {
+    try forceLazySeqOneStep(allocator, ls);
+
+    // cons 形式
+    if (ls.cons_head) |head| return head;
+
+    // 具体値
+    if (ls.realized) |r| {
+        return switch (r) {
+            .nil => value_mod.nil,
+            .list => |l| if (l.items.len > 0) l.items[0] else value_mod.nil,
+            .vector => |v| if (v.items.len > 0) v.items[0] else value_mod.nil,
+            else => value_mod.nil,
+        };
+    }
+    return value_mod.nil;
+}
+
+/// LazySeq の rest を取得（全体を force しない）
+/// cons 形式の場合、tail をそのまま返す（lazy-seq のまま）
+pub fn lazyRest(allocator: std.mem.Allocator, ls: *value_mod.LazySeq) anyerror!Value {
+    try forceLazySeqOneStep(allocator, ls);
+
+    // cons 形式: tail を返す
+    if (ls.cons_tail) |tail| return tail;
+    if (ls.cons_head != null) return value_mod.nil; // head のみ、tail なし
+
+    // 具体値
+    if (ls.realized) |r| {
+        return switch (r) {
+            .nil => Value{ .list = try value_mod.PersistentList.empty(allocator) },
+            .list => |l| {
+                if (l.items.len <= 1) return Value{ .list = try value_mod.PersistentList.empty(allocator) };
+                return Value{ .list = try value_mod.PersistentList.fromSlice(allocator, l.items[1..]) };
+            },
+            .vector => |v| {
+                if (v.items.len <= 1) return Value{ .list = try value_mod.PersistentList.empty(allocator) };
+                return Value{ .list = try value_mod.PersistentList.fromSlice(allocator, v.items[1..]) };
+            },
+            else => Value{ .list = try value_mod.PersistentList.empty(allocator) },
+        };
+    }
+    return Value{ .list = try value_mod.PersistentList.empty(allocator) };
+}
+
+/// LazySeq を完全に force する（有限のもののみ！無限シーケンスでは使用禁止）
+pub fn forceLazySeq(allocator: std.mem.Allocator, ls: *value_mod.LazySeq) anyerror!Value {
+    // 既に実体化済み（かつ cons 形式でない）
+    if (ls.realized != null and ls.cons_head == null) return ls.realized.?;
+
+    // 要素を一つずつ収集
+    var items: std.ArrayListUnmanaged(Value) = .empty;
+    var current: Value = Value{ .lazy_seq = ls };
+
+    while (true) {
+        if (current == .lazy_seq) {
+            const cur_ls = current.lazy_seq;
+            try forceLazySeqOneStep(allocator, cur_ls);
+
+            if (cur_ls.cons_head) |head| {
+                items.append(allocator, head) catch return error.OutOfMemory;
+                current = cur_ls.cons_tail orelse value_mod.nil;
+                continue;
+            }
+
+            if (cur_ls.realized) |r| {
+                current = r;
+                continue;
+            }
+
+            break; // 空
+        }
+
+        // 具体値（list, vector, nil）
+        switch (current) {
+            .nil => break,
+            .list => |l| {
+                for (l.items) |item| {
+                    items.append(allocator, item) catch return error.OutOfMemory;
+                }
+                break;
+            },
+            .vector => |v| {
+                for (v.items) |item| {
+                    items.append(allocator, item) catch return error.OutOfMemory;
+                }
+                break;
+            },
+            else => break,
+        }
+    }
+
+    const result_list = try allocator.create(value_mod.PersistentList);
+    result_list.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+    const result = Value{ .list = result_list };
+
+    // キャッシュ
+    ls.realized = result;
+    ls.cons_head = null;
+    ls.cons_tail = null;
+    ls.body_fn = null;
+    return result;
+}
+
+/// Value が LazySeq なら実体化して返す、そうでなければそのまま返す
+pub fn ensureRealized(allocator: std.mem.Allocator, val: Value) anyerror!Value {
+    if (val == .lazy_seq) {
+        return forceLazySeq(allocator, val.lazy_seq);
+    }
+    return val;
+}
+
 /// 組み込み関数エラー
 pub const CoreError = error{
     TypeError,
@@ -628,8 +782,12 @@ pub fn vector(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
 
 /// first : コレクションの最初の要素
 pub fn first(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
     if (args.len != 1) return error.ArityError;
+
+    // lazy-seq の場合: 全体を force せず first だけ取得
+    if (args[0] == .lazy_seq) {
+        return lazyFirst(allocator, args[0].lazy_seq);
+    }
 
     return switch (args[0]) {
         .nil => value_mod.nil,
@@ -642,6 +800,11 @@ pub fn first(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// rest : コレクションの最初以外
 pub fn rest(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1) return error.ArityError;
+
+    // lazy-seq の場合: 全体を force せず rest を取得
+    if (args[0] == .lazy_seq) {
+        return lazyRest(allocator, args[0].lazy_seq);
+    }
 
     return switch (args[0]) {
         .nil => Value{ .list = try value_mod.PersistentList.empty(allocator) },
@@ -666,7 +829,17 @@ pub fn cons(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 2) return error.ArityError;
 
     const elem = args[0];
-    const coll = args[1];
+    const tail = args[1];
+
+    // lazy-seq の場合: force せずに ConsLazySeq を作成
+    // (cons x lazy-tail) → x が先頭、lazy-tail は遅延のまま保持
+    if (tail == .lazy_seq) {
+        const ls = try allocator.create(value_mod.LazySeq);
+        ls.* = value_mod.LazySeq.initCons(elem, tail);
+        return Value{ .lazy_seq = ls };
+    }
+
+    const coll = tail;
 
     // コレクションの要素を取得
     const items: []const Value = switch (coll) {
@@ -733,11 +906,16 @@ pub fn conj(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 }
 
 /// count : コレクションの要素数
+/// 注意: 無限 lazy-seq に対して呼ぶと無限ループになる
 pub fn count(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
     if (args.len != 1) return error.ArityError;
 
-    const n: i64 = switch (args[0]) {
+    // lazy-seq の場合: 完全に force して数える
+    const val = if (args[0] == .lazy_seq)
+        try forceLazySeq(allocator, args[0].lazy_seq)
+    else
+        args[0];
+    const n: i64 = switch (val) {
         .nil => 0,
         .list => |l| @intCast(l.items.len),
         .vector => |v| @intCast(v.items.len),
@@ -752,10 +930,16 @@ pub fn count(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 
 /// empty? : コレクションが空かどうか
 pub fn isEmpty(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
     if (args.len != 1) return error.ArityError;
 
-    const empty = switch (args[0]) {
+    // lazy-seq の場合: first だけ force して空かどうか判定
+    if (args[0] == .lazy_seq) {
+        const f = try lazyFirst(allocator, args[0].lazy_seq);
+        return Value{ .bool_val = f == .nil };
+    }
+
+    const val = args[0];
+    const empty = switch (val) {
         .nil => true,
         .list => |l| l.items.len == 0,
         .vector => |v| v.items.len == 0,
@@ -953,6 +1137,14 @@ fn printValue(writer: anytype, val: Value) !void {
             try writer.writeAll("#<protocol-fn ");
             try writer.writeAll(pf.method_name);
             try writer.writeByte('>');
+        },
+        .lazy_seq => |ls| {
+            // 実体化済みなら中身を表示
+            if (ls.realized) |realized| {
+                try printValue(writer, realized);
+            } else {
+                try writer.writeAll("#<lazy-seq>");
+            }
         },
     }
 }
@@ -1260,12 +1452,46 @@ fn getItems(val: Value) ?[]const Value {
     };
 }
 
+/// LazySeq 対応版 getItems — force してから items を取得
+fn getItemsRealized(allocator: std.mem.Allocator, val: Value) anyerror!?[]const Value {
+    const realized = try ensureRealized(allocator, val);
+    return getItems(realized);
+}
+
 /// take : 先頭 n 個の要素を取得
 pub fn take(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 2) return error.ArityError;
     if (args[0] != .int) return error.TypeError;
     const n_raw = args[0].int;
     const n: usize = if (n_raw < 0) 0 else @intCast(n_raw);
+
+    // lazy-seq の場合: 一要素ずつ取得（無限シーケンス対応）
+    if (args[1] == .lazy_seq) {
+        var items_buf: std.ArrayListUnmanaged(Value) = .empty;
+        var current: Value = args[1];
+        var taken: usize = 0;
+        while (taken < n) {
+            if (current == .lazy_seq) {
+                const elem = try lazyFirst(allocator, current.lazy_seq);
+                if (elem == .nil) break; // 空
+                items_buf.append(allocator, elem) catch return error.OutOfMemory;
+                current = try lazyRest(allocator, current.lazy_seq);
+                taken += 1;
+            } else {
+                // 具体値に到達
+                const remaining = n - taken;
+                const rest_items = getItems(current) orelse break;
+                const take_rest = @min(remaining, rest_items.len);
+                for (rest_items[0..take_rest]) |item| {
+                    items_buf.append(allocator, item) catch return error.OutOfMemory;
+                }
+                break;
+            }
+        }
+        const result = try allocator.create(value_mod.PersistentList);
+        result.* = .{ .items = items_buf.toOwnedSlice(allocator) catch return error.OutOfMemory };
+        return Value{ .list = result };
+    }
 
     const items = getItems(args[1]) orelse return error.TypeError;
     const take_count = @min(n, items.len);
@@ -1282,6 +1508,29 @@ pub fn drop(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args[0] != .int) return error.TypeError;
     const n_raw = args[0].int;
     const n: usize = if (n_raw < 0) 0 else @intCast(n_raw);
+
+    // lazy-seq の場合: n 個スキップして残りを返す（遅延のまま）
+    if (args[1] == .lazy_seq) {
+        var current: Value = args[1];
+        var dropped: usize = 0;
+        while (dropped < n) {
+            if (current == .lazy_seq) {
+                const f = try lazyFirst(allocator, current.lazy_seq);
+                if (f == .nil) break;
+                current = try lazyRest(allocator, current.lazy_seq);
+                dropped += 1;
+            } else {
+                // 具体値に到達
+                const remaining_items = getItems(current) orelse break;
+                const skip = @min(n - dropped, remaining_items.len);
+                const new_items = try allocator.dupe(Value, remaining_items[skip..]);
+                const result = try allocator.create(value_mod.PersistentList);
+                result.* = .{ .items = new_items };
+                return Value{ .list = result };
+            }
+        }
+        return current;
+    }
 
     const items = getItems(args[1]) orelse return error.TypeError;
     const drop_count = @min(n, items.len);
@@ -1341,14 +1590,14 @@ pub fn concat(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
     // 全要素数を計算
     var total: usize = 0;
     for (args) |arg| {
-        const items = getItems(arg) orelse return error.TypeError;
+        const items = (try getItemsRealized(allocator, arg)) orelse return error.TypeError;
         total += items.len;
     }
 
     const new_items = try allocator.alloc(Value, total);
     var offset: usize = 0;
     for (args) |arg| {
-        const items = getItems(arg).?;
+        const items = (try getItemsRealized(allocator, arg)).?;
         @memcpy(new_items[offset .. offset + items.len], items);
         offset += items.len;
     }
@@ -1363,7 +1612,7 @@ pub fn concat(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
 pub fn into(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 2) return error.ArityError;
 
-    const from_items = getItems(args[1]) orelse return error.TypeError;
+    const from_items = (try getItemsRealized(allocator, args[1])) orelse return error.TypeError;
 
     switch (args[0]) {
         .nil => {
@@ -1440,9 +1689,18 @@ pub fn reverseFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Val
 pub fn seq(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1) return error.ArityError;
 
-    return switch (args[0]) {
+    // lazy-seq の場合: first だけ force して空チェック
+    if (args[0] == .lazy_seq) {
+        const f = try lazyFirst(allocator, args[0].lazy_seq);
+        if (f == .nil) return value_mod.nil;
+        // 非空の lazy-seq → そのまま返す（遅延のまま）
+        return args[0];
+    }
+
+    const val = args[0];
+    return switch (val) {
         .nil => value_mod.nil,
-        .list => |l| if (l.items.len == 0) value_mod.nil else args[0],
+        .list => |l| if (l.items.len == 0) value_mod.nil else val,
         .vector => |v| blk: {
             if (v.items.len == 0) break :blk value_mod.nil;
             const result = try value_mod.PersistentList.fromSlice(allocator, v.items);
@@ -2235,6 +2493,7 @@ pub fn typeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
         .fn_proto => "function",
         .var_val => "var",
         .atom => "atom",
+        .lazy_seq => "lazy-seq",
     };
 
     const str = try allocator.create(value_mod.String);
@@ -3288,6 +3547,29 @@ pub fn withMeta(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
     };
 }
 
+/// realized? : LazySeq が実体化済みかどうか
+pub fn isRealized(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .lazy_seq => |ls| if (ls.isRealized()) value_mod.true_val else value_mod.false_val,
+        else => value_mod.true_val, // lazy-seq 以外は常に realized
+    };
+}
+
+/// lazy-seq? : LazySeq かどうか
+pub fn isLazySeq(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .lazy_seq) value_mod.true_val else value_mod.false_val;
+}
+
+/// doall : 遅延シーケンスを完全に実体化して返す
+pub fn doall(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return ensureRealized(allocator, args[0]);
+}
+
 /// meta : 値のメタデータを取得
 pub fn metaFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
@@ -3488,6 +3770,10 @@ const builtins = [_]BuiltinDef{
     .{ .name = "prn-str", .func = prnStr },
     .{ .name = "with-meta", .func = withMeta },
     .{ .name = "meta", .func = metaFn },
+    // 遅延シーケンス
+    .{ .name = "realized?", .func = isRealized },
+    .{ .name = "lazy-seq?", .func = isLazySeq },
+    .{ .name = "doall", .func = doall },
 };
 
 /// clojure.core の組み込み関数を Env に登録

@@ -34,6 +34,10 @@ pub const EvalError = error{
 
 /// Node を評価
 pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
+    // TreeWalk 用 LazySeq force コールバックを設定
+    core.force_lazy_seq_fn = &treeWalkForce;
+    current_env = ctx.env;
+
     return switch (node.*) {
         .constant => |val| val,
         .var_ref => |ref| ref.var_ref.deref(),
@@ -66,6 +70,7 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .defmethod_node => |n| runDefmethod(n, ctx),
         .defprotocol_node => |n| runDefprotocol(n, ctx),
         .extend_type_node => |n| runExtendType(n, ctx),
+        .lazy_seq_node => |n| runLazySeq(n, ctx),
     };
 }
 
@@ -226,8 +231,23 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
     return callWithArgs(fn_val, args, ctx);
 }
 
+/// TreeWalk 用 LazySeq force コールバック
+/// threadlocal に保存された env を使用
+threadlocal var current_env: ?*Env = null;
+
+fn treeWalkForce(fn_val: Value, allocator: std.mem.Allocator) anyerror!Value {
+    // fn を引数なしで呼び出す
+    const env = current_env orelse return error.TypeError;
+    var ctx = Context.init(allocator, env);
+    return callWithArgs(fn_val, &[_]Value{}, &ctx);
+}
+
 /// 関数を引数付きで呼び出し（partial_fn サポート付き）
 fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Value {
+    // LazySeq force コールバックを設定
+    core.force_lazy_seq_fn = &treeWalkForce;
+    current_env = ctx.env;
+
     return switch (fn_val) {
         .fn_val => |f| blk: {
             // 組み込み関数
@@ -1112,6 +1132,41 @@ fn runSwap(node: *const node_mod.SwapNode, ctx: *Context) EvalError!Value {
     // Atom を更新
     atom_ptr.value = cloned;
     return cloned;
+}
+
+/// lazy-seq 評価
+/// body をサンク（fn body として包み）、LazySeq 値を返す
+/// body は実際に first/rest 等が呼ばれた時点で評価される
+fn runLazySeq(node: *const node_mod.LazySeqNode, ctx: *Context) EvalError!Value {
+    // body ノードを (fn [] body) としてクロージャ化し、LazySeq に格納
+    // body ノードを deepClone して永続化
+    const persistent_body = node.body.deepClone(ctx.allocator) catch return error.OutOfMemory;
+
+    // 引数なしのアリティを作成
+    const arity = ctx.allocator.create(value_mod.FnArityRuntime) catch return error.OutOfMemory;
+    arity.* = .{
+        .params = &[_][]const u8{},
+        .variadic = false,
+        .body = @ptrCast(persistent_body),
+    };
+    const arities = ctx.allocator.alloc(value_mod.FnArityRuntime, 1) catch return error.OutOfMemory;
+    arities[0] = arity.*;
+
+    // クロージャバインディングをキャプチャ
+    const bindings = if (ctx.bindings.len > 0) blk: {
+        const b = ctx.allocator.dupe(Value, ctx.bindings) catch return error.OutOfMemory;
+        break :blk b;
+    } else null;
+
+    // Fn オブジェクト作成
+    const fn_obj = ctx.allocator.create(value_mod.Fn) catch return error.OutOfMemory;
+    fn_obj.* = value_mod.Fn.initUser(null, arities, bindings);
+
+    // LazySeq 作成
+    const ls = ctx.allocator.create(value_mod.LazySeq) catch return error.OutOfMemory;
+    ls.* = value_mod.LazySeq.init(.{ .fn_val = fn_obj });
+
+    return Value{ .lazy_seq = ls };
 }
 
 // === テスト ===

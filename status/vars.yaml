@@ -352,8 +352,8 @@ vars:
       impl_type: none
     lazy-seq:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: special_form
     let:
       type: macro
       status: done
@@ -1099,7 +1099,7 @@ vars:
     doall:
       type: function
       status: done
-      impl_type: macro
+      impl_type: builtin
     dorun:
       type: function
       status: done
@@ -2101,8 +2101,8 @@ vars:
       impl_type: none
     realized?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     record?:
       type: function
       status: todo

@@ -158,7 +158,10 @@ fn runWithBackend(
 
     // Engine で評価（persistent アロケータ - 結果の Value は永続的かもしれない）
     var eng = EvalEngine.init(allocs.persistent(), env, backend);
-    const result = try eng.run(node);
+    const raw_result = try eng.run(node);
+
+    // LazySeq を実体化（Clojure と同様、出力時にforceする）
+    const result = core.ensureRealized(allocs.persistent(), raw_result) catch raw_result;
 
     // 結果を出力
     try printValue(writer, result);
@@ -316,6 +319,13 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
             try writer.writeAll("#<protocol-fn ");
             try writer.writeAll(pf.method_name);
             try writer.writeByte('>');
+        },
+        .lazy_seq => |ls| {
+            if (ls.realized) |realized| {
+                try printValue(writer, realized);
+            } else {
+                try writer.writeAll("#<lazy-seq>");
+            }
         },
     }
 }

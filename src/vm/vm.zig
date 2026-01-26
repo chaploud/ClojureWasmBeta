@@ -33,6 +33,19 @@ pub const VMError = error{
     DivisionByZero,
 };
 
+/// VM 用 LazySeq force コールバック（threadlocal 経由で VM にアクセス）
+threadlocal var current_vm: ?*VM = null;
+
+fn vmForce(fn_val: Value, allocator: std.mem.Allocator) anyerror!Value {
+    _ = allocator;
+    const vm = current_vm orelse return error.TypeError;
+    // スタックに関数をプッシュして callValue(0)
+    try vm.push(fn_val);
+    try vm.callValue(0);
+    // 結果をポップ
+    return vm.pop();
+}
+
 /// スタックサイズ
 const STACK_MAX: usize = 256 * 64;
 
@@ -122,6 +135,10 @@ pub const VM = struct {
 
     /// 命令を実行
     fn execute(self: *VM, code: []const Instruction, constants: []const Value) VMError!Value {
+        // VM 用 LazySeq force コールバックを設定
+        current_vm = self;
+        core.force_lazy_seq_fn = &vmForce;
+
         // この execute が開始した時点の frame_count を記録
         // ret でこのレベルに戻ったら、この execute から return する
         const entry_frame_count = self.frame_count;
@@ -371,6 +388,10 @@ pub const VM = struct {
                 },
                 .group_by_seq => {
                     try self.executeGroupByWithExceptionHandling();
+                },
+                .lazy_seq => {
+                    // スタックからサンク関数をポップして LazySeq を作成
+                    try self.executeLazySeq();
                 },
 
                 // ═══════════════════════════════════════════════════════
@@ -1748,6 +1769,14 @@ pub const VM = struct {
             }
             return e;
         };
+    }
+
+    /// lazy-seq 実行: スタックからサンク関数をポップして LazySeq を作成
+    fn executeLazySeq(self: *VM) VMError!void {
+        const fn_val = self.pop();
+        const ls = self.allocator.create(value_mod.LazySeq) catch return error.OutOfMemory;
+        ls.* = value_mod.LazySeq.init(fn_val);
+        try self.push(Value{ .lazy_seq = ls });
     }
 
     /// 内部エラーを Value マップに変換（TreeWalk の internalErrorToValue と同等）

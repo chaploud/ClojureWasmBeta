@@ -193,6 +193,8 @@ pub const Analyzer = struct {
                 return self.analyzeDefprotocol(items);
             } else if (std.mem.eql(u8, sym_name, "extend-type")) {
                 return self.analyzeExtendType(items);
+            } else if (std.mem.eql(u8, sym_name, "lazy-seq")) {
+                return self.analyzeLazySeq(items);
             }
 
             // 組み込みマクロ展開（Form→Form 変換して再解析）
@@ -2608,6 +2610,29 @@ pub const Analyzer = struct {
         return node;
     }
 
+    // === 遅延シーケンス ===
+
+    /// (lazy-seq body) → LazySeqNode
+    /// body を遅延評価するサンクとして保持
+    fn analyzeLazySeq(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (lazy-seq body) — body は1つ
+        if (items.len != 2) {
+            return err.parseError(.invalid_arity, "lazy-seq requires exactly 1 body expression", .{});
+        }
+
+        const body = try self.analyze(items[1]);
+
+        const data = self.allocator.create(node_mod.LazySeqNode) catch return error.OutOfMemory;
+        data.* = .{
+            .body = body,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .lazy_seq_node = data };
+        return node;
+    }
+
     // === マクロ展開 ===
 
     /// マクロ呼び出しかどうかをチェックし、展開する
@@ -3919,7 +3944,7 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .vector = forms };
             },
-            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

@@ -220,7 +220,9 @@ pub const OpCode = enum(u8) {
     sort_by_seq = 0x99,
     /// group-by（スタック上に [関数, コレクション]）→ マップ
     group_by_seq = 0x9A,
-    // 0x9B-0x9F: 予約
+    /// lazy-seq 作成（スタック: [fn] → [lazy_seq]）
+    lazy_seq = 0x9B,
+    // 0x9C-0x9F: 予約
 
     // ═══════════════════════════════════════════════════════
     // [K] 例外処理 (0xA0-0xAF)

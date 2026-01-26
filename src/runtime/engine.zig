@@ -17,6 +17,7 @@ const Var = @import("var.zig").Var;
 const Compiler = @import("../compiler/emit.zig").Compiler;
 const VM = @import("../vm/vm.zig").VM;
 const OpCode = @import("../compiler/bytecode.zig").OpCode;
+const core = @import("../lib/core.zig");
 
 /// 評価バックエンド
 pub const Backend = enum {
@@ -87,7 +88,9 @@ pub fn runAndCompare(
 ) !struct { result: CompareResult, vm_snapshot: VarSnapshot } {
     // TreeWalk を実行（現在の Var 状態 = TreeWalk 用）
     var tw_engine = EvalEngine.init(allocator, env, .tree_walk);
-    const tw_result = try tw_engine.run(node);
+    const tw_raw = try tw_engine.run(node);
+    // LazySeq を実体化（TreeWalk の force callback が有効な間に）
+    const tw_result = core.ensureRealized(allocator, tw_raw) catch tw_raw;
 
     // TreeWalk 実行後の Var 状態を保存
     const tw_state = try saveVarRoots(allocator, env);
@@ -99,7 +102,7 @@ pub fn runAndCompare(
 
     // VM を実行
     var vm_engine = EvalEngine.init(allocator, env, .vm);
-    const vm_result = vm_engine.run(node) catch {
+    const vm_raw = vm_engine.run(node) catch {
         // VM がまだ未実装の機能でエラーになる場合
         const new_vm_snap = saveVarRoots(allocator, env) catch VarSnapshot{ .vars = &.{} };
         restoreVarRoots(tw_state);
@@ -108,6 +111,8 @@ pub fn runAndCompare(
             .vm_snapshot = new_vm_snap,
         };
     };
+    // LazySeq を実体化（VM の force callback が有効な間に）
+    const vm_result = core.ensureRealized(allocator, vm_raw) catch vm_raw;
 
     // VM 実行後の Var 状態を保存
     const new_vm_snap = try saveVarRoots(allocator, env);
