@@ -1,2173 +1,3012 @@
 ---
 # Clojure Var 対応状況
-# 自動生成: scripts/generate_vars_yaml.clj
-# 生成日時: 2026-01-25T21:58:50.733237
+# 元データ: scripts/generate_vars_yaml.clj
 #
-# Phase 1: 必須 (clojure.core, clojure.repl, clojure.string, clojure.set)
-# Phase 2: テスト・デバッグ (clojure.test, clojure.pprint, clojure.stacktrace, clojure.walk)
-# Phase 3: データ (clojure.edn, clojure.data, clojure.zip)
-# Phase 4: その他 (clojure.template, clojure.instant, clojure.uuid, clojure.math)
+# フィールド定義:
+#   type: Clojure 本家での種別
+#     special-form | function | macro | dynamic-var | var
+#   status: 実装状態
+#     todo | wip | partial | done | skip
+#   impl_type: このプロジェクトでの実装方式
+#     builtin      - core.zig の BuiltinFn
+#     special_form - Analyzer の analyzeList 直接ディスパッチ
+#     macro        - Analyzer の expandBuiltinMacro
+#     none         - 未実装
+#   layer: 実装レイヤ
+#     host   - Zig でしか実装できない（VM opcode, Value 型操作等）
+#     bridge - 原理的には Clojure で書けるが Zig で実装（ブートストラップ/性能）
+#     pure   - 既存プリミティブの組合せで実装可能（将来 .clj 移行候補）
+#   note: メモ（任意）
+#
+# 暫定特殊形式の検出:
+#   type: function かつ impl_type: special_form → 本家では関数だが特殊形式として実装
+#   type: macro   かつ impl_type: special_form → 本家ではマクロだが特殊形式として実装
 
 vars:
-
   clojure_core:
-    # Phase 1: 中核
-    # SPECIAL FORM (23個)
-    # 注: 特殊形式はVarではなくコンパイラに組み込み
     ".":
       type: special-form
-      status: todo
-      note: "Javaメソッド呼び出し"
-    "case*":
+      status: skip
+      note: JVM固有
+    case*:
       type: special-form
       status: todo
-      note: "case（低レベル）"
+      note: case（低レベル）
+      impl_type: none
     catch:
       type: special-form
       status: todo
-      note: "例外捕捉（try内）"
+      note: 例外捕捉（try内）
+      impl_type: none
     def:
       type: special-form
-      status: todo
-      note: "変数定義"
-    "deftype*":
+      status: done
+      note: 変数定義
+      impl_type: special_form
+      layer: host
+    deftype*:
       type: special-form
-      status: todo
-      note: "型定義（低レベル）"
+      status: skip
+      note: JVM固有
     do:
       type: special-form
-      status: todo
-      note: "逐次実行"
+      status: done
+      note: 逐次実行
+      impl_type: special_form
+      layer: host
     finally:
       type: special-form
       status: todo
-      note: "後処理（try内）"
-    "fn*":
+      note: 後処理（try内）
+      impl_type: none
+    fn*:
       type: special-form
-      status: todo
-      note: "無名関数（fnマクロの展開先）"
+      status: done
+      note: 無名関数（fnマクロの展開先）
+      impl_type: special_form
+      layer: host
     if:
       type: special-form
-      status: todo
-      note: "条件分岐"
-    "import*":
+      status: done
+      note: 条件分岐
+      impl_type: special_form
+      layer: host
+    import*:
+      type: special-form
+      status: skip
+      note: JVM固有
+    let*:
+      type: special-form
+      status: done
+      note: ローカル束縛（letマクロの展開先）
+      impl_type: special_form
+      layer: host
+    letfn*:
       type: special-form
       status: todo
-      note: "クラスインポート（低レベル）"
-    "let*":
+      note: 相互再帰関数（低レベル）
+      impl_type: none
+    loop*:
       type: special-form
-      status: todo
-      note: "ローカル束縛（letマクロの展開先）"
-    "letfn*":
-      type: special-form
-      status: todo
-      note: "相互再帰関数（低レベル）"
-    "loop*":
-      type: special-form
-      status: todo
-      note: "ループ（loopマクロの展開先）"
+      status: done
+      note: ループ（loopマクロの展開先）
+      impl_type: special_form
+      layer: host
     monitor-enter:
       type: special-form
-      status: todo
-      note: "モニタ入（低レベル同期）"
+      status: skip
+      note: JVM固有
     monitor-exit:
       type: special-form
-      status: todo
-      note: "モニタ出（低レベル同期）"
+      status: skip
+      note: JVM固有
     new:
       type: special-form
-      status: todo
-      note: "インスタンス生成"
+      status: skip
+      note: JVM固有
     quote:
       type: special-form
-      status: todo
-      note: "クォート"
+      status: done
+      note: クォート
+      impl_type: special_form
+      layer: host
     recur:
       type: special-form
-      status: todo
-      note: "末尾再帰"
-    "reify*":
+      status: done
+      note: 末尾再帰
+      impl_type: special_form
+      layer: host
+    reify*:
       type: special-form
-      status: todo
-      note: "無名型（低レベル）"
+      status: skip
+      note: JVM固有
     set!:
       type: special-form
       status: todo
-      note: "代入"
+      note: 代入
+      impl_type: none
     throw:
       type: special-form
-      status: todo
-      note: "例外送出"
+      status: done
+      note: 例外送出
+      impl_type: special_form
+      layer: host
     try:
       type: special-form
-      status: todo
-      note: "例外処理"
+      status: done
+      note: 例外処理
+      impl_type: special_form
+      layer: host
     var:
       type: special-form
       status: todo
-      note: "Var参照"
-    # MACRO (79個)
+      note: Var参照
+      impl_type: none
     "->":
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     "->>":
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     "..":
       type: macro
       status: todo
+      impl_type: none
     amap:
       type: macro
       status: todo
+      impl_type: none
     and:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     areduce:
       type: macro
       status: todo
+      impl_type: none
     as->:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     assert:
       type: macro
       status: todo
+      impl_type: none
     binding:
       type: macro
       status: todo
+      impl_type: none
     bound-fn:
       type: macro
       status: todo
+      impl_type: none
     case:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     comment:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     cond:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     cond->:
       type: macro
       status: todo
+      impl_type: none
     cond->>:
       type: macro
       status: todo
+      impl_type: none
     condp:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     declare:
       type: macro
       status: todo
+      impl_type: none
     definline:
       type: macro
       status: todo
+      impl_type: none
     definterface:
       type: macro
       status: todo
+      impl_type: none
     defmacro:
       type: macro
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: host
     defmethod:
       type: macro
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     defmulti:
       type: macro
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     defn:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     defn-:
       type: macro
       status: todo
+      impl_type: none
     defonce:
       type: macro
       status: todo
+      impl_type: none
     defprotocol:
       type: macro
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     defrecord:
       type: macro
       status: todo
+      impl_type: none
     defstruct:
       type: macro
       status: todo
+      impl_type: none
     deftype:
       type: macro
       status: todo
+      impl_type: none
     delay:
       type: macro
       status: todo
+      impl_type: none
     doseq:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     dosync:
       type: macro
       status: todo
+      impl_type: none
     dotimes:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     doto:
       type: macro
       status: todo
+      impl_type: none
     extend-protocol:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     extend-type:
       type: macro
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     fn:
       type: macro
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: host
     for:
       type: macro
       status: todo
+      impl_type: none
     future:
       type: macro
       status: todo
+      impl_type: none
     gen-class:
       type: macro
       status: todo
+      impl_type: none
     gen-interface:
       type: macro
       status: todo
+      impl_type: none
     if-let:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     if-not:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     if-some:
       type: macro
       status: todo
+      impl_type: none
     import:
       type: macro
       status: todo
+      impl_type: none
     io!:
       type: macro
       status: todo
+      impl_type: none
     lazy-cat:
       type: macro
       status: todo
+      impl_type: none
     lazy-seq:
       type: macro
       status: todo
+      impl_type: none
     let:
       type: macro
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: host
     letfn:
       type: macro
       status: todo
+      impl_type: none
     locking:
       type: macro
       status: todo
+      impl_type: none
     loop:
       type: macro
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: host
     memfn:
       type: macro
       status: todo
+      impl_type: none
     ns:
       type: macro
       status: todo
+      impl_type: none
     or:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     proxy:
       type: macro
       status: todo
+      impl_type: none
     proxy-super:
       type: macro
       status: todo
+      impl_type: none
     pvalues:
       type: macro
       status: todo
+      impl_type: none
     refer-clojure:
       type: macro
       status: todo
+      impl_type: none
     reify:
       type: macro
       status: todo
+      impl_type: none
     some->:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     some->>:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     sync:
       type: macro
       status: todo
+      impl_type: none
     time:
       type: macro
       status: todo
+      impl_type: none
     vswap!:
       type: macro
       status: todo
+      impl_type: none
     when:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     when-first:
       type: macro
       status: todo
+      impl_type: none
     when-let:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     when-not:
       type: macro
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     when-some:
       type: macro
       status: todo
+      impl_type: none
     while:
       type: macro
       status: todo
+      impl_type: none
     with-bindings:
       type: macro
       status: todo
+      impl_type: none
     with-in-str:
       type: macro
       status: todo
+      impl_type: none
     with-loading-context:
       type: macro
       status: todo
+      impl_type: none
     with-local-vars:
       type: macro
       status: todo
+      impl_type: none
     with-open:
       type: macro
       status: todo
+      impl_type: none
     with-out-str:
       type: macro
       status: todo
+      impl_type: none
     with-precision:
       type: macro
       status: todo
+      impl_type: none
     with-redefs:
       type: macro
       status: todo
-    # FUNCTION (551個)
+      impl_type: none
     "*":
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     "*'":
       type: function
       status: todo
+      impl_type: none
     "+":
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     "+'":
       type: function
       status: todo
+      impl_type: none
     "-":
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     "-'":
       type: function
       status: todo
+      impl_type: none
     "->ArrayChunk":
       type: function
       status: todo
+      impl_type: none
     "->Eduction":
       type: function
       status: todo
+      impl_type: none
     "->Vec":
       type: function
       status: todo
+      impl_type: none
     "->VecNode":
       type: function
       status: todo
+      impl_type: none
     "->VecSeq":
       type: function
       status: todo
+      impl_type: none
     "-cache-protocol-fn":
       type: function
       status: todo
+      impl_type: none
     "-reset-methods":
       type: function
       status: todo
+      impl_type: none
     "/":
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     "<":
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     "<=":
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     "=":
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     "==":
       type: function
       status: todo
+      impl_type: none
     ">":
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     ">=":
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     NaN?:
       type: function
       status: todo
+      impl_type: none
     PrintWriter-on:
       type: function
       status: todo
+      impl_type: none
     StackTraceElement->vec:
       type: function
       status: todo
+      impl_type: none
     Throwable->map:
       type: function
       status: todo
+      impl_type: none
     abs:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     accessor:
       type: function
       status: todo
+      impl_type: none
     aclone:
       type: function
       status: todo
+      impl_type: none
     add-classpath:
       type: function
       status: todo
       deprecated: true
+      impl_type: none
     add-tap:
       type: function
       status: todo
+      impl_type: none
     add-watch:
       type: function
       status: todo
+      impl_type: none
     agent:
       type: function
       status: todo
+      impl_type: none
     agent-error:
       type: function
       status: todo
+      impl_type: none
     agent-errors:
       type: function
       status: todo
       deprecated: true
+      impl_type: none
     aget:
       type: function
       status: todo
+      impl_type: none
     alength:
       type: function
       status: todo
+      impl_type: none
     alias:
       type: function
       status: todo
+      impl_type: none
     all-ns:
       type: function
       status: todo
+      impl_type: none
     alter:
       type: function
       status: todo
+      impl_type: none
     alter-meta!:
       type: function
       status: todo
+      impl_type: none
     alter-var-root:
       type: function
       status: todo
+      impl_type: none
     ancestors:
       type: function
       status: todo
+      impl_type: none
     any?:
       type: function
       status: todo
+      impl_type: none
     apply:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     array-map:
       type: function
       status: todo
+      impl_type: none
     aset:
       type: function
       status: todo
+      impl_type: none
     aset-boolean:
       type: function
       status: todo
+      impl_type: none
     aset-byte:
       type: function
       status: todo
+      impl_type: none
     aset-char:
       type: function
       status: todo
+      impl_type: none
     aset-double:
       type: function
       status: todo
+      impl_type: none
     aset-float:
       type: function
       status: todo
+      impl_type: none
     aset-int:
       type: function
       status: todo
+      impl_type: none
     aset-long:
       type: function
       status: todo
+      impl_type: none
     aset-short:
       type: function
       status: todo
+      impl_type: none
     assoc:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     assoc!:
       type: function
       status: todo
+      impl_type: none
     assoc-in:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: pure
     associative?:
       type: function
       status: todo
+      impl_type: none
     atom:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     await:
       type: function
       status: todo
+      impl_type: none
     await-for:
       type: function
       status: todo
+      impl_type: none
     await1:
       type: function
       status: todo
+      impl_type: none
     bases:
       type: function
       status: todo
+      impl_type: none
     bean:
       type: function
       status: todo
+      impl_type: none
     bigdec:
       type: function
       status: todo
+      impl_type: none
     bigint:
       type: function
       status: todo
+      impl_type: none
     biginteger:
       type: function
       status: todo
+      impl_type: none
     bit-and:
       type: function
       status: todo
+      impl_type: none
     bit-and-not:
       type: function
       status: todo
+      impl_type: none
     bit-clear:
       type: function
       status: todo
+      impl_type: none
     bit-flip:
       type: function
       status: todo
+      impl_type: none
     bit-not:
       type: function
       status: todo
+      impl_type: none
     bit-or:
       type: function
       status: todo
+      impl_type: none
     bit-set:
       type: function
       status: todo
+      impl_type: none
     bit-shift-left:
       type: function
       status: todo
+      impl_type: none
     bit-shift-right:
       type: function
       status: todo
+      impl_type: none
     bit-test:
       type: function
       status: todo
+      impl_type: none
     bit-xor:
       type: function
       status: todo
+      impl_type: none
     boolean:
       type: function
       status: todo
+      impl_type: none
     boolean-array:
       type: function
       status: todo
+      impl_type: none
     boolean?:
       type: function
       status: todo
+      impl_type: none
     booleans:
       type: function
       status: todo
-    "bound-fn*":
+      impl_type: none
+    bound-fn*:
       type: function
       status: todo
+      impl_type: none
     bound?:
       type: function
       status: todo
+      impl_type: none
     bounded-count:
       type: function
       status: todo
+      impl_type: none
     butlast:
       type: function
       status: todo
+      impl_type: none
     byte:
       type: function
       status: todo
+      impl_type: none
     byte-array:
       type: function
       status: todo
+      impl_type: none
     bytes:
       type: function
       status: todo
+      impl_type: none
     bytes?:
       type: function
       status: todo
+      impl_type: none
     cast:
       type: function
       status: todo
+      impl_type: none
     cat:
       type: function
       status: todo
+      impl_type: none
     char:
       type: function
       status: todo
+      impl_type: none
     char-array:
       type: function
       status: todo
+      impl_type: none
     char?:
       type: function
       status: todo
+      impl_type: none
     chars:
       type: function
       status: todo
+      impl_type: none
     chunk:
       type: function
       status: todo
+      impl_type: none
     chunk-append:
       type: function
       status: todo
+      impl_type: none
     chunk-buffer:
       type: function
       status: todo
+      impl_type: none
     chunk-cons:
       type: function
       status: todo
+      impl_type: none
     chunk-first:
       type: function
       status: todo
+      impl_type: none
     chunk-next:
       type: function
       status: todo
+      impl_type: none
     chunk-rest:
       type: function
       status: todo
+      impl_type: none
     chunked-seq?:
       type: function
       status: todo
+      impl_type: none
     class:
       type: function
       status: todo
+      impl_type: none
     class?:
       type: function
       status: todo
+      impl_type: none
     clear-agent-errors:
       type: function
       status: todo
       deprecated: true
+      impl_type: none
     clojure-version:
       type: function
       status: todo
+      impl_type: none
     coll?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     commute:
       type: function
       status: todo
+      impl_type: none
     comp:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     comparator:
       type: function
       status: todo
+      impl_type: none
     compare:
       type: function
       status: todo
+      impl_type: none
     compare-and-set!:
       type: function
       status: todo
+      impl_type: none
     compile:
       type: function
       status: todo
+      impl_type: none
     complement:
       type: function
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     completing:
       type: function
       status: todo
+      impl_type: none
     concat:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     conj:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     conj!:
       type: function
       status: todo
+      impl_type: none
     cons:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     constantly:
       type: function
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     construct-proxy:
       type: function
       status: todo
+      impl_type: none
     contains?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     count:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     counted?:
       type: function
       status: todo
+      impl_type: none
     create-ns:
       type: function
       status: todo
+      impl_type: none
     create-struct:
       type: function
       status: todo
+      impl_type: none
     cycle:
       type: function
       status: todo
+      impl_type: none
     dec:
       type: function
-      status: todo
-    "dec'":
+      status: done
+      impl_type: builtin
+      layer: host
+    dec':
       type: function
       status: todo
+      impl_type: none
     decimal?:
       type: function
       status: todo
+      impl_type: none
     dedupe:
       type: function
       status: todo
+      impl_type: none
     delay?:
       type: function
       status: todo
+      impl_type: none
     deliver:
       type: function
       status: todo
+      impl_type: none
     denominator:
       type: function
       status: todo
+      impl_type: none
     deref:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     derive:
       type: function
       status: todo
+      impl_type: none
     descendants:
       type: function
       status: todo
+      impl_type: none
     destructure:
       type: function
       status: todo
+      impl_type: none
     disj:
       type: function
       status: todo
+      impl_type: none
     disj!:
       type: function
       status: todo
+      impl_type: none
     dissoc:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     dissoc!:
       type: function
       status: todo
+      impl_type: none
     distinct:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     distinct?:
       type: function
       status: todo
+      impl_type: none
     doall:
       type: function
       status: todo
+      impl_type: none
     dorun:
       type: function
       status: todo
+      impl_type: none
     double:
       type: function
       status: todo
+      impl_type: none
     double-array:
       type: function
       status: todo
+      impl_type: none
     double?:
       type: function
       status: todo
+      impl_type: none
     doubles:
       type: function
       status: todo
+      impl_type: none
     drop:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     drop-last:
       type: function
       status: todo
+      impl_type: none
     drop-while:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     eduction:
       type: function
       status: todo
+      impl_type: none
     empty:
       type: function
       status: todo
+      impl_type: none
     empty?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     ensure:
       type: function
       status: todo
+      impl_type: none
     ensure-reduced:
       type: function
       status: todo
+      impl_type: none
     enumeration-seq:
       type: function
       status: todo
+      impl_type: none
     error-handler:
       type: function
       status: todo
+      impl_type: none
     error-mode:
       type: function
       status: todo
+      impl_type: none
     eval:
       type: function
       status: todo
+      impl_type: none
     even?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     every-pred:
       type: function
       status: todo
+      impl_type: none
     every?:
       type: function
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     ex-cause:
       type: function
       status: todo
+      impl_type: none
     ex-data:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     ex-info:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     ex-message:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     extend:
       type: function
       status: todo
+      impl_type: none
     extenders:
       type: function
       status: todo
+      impl_type: none
     extends?:
       type: function
       status: todo
+      impl_type: none
     false?:
       type: function
       status: todo
+      impl_type: none
     ffirst:
       type: function
       status: todo
+      impl_type: none
     file-seq:
       type: function
       status: todo
+      impl_type: none
     filter:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     filterv:
       type: function
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     find:
       type: function
       status: todo
+      impl_type: none
     find-keyword:
       type: function
       status: todo
+      impl_type: none
     find-ns:
       type: function
       status: todo
+      impl_type: none
     find-protocol-impl:
       type: function
       status: todo
+      impl_type: none
     find-protocol-method:
       type: function
       status: todo
+      impl_type: none
     find-var:
       type: function
       status: todo
+      impl_type: none
     first:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     flatten:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     float:
       type: function
       status: todo
+      impl_type: none
     float-array:
       type: function
       status: todo
+      impl_type: none
     float?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     floats:
       type: function
       status: todo
+      impl_type: none
     flush:
       type: function
       status: todo
+      impl_type: none
     fn?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     fnext:
       type: function
       status: todo
+      impl_type: none
     fnil:
       type: function
       status: todo
+      impl_type: none
     force:
       type: function
       status: todo
+      impl_type: none
     format:
       type: function
       status: todo
+      impl_type: none
     frequencies:
       type: function
       status: todo
+      impl_type: none
     future-call:
       type: function
       status: todo
+      impl_type: none
     future-cancel:
       type: function
       status: todo
+      impl_type: none
     future-cancelled?:
       type: function
       status: todo
+      impl_type: none
     future-done?:
       type: function
       status: todo
+      impl_type: none
     future?:
       type: function
       status: todo
+      impl_type: none
     gensym:
       type: function
       status: todo
+      impl_type: none
     get:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     get-in:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: pure
     get-method:
       type: function
       status: todo
+      impl_type: none
     get-proxy-class:
       type: function
       status: todo
+      impl_type: none
     get-thread-bindings:
       type: function
       status: todo
+      impl_type: none
     get-validator:
       type: function
       status: todo
+      impl_type: none
     group-by:
       type: function
       status: todo
+      impl_type: none
     halt-when:
       type: function
       status: todo
+      impl_type: none
     hash:
       type: function
       status: todo
+      impl_type: none
     hash-combine:
       type: function
       status: todo
+      impl_type: none
     hash-map:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     hash-ordered-coll:
       type: function
       status: todo
+      impl_type: none
     hash-set:
       type: function
       status: todo
+      impl_type: none
     hash-unordered-coll:
       type: function
       status: todo
+      impl_type: none
     ident?:
       type: function
       status: todo
+      impl_type: none
     identical?:
       type: function
       status: todo
+      impl_type: none
     identity:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: pure
     ifn?:
       type: function
       status: todo
+      impl_type: none
     inc:
       type: function
-      status: todo
-    "inc'":
+      status: done
+      impl_type: builtin
+      layer: host
+    inc':
       type: function
       status: todo
+      impl_type: none
     indexed?:
       type: function
       status: todo
+      impl_type: none
     infinite?:
       type: function
       status: todo
+      impl_type: none
     init-proxy:
       type: function
       status: todo
+      impl_type: none
     inst-ms:
       type: function
       status: todo
-    "inst-ms*":
+      impl_type: none
+    inst-ms*:
       type: function
       status: todo
+      impl_type: none
     inst?:
       type: function
       status: todo
+      impl_type: none
     instance?:
       type: function
       status: todo
+      impl_type: none
     int:
       type: function
       status: todo
+      impl_type: none
     int-array:
       type: function
       status: todo
+      impl_type: none
     int?:
       type: function
       status: todo
+      impl_type: none
     integer?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     interleave:
       type: function
       status: todo
+      impl_type: none
     intern:
       type: function
       status: todo
+      impl_type: none
     interpose:
       type: function
       status: todo
+      impl_type: none
     into:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     into-array:
       type: function
       status: todo
+      impl_type: none
     ints:
       type: function
       status: todo
+      impl_type: none
     isa?:
       type: function
       status: todo
+      impl_type: none
     iterate:
       type: function
       status: todo
+      impl_type: none
     iteration:
       type: function
       status: todo
+      impl_type: none
     iterator-seq:
       type: function
       status: todo
+      impl_type: none
     juxt:
       type: function
       status: todo
+      impl_type: none
     keep:
       type: function
       status: todo
+      impl_type: none
     keep-indexed:
       type: function
       status: todo
+      impl_type: none
     key:
       type: function
       status: todo
+      impl_type: none
     keys:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     keyword:
       type: function
       status: todo
+      impl_type: none
     keyword?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     last:
       type: function
       status: todo
+      impl_type: none
     line-seq:
       type: function
       status: todo
+      impl_type: none
     list:
       type: function
-      status: todo
-    "list*":
+      status: done
+      impl_type: builtin
+      layer: host
+    list*:
       type: function
       status: todo
+      impl_type: none
     list?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     load:
       type: function
       status: todo
+      impl_type: none
     load-reader:
       type: function
       status: todo
+      impl_type: none
     load-string:
       type: function
       status: todo
+      impl_type: none
     loaded-libs:
       type: function
       status: todo
+      impl_type: none
     long:
       type: function
       status: todo
+      impl_type: none
     long-array:
       type: function
       status: todo
+      impl_type: none
     longs:
       type: function
       status: todo
+      impl_type: none
     macroexpand:
       type: function
       status: todo
+      impl_type: none
     macroexpand-1:
       type: function
       status: todo
+      impl_type: none
     make-array:
       type: function
       status: todo
+      impl_type: none
     make-hierarchy:
       type: function
       status: todo
+      impl_type: none
     map:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     map-entry?:
       type: function
       status: todo
+      impl_type: none
     map-indexed:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     map?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     mapcat:
       type: function
       status: todo
+      impl_type: none
     mapv:
       type: function
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     max:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     max-key:
       type: function
       status: todo
+      impl_type: none
     memoize:
       type: function
       status: todo
+      impl_type: none
     merge:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: pure
     merge-with:
       type: function
       status: todo
+      impl_type: none
     meta:
       type: function
       status: todo
+      impl_type: none
     method-sig:
       type: function
       status: todo
+      impl_type: none
     methods:
       type: function
       status: todo
+      impl_type: none
     min:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     min-key:
       type: function
       status: todo
+      impl_type: none
     mix-collection-hash:
       type: function
       status: todo
+      impl_type: none
     mod:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     munge:
       type: function
       status: todo
+      impl_type: none
     name:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     namespace:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     namespace-munge:
       type: function
       status: todo
+      impl_type: none
     nat-int?:
       type: function
       status: todo
+      impl_type: none
     neg-int?:
       type: function
       status: todo
+      impl_type: none
     neg?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     newline:
       type: function
       status: todo
+      impl_type: none
     next:
       type: function
       status: todo
+      impl_type: none
     nfirst:
       type: function
       status: todo
+      impl_type: none
     nil?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     nnext:
       type: function
       status: todo
+      impl_type: none
     not:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     not-any?:
       type: function
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     not-empty:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: pure
     not-every?:
       type: function
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     not=:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     ns-aliases:
       type: function
       status: todo
+      impl_type: none
     ns-imports:
       type: function
       status: todo
+      impl_type: none
     ns-interns:
       type: function
       status: todo
+      impl_type: none
     ns-map:
       type: function
       status: todo
+      impl_type: none
     ns-name:
       type: function
       status: todo
+      impl_type: none
     ns-publics:
       type: function
       status: todo
+      impl_type: none
     ns-refers:
       type: function
       status: todo
+      impl_type: none
     ns-resolve:
       type: function
       status: todo
+      impl_type: none
     ns-unalias:
       type: function
       status: todo
+      impl_type: none
     ns-unmap:
       type: function
       status: todo
+      impl_type: none
     nth:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     nthnext:
       type: function
       status: todo
+      impl_type: none
     nthrest:
       type: function
       status: todo
+      impl_type: none
     num:
       type: function
       status: todo
+      impl_type: none
     number?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     numerator:
       type: function
       status: todo
+      impl_type: none
     object-array:
       type: function
       status: todo
+      impl_type: none
     odd?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     parents:
       type: function
       status: todo
+      impl_type: none
     parse-boolean:
       type: function
       status: todo
+      impl_type: none
     parse-double:
       type: function
       status: todo
+      impl_type: none
     parse-long:
       type: function
       status: todo
+      impl_type: none
     parse-uuid:
       type: function
       status: todo
+      impl_type: none
     partial:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     partition:
       type: function
       status: todo
+      impl_type: none
     partition-all:
       type: function
       status: todo
+      impl_type: none
     partition-by:
       type: function
       status: todo
+      impl_type: none
     partitionv:
       type: function
       status: todo
+      impl_type: none
     partitionv-all:
       type: function
       status: todo
+      impl_type: none
     pcalls:
       type: function
       status: todo
+      impl_type: none
     peek:
       type: function
       status: todo
+      impl_type: none
     persistent!:
       type: function
       status: todo
+      impl_type: none
     pmap:
       type: function
       status: todo
+      impl_type: none
     pop:
       type: function
       status: todo
+      impl_type: none
     pop!:
       type: function
       status: todo
+      impl_type: none
     pop-thread-bindings:
       type: function
       status: todo
+      impl_type: none
     pos-int?:
       type: function
       status: todo
+      impl_type: none
     pos?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     pr:
       type: function
       status: todo
       dynamic: true
+      impl_type: none
     pr-str:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     prefer-method:
       type: function
       status: todo
+      impl_type: none
     prefers:
       type: function
       status: todo
+      impl_type: none
     print:
       type: function
       status: todo
+      impl_type: none
     print-ctor:
       type: function
       status: todo
+      impl_type: none
     print-simple:
       type: function
       status: todo
+      impl_type: none
     print-str:
       type: function
       status: todo
+      impl_type: none
     printf:
       type: function
       status: todo
+      impl_type: none
     println:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     println-str:
       type: function
       status: todo
+      impl_type: none
     prn:
       type: function
       status: todo
+      impl_type: none
     prn-str:
       type: function
       status: todo
+      impl_type: none
     promise:
       type: function
       status: todo
+      impl_type: none
     proxy-call-with-super:
       type: function
       status: todo
+      impl_type: none
     proxy-mappings:
       type: function
       status: todo
+      impl_type: none
     proxy-name:
       type: function
       status: todo
+      impl_type: none
     push-thread-bindings:
       type: function
       status: todo
+      impl_type: none
     qualified-ident?:
       type: function
       status: todo
+      impl_type: none
     qualified-keyword?:
       type: function
       status: todo
+      impl_type: none
     qualified-symbol?:
       type: function
       status: todo
+      impl_type: none
     quot:
       type: function
       status: todo
+      impl_type: none
     rand:
       type: function
       status: todo
+      impl_type: none
     rand-int:
       type: function
       status: todo
+      impl_type: none
     rand-nth:
       type: function
       status: todo
+      impl_type: none
     random-sample:
       type: function
       status: todo
+      impl_type: none
     random-uuid:
       type: function
       status: todo
+      impl_type: none
     range:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     ratio?:
       type: function
       status: todo
+      impl_type: none
     rational?:
       type: function
       status: todo
+      impl_type: none
     rationalize:
       type: function
       status: todo
+      impl_type: none
     re-find:
       type: function
       status: todo
+      impl_type: none
     re-groups:
       type: function
       status: todo
+      impl_type: none
     re-matcher:
       type: function
       status: todo
+      impl_type: none
     re-matches:
       type: function
       status: todo
+      impl_type: none
     re-pattern:
       type: function
       status: todo
+      impl_type: none
     re-seq:
       type: function
       status: todo
+      impl_type: none
     read:
       type: function
       status: todo
+      impl_type: none
     read+string:
       type: function
       status: todo
+      impl_type: none
     read-line:
       type: function
       status: todo
+      impl_type: none
     read-string:
       type: function
       status: todo
+      impl_type: none
     reader-conditional:
       type: function
       status: todo
+      impl_type: none
     reader-conditional?:
       type: function
       status: todo
+      impl_type: none
     realized?:
       type: function
       status: todo
+      impl_type: none
     record?:
       type: function
       status: todo
+      impl_type: none
     reduce:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     reduce-kv:
       type: function
       status: todo
+      impl_type: none
     reduced:
       type: function
       status: todo
+      impl_type: none
     reduced?:
       type: function
       status: todo
+      impl_type: none
     reductions:
       type: function
       status: todo
+      impl_type: none
     ref:
       type: function
       status: todo
+      impl_type: none
     ref-history-count:
       type: function
       status: todo
+      impl_type: none
     ref-max-history:
       type: function
       status: todo
+      impl_type: none
     ref-min-history:
       type: function
       status: todo
+      impl_type: none
     ref-set:
       type: function
       status: todo
+      impl_type: none
     refer:
       type: function
       status: todo
+      impl_type: none
     release-pending-sends:
       type: function
       status: todo
+      impl_type: none
     rem:
       type: function
       status: todo
+      impl_type: none
     remove:
       type: function
       status: todo
+      impl_type: none
     remove-all-methods:
       type: function
       status: todo
+      impl_type: none
     remove-method:
       type: function
       status: todo
+      impl_type: none
     remove-ns:
       type: function
       status: todo
+      impl_type: none
     remove-tap:
       type: function
       status: todo
+      impl_type: none
     remove-watch:
       type: function
       status: todo
+      impl_type: none
     repeat:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     repeatedly:
       type: function
       status: todo
+      impl_type: none
     replace:
       type: function
       status: todo
+      impl_type: none
     replicate:
       type: function
       status: todo
       deprecated: true
+      impl_type: none
     require:
       type: function
       status: todo
+      impl_type: none
     requiring-resolve:
       type: function
       status: todo
+      impl_type: none
     reset!:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     reset-meta!:
       type: function
       status: todo
+      impl_type: none
     reset-vals!:
       type: function
       status: todo
+      impl_type: none
     resolve:
       type: function
       status: todo
+      impl_type: none
     rest:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     restart-agent:
       type: function
       status: todo
+      impl_type: none
     resultset-seq:
       type: function
       status: todo
+      impl_type: none
     reverse:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     reversible?:
       type: function
       status: todo
+      impl_type: none
     rseq:
       type: function
       status: todo
+      impl_type: none
     rsubseq:
       type: function
       status: todo
+      impl_type: none
     run!:
       type: function
       status: todo
+      impl_type: none
     satisfies?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: pure
     second:
       type: function
       status: todo
+      impl_type: none
     select-keys:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: pure
     send:
       type: function
       status: todo
+      impl_type: none
     send-off:
       type: function
       status: todo
+      impl_type: none
     send-via:
       type: function
       status: todo
+      impl_type: none
     seq:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     seq-to-map-for-destructuring:
       type: function
       status: todo
+      impl_type: none
     seq?:
       type: function
       status: todo
+      impl_type: none
     seqable?:
       type: function
       status: todo
+      impl_type: none
     seque:
       type: function
       status: todo
+      impl_type: none
     sequence:
       type: function
       status: todo
+      impl_type: none
     sequential?:
       type: function
       status: todo
+      impl_type: none
     set:
       type: function
       status: todo
+      impl_type: none
     set-agent-send-executor!:
       type: function
       status: todo
+      impl_type: none
     set-agent-send-off-executor!:
       type: function
       status: todo
+      impl_type: none
     set-error-handler!:
       type: function
       status: todo
+      impl_type: none
     set-error-mode!:
       type: function
       status: todo
+      impl_type: none
     set-validator!:
       type: function
       status: todo
+      impl_type: none
     set?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     short:
       type: function
       status: todo
+      impl_type: none
     short-array:
       type: function
       status: todo
+      impl_type: none
     shorts:
       type: function
       status: todo
+      impl_type: none
     shuffle:
       type: function
       status: todo
+      impl_type: none
     shutdown-agents:
       type: function
       status: todo
+      impl_type: none
     simple-ident?:
       type: function
       status: todo
+      impl_type: none
     simple-keyword?:
       type: function
       status: todo
+      impl_type: none
     simple-symbol?:
       type: function
       status: todo
+      impl_type: none
     slurp:
       type: function
       status: todo
+      impl_type: none
     some:
       type: function
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     some-fn:
       type: function
       status: todo
+      impl_type: none
     some?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     sort:
       type: function
       status: todo
+      impl_type: none
     sort-by:
       type: function
       status: todo
+      impl_type: none
     sorted-map:
       type: function
       status: todo
+      impl_type: none
     sorted-map-by:
       type: function
       status: todo
+      impl_type: none
     sorted-set:
       type: function
       status: todo
+      impl_type: none
     sorted-set-by:
       type: function
       status: todo
+      impl_type: none
     sorted?:
       type: function
       status: todo
+      impl_type: none
     special-symbol?:
       type: function
       status: todo
+      impl_type: none
     spit:
       type: function
       status: todo
+      impl_type: none
     split-at:
       type: function
       status: todo
+      impl_type: none
     split-with:
       type: function
       status: todo
+      impl_type: none
     splitv-at:
       type: function
       status: todo
+      impl_type: none
     str:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     stream-into!:
       type: function
       status: todo
+      impl_type: none
     stream-reduce!:
       type: function
       status: todo
+      impl_type: none
     stream-seq!:
       type: function
       status: todo
+      impl_type: none
     stream-transduce!:
       type: function
       status: todo
+      impl_type: none
     string?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     struct:
       type: function
       status: todo
+      impl_type: none
     struct-map:
       type: function
       status: todo
+      impl_type: none
     subs:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     subseq:
       type: function
       status: todo
+      impl_type: none
     subvec:
       type: function
       status: todo
+      impl_type: none
     supers:
       type: function
       status: todo
+      impl_type: none
     swap!:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     swap-vals!:
       type: function
       status: todo
+      impl_type: none
     symbol:
       type: function
       status: todo
+      impl_type: none
     symbol?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     tagged-literal:
       type: function
       status: todo
+      impl_type: none
     tagged-literal?:
       type: function
       status: todo
+      impl_type: none
     take:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     take-last:
       type: function
       status: todo
+      impl_type: none
     take-nth:
       type: function
       status: todo
+      impl_type: none
     take-while:
       type: function
-      status: todo
+      status: done
+      impl_type: special_form
+      layer: bridge
     tap>:
       type: function
       status: todo
+      impl_type: none
     test:
       type: function
       status: todo
+      impl_type: none
     the-ns:
       type: function
       status: todo
+      impl_type: none
     thread-bound?:
       type: function
       status: todo
+      impl_type: none
     to-array:
       type: function
       status: todo
+      impl_type: none
     to-array-2d:
       type: function
       status: todo
+      impl_type: none
     trampoline:
       type: function
       status: todo
+      impl_type: none
     transduce:
       type: function
       status: todo
+      impl_type: none
     transient:
       type: function
       status: todo
+      impl_type: none
     tree-seq:
       type: function
       status: todo
+      impl_type: none
     true?:
       type: function
       status: todo
+      impl_type: none
     type:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     unchecked-add:
       type: function
       status: todo
+      impl_type: none
     unchecked-add-int:
       type: function
       status: todo
+      impl_type: none
     unchecked-byte:
       type: function
       status: todo
+      impl_type: none
     unchecked-char:
       type: function
       status: todo
+      impl_type: none
     unchecked-dec:
       type: function
       status: todo
+      impl_type: none
     unchecked-dec-int:
       type: function
       status: todo
+      impl_type: none
     unchecked-divide-int:
       type: function
       status: todo
+      impl_type: none
     unchecked-double:
       type: function
       status: todo
+      impl_type: none
     unchecked-float:
       type: function
       status: todo
+      impl_type: none
     unchecked-inc:
       type: function
       status: todo
+      impl_type: none
     unchecked-inc-int:
       type: function
       status: todo
+      impl_type: none
     unchecked-int:
       type: function
       status: todo
+      impl_type: none
     unchecked-long:
       type: function
       status: todo
+      impl_type: none
     unchecked-multiply:
       type: function
       status: todo
+      impl_type: none
     unchecked-multiply-int:
       type: function
       status: todo
+      impl_type: none
     unchecked-negate:
       type: function
       status: todo
+      impl_type: none
     unchecked-negate-int:
       type: function
       status: todo
+      impl_type: none
     unchecked-remainder-int:
       type: function
       status: todo
+      impl_type: none
     unchecked-short:
       type: function
       status: todo
+      impl_type: none
     unchecked-subtract:
       type: function
       status: todo
+      impl_type: none
     unchecked-subtract-int:
       type: function
       status: todo
+      impl_type: none
     underive:
       type: function
       status: todo
+      impl_type: none
     unreduced:
       type: function
       status: todo
+      impl_type: none
     unsigned-bit-shift-right:
       type: function
       status: todo
+      impl_type: none
     update:
       type: function
-      status: todo
+      status: done
+      impl_type: macro
+      layer: pure
     update-in:
       type: function
       status: todo
+      impl_type: none
     update-keys:
       type: function
       status: todo
+      impl_type: none
     update-proxy:
       type: function
       status: todo
+      impl_type: none
     update-vals:
       type: function
       status: todo
+      impl_type: none
     uri?:
       type: function
       status: todo
+      impl_type: none
     use:
       type: function
       status: todo
+      impl_type: none
     uuid?:
       type: function
       status: todo
+      impl_type: none
     val:
       type: function
       status: todo
+      impl_type: none
     vals:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     var-get:
       type: function
       status: todo
+      impl_type: none
     var-set:
       type: function
       status: todo
+      impl_type: none
     var?:
       type: function
       status: todo
+      impl_type: none
     vary-meta:
       type: function
       status: todo
+      impl_type: none
     vec:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     vector:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     vector-of:
       type: function
       status: todo
+      impl_type: none
     vector?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     volatile!:
       type: function
       status: todo
+      impl_type: none
     volatile?:
       type: function
       status: todo
+      impl_type: none
     vreset!:
       type: function
       status: todo
-    "with-bindings*":
+      impl_type: none
+    with-bindings*:
       type: function
       status: todo
+      impl_type: none
     with-meta:
       type: function
       status: todo
+      impl_type: none
     with-redefs-fn:
       type: function
       status: todo
+      impl_type: none
     xml-seq:
       type: function
       status: todo
+      impl_type: none
     zero?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      layer: host
     zipmap:
       type: function
-      status: todo
-    # DYNAMIC VAR (12個)
+      status: done
+      impl_type: builtin
+      layer: pure
     "*1":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*2":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*3":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*clojure-version*":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*data-readers*":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*default-data-reader-fn*":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*e":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*print-length*":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*print-level*":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*print-namespace-maps*":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*repl*":
       type: dynamic-var
       status: todo
       dynamic: true
+      impl_type: none
     "*verbose-defrecords*":
       type: dynamic-var
       status: todo
       dynamic: true
-    # VAR (37個)
+      impl_type: none
     "*agent*":
       type: var
       status: todo
+      impl_type: none
     "*allow-unresolved-vars*":
       type: var
       status: todo
+      impl_type: none
     "*assert*":
       type: var
       status: todo
+      impl_type: none
     "*command-line-args*":
       type: var
       status: todo
+      impl_type: none
     "*compile-files*":
       type: var
       status: todo
+      impl_type: none
     "*compile-path*":
       type: var
       status: todo
+      impl_type: none
     "*compiler-options*":
       type: var
       status: todo
+      impl_type: none
     "*err*":
       type: var
       status: todo
+      impl_type: none
     "*file*":
       type: var
       status: todo
+      impl_type: none
     "*flush-on-newline*":
       type: var
       status: todo
+      impl_type: none
     "*fn-loader*":
       type: var
       status: todo
+      impl_type: none
     "*in*":
       type: var
       status: todo
+      impl_type: none
     "*math-context*":
       type: var
       status: todo
+      impl_type: none
     "*ns*":
       type: var
       status: todo
+      impl_type: none
     "*out*":
       type: var
       status: todo
+      impl_type: none
     "*print-dup*":
       type: var
       status: todo
+      impl_type: none
     "*print-meta*":
       type: var
       status: todo
+      impl_type: none
     "*print-readably*":
       type: var
       status: todo
+      impl_type: none
     "*read-eval*":
       type: var
       status: todo
+      impl_type: none
     "*reader-resolver*":
       type: var
       status: todo
+      impl_type: none
     "*source-path*":
       type: var
       status: todo
+      impl_type: none
     "*suppress-read*":
       type: var
       status: todo
+      impl_type: none
     "*unchecked-math*":
       type: var
       status: todo
+      impl_type: none
     "*use-context-classloader*":
       type: var
       status: todo
+      impl_type: none
     "*warn-on-reflection*":
       type: var
       status: todo
+      impl_type: none
     EMPTY-NODE:
       type: var
       status: todo
+      impl_type: none
     Inst:
       type: var
       status: todo
+      impl_type: none
     char-escape-string:
       type: var
       status: todo
+      impl_type: none
     char-name-string:
       type: var
       status: todo
+      impl_type: none
     default-data-readers:
       type: var
       status: todo
+      impl_type: none
     in-ns:
       type: var
       status: todo
+      impl_type: none
     load-file:
       type: var
       status: todo
+      impl_type: none
     primitives-classnames:
       type: var
       status: todo
+      impl_type: none
     print-dup:
       type: var
       status: todo
+      impl_type: none
     print-method:
       type: var
       status: todo
+      impl_type: none
     unquote:
       type: var
       status: todo
+      impl_type: none
     unquote-splicing:
       type: var
       status: todo
-
+      impl_type: none
   clojure_repl:
-    # Phase 1: doc, source, apropos
-    # MACRO (3個)
     dir:
       type: macro
       status: todo
@@ -2177,7 +3016,6 @@ vars:
     source:
       type: macro
       status: todo
-    # FUNCTION (10個)
     apropos:
       type: function
       status: todo
@@ -2208,10 +3046,7 @@ vars:
     thread-stopper:
       type: function
       status: todo
-
   clojure_string:
-    # Phase 1: 文字列操作
-    # FUNCTION (21個)
     blank?:
       type: function
       status: todo
@@ -2275,10 +3110,7 @@ vars:
     upper-case:
       type: function
       status: todo
-
   clojure_set:
-    # Phase 1: 集合操作
-    # FUNCTION (12個)
     difference:
       type: function
       status: todo
@@ -2315,10 +3147,7 @@ vars:
     union:
       type: function
       status: todo
-
   clojure_test:
-    # Phase 2: テストフレームワーク
-    # MACRO (10個)
     are:
       type: macro
       status: todo
@@ -2349,7 +3178,6 @@ vars:
     with-test-out:
       type: macro
       status: todo
-    # FUNCTION (19個)
     assert-any:
       type: function
       status: todo
@@ -2409,7 +3237,6 @@ vars:
     testing-vars-str:
       type: function
       status: todo
-    # DYNAMIC VAR (8個)
     "*initial-report-counters*":
       type: dynamic-var
       status: todo
@@ -2442,17 +3269,13 @@ vars:
       type: dynamic-var
       status: todo
       dynamic: true
-    # VAR (2個)
     assert-expr:
       type: var
       status: todo
     use-fixtures:
       type: var
       status: todo
-
   clojure_pprint:
-    # Phase 2: Pretty Print
-    # MACRO (6個)
     formatter:
       type: macro
       status: todo
@@ -2471,7 +3294,6 @@ vars:
     with-pprint-dispatch:
       type: macro
       status: todo
-    # FUNCTION (11個)
     cl-format:
       type: function
       status: todo
@@ -2505,7 +3327,6 @@ vars:
     write-out:
       type: function
       status: todo
-    # DYNAMIC VAR (7個)
     "*print-base*":
       type: dynamic-var
       status: todo
@@ -2534,17 +3355,13 @@ vars:
       type: dynamic-var
       status: todo
       dynamic: true
-    # VAR (2個)
     code-dispatch:
       type: var
       status: todo
     simple-dispatch:
       type: var
       status: todo
-
   clojure_stacktrace:
-    # Phase 2: スタックトレース
-    # FUNCTION (6個)
     e:
       type: function
       status: todo
@@ -2563,10 +3380,7 @@ vars:
     root-cause:
       type: function
       status: todo
-
   clojure_walk:
-    # Phase 2: データ構造走査
-    # FUNCTION (10個)
     keywordize-keys:
       type: function
       status: todo
@@ -2597,20 +3411,14 @@ vars:
     walk:
       type: function
       status: todo
-
   clojure_edn:
-    # Phase 3: EDN読み書き
-    # FUNCTION (2個)
     read:
       type: function
       status: todo
     read-string:
       type: function
       status: todo
-
   clojure_data:
-    # Phase 3: diff等
-    # FUNCTION (3個)
     diff:
       type: function
       status: todo
@@ -2620,17 +3428,13 @@ vars:
     equality-partition:
       type: function
       status: todo
-    # VAR (2個)
     Diff:
       type: var
       status: todo
     EqualityPartition:
       type: var
       status: todo
-
   clojure_zip:
-    # Phase 3: Zipper
-    # FUNCTION (28個)
     append-child:
       type: function
       status: todo
@@ -2715,21 +3519,14 @@ vars:
     zipper:
       type: function
       status: todo
-
   clojure_template:
-    # Phase 4: テンプレート
-    # MACRO (1個)
     do-template:
       type: macro
       status: todo
-    # FUNCTION (1個)
     apply-template:
       type: function
       status: todo
-
   clojure_instant:
-    # Phase 4: #inst処理
-    # FUNCTION (5個)
     parse-timestamp:
       type: function
       status: todo
@@ -2745,18 +3542,12 @@ vars:
     validated:
       type: function
       status: todo
-
   clojure_uuid:
-    # Phase 4: #uuid処理
-    # 関数なし（リーダーマクロのみ）
     _placeholder:
       type: note
       status: skip
-      note: "clojure.uuid には公開関数がない"
-
+      note: clojure.uuid には公開関数がない
   clojure_math:
-    # Phase 4: 数学関数
-    # FUNCTION (43個)
     IEEE-remainder:
       type: function
       status: todo
@@ -2886,7 +3677,6 @@ vars:
     ulp:
       type: function
       status: todo
-    # VAR (2個)
     E:
       type: var
       status: todo

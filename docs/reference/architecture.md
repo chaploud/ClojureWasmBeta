@@ -58,15 +58,13 @@ Form → Analyzer → Node → [Backend切り替え] → Value
 
 ### コア vs ライブラリの区別
 
-**重要**: Clojureでは多くの「標準関数」が実際にはコア実装を要求する。
+Clojureでは多くの「標準関数」が実際にはコア実装を要求する。
 
 | 区分 | 例 | 追加方法 |
 |------|-----|---------|
 | **純粋なlib追加** | println, str, subs | core.zig に関数追加のみ |
 | **コア改修必要** | map, filter, reduce | LazySeq型 + 新Node + VM対応 |
 | **新しい抽象** | defprotocol, defrecord | Value型拡張 + Analyzer + VM |
-
-「lib追加で済む」と思っても実際はコア改修が必要なケースが多い。
 
 ---
 
@@ -113,106 +111,44 @@ src/
 
 ## ロードマップ
 
-### 完了フェーズ
+### 完了フェーズ (Phase 1 - 8.16)
 
-#### Phase 1-4: 基盤構築 ✓
-- Reader (Tokenizer, Form)
-- Runtime基盤 (Value, Var, Namespace, Env)
-- Analyzer (Node, special forms, シンボル解決)
-- TreeWalk評価器
+| Phase | 内容 |
+|-------|------|
+| 1-4 | Reader, Runtime基盤, Analyzer, TreeWalk評価器 |
+| 5 | ユーザー定義関数 (fn, クロージャ) |
+| 6 | マクロシステム (defmacro) |
+| 7 | CLI (-e, 複数式, 状態保持) |
+| 8.0 | VM基盤 (Bytecode, Compiler, VM, --compare) |
+| 8.1 | クロージャ完成, 複数アリティfn, 可変長引数 |
+| 8.2 | 高階関数 (apply, partial, comp, reduce) |
+| 8.3 | 分配束縛（シーケンシャル・マップ） |
+| 8.4 | シーケンス操作 (map, filter, take, drop, range 等) |
+| 8.5 | 制御フローマクロ・スレッディングマクロ |
+| 8.6 | try/catch/finally 例外処理 |
+| 8.7 | Atom 状態管理 |
+| 8.8 | 文字列操作拡充 |
+| 8.9 | defn・dotimes・doseq・if-not・comment |
+| 8.10 | condp・case・some->・some->>・as->・mapv・filterv |
+| 8.11 | キーワードを関数として使用 |
+| 8.12 | every?/some/not-every?/not-any? |
+| 8.13 | バグ修正・安定化 |
+| 8.14 | マルチメソッド (defmulti, defmethod) |
+| 8.15 | プロトコル (defprotocol, extend-type, extend-protocol) |
+| 8.16 | ユーティリティ関数・HOF・マクロ拡充 |
 
-#### Phase 5: ユーザー定義関数 ✓
-- fn クロージャ
-- def された関数呼び出し
+### 今後のフェーズ
 
-#### Phase 6: マクロシステム ✓
-- defmacro
-- Analyzer内での自動展開
+#### Phase 9: LazySeq（真の遅延シーケンス）
 
-#### Phase 7: CLI ✓
-- `-e` オプション
-- 複数式の連続評価
-- 状態保持
+現在の map/filter は Eager 実装。無限シーケンスに対応するには遅延評価が必要。
 
-#### Phase 8.0: VM基盤 ✓
-- バイトコード定義 (OpCode約50個)
-- Compiler (Node → Bytecode)
-- スタックベースVM
-- engine.zig (Backend切り替え、--compare)
-
-#### Phase 8.1: クロージャ・関数完成 ✓
-- VMでのクロージャ実行
-- 複数アリティfn
-- 可変長引数 (& rest)
-
-#### Phase 8.2: 高階関数 ✓
-- apply
-- partial
-- comp
-- reduce
-
----
-
-### 進行中・今後のフェーズ
-
-#### Phase 8.3: 分配束縛 (Destructuring) ← 次の最優先
-
-Clojureの実用性に直結。これがないと多くのコードが書けない。
-
-```clojure
-;; ベクター分配
-(let [[a b c] [1 2 3]] ...)
-(fn [[x y] z] ...)
-
-;; マップ分配
-(let [{:keys [name age]} person] ...)
-(fn [{:keys [x y] :as point}] ...)
-
-;; ネスト分配
-(let [[a [b c]] [[1 2] [3 4]]] ...)
-```
-
-**必要な変更**:
-- Analyzer: let, fn 引数の分配パターン解析
-- 新Node: DestructureBindingNode
-- Evaluator/VM: 分配バインディング処理
-
-#### Phase 8.4: 遅延シーケンス (Lazy Sequences)
-
-map, filter, take など基本的なシーケンス操作の前提。
-
-```clojure
-(take 5 (range))           ; 無限シーケンスから5つ
-(map inc [1 2 3])          ; 遅延変換
-(filter even? (range 100)) ; 遅延フィルタ
-```
-
-**必要な変更**:
 - Value: LazySeq型追加
 - lazy-seq マクロ / cons 関数
 - realize / force 処理
 - ISeq プロトコル相当の実装
 
-#### Phase 8.5: プロトコル (Protocols) ✅ 完了 (Phase 8.15 で実装)
-
-型ベースの多態性。defprotocol, extend-type, extend-protocol, satisfies? を実装済み。
-
-```clojure
-(defprotocol IGreet
-  (greet [this]))
-
-(extend-type String
-  IGreet
-  (greet [this] (str "Hello, " this)))
-
-(extend-protocol IGreet
-  Integer (greet [this] (str "Number: " this)))
-
-(greet "World")       ;; => "Hello, World"
-(satisfies? IGreet 42) ;; => true
-```
-
-#### Phase 9: GC
+#### Phase 10: GC
 
 遅延シーケンス導入後に必須となる。
 
@@ -220,46 +156,13 @@ map, filter, take など基本的なシーケンス操作の前提。
 - Arena から移行
 - ルート追跡（スタック、Var、クロージャ）
 
-#### Phase 10: Wasm連携
+#### Phase 11: Wasm連携
 
 言語機能が充実してから意味を持つ。
 
 - Component Model対応
 - .wasmロード・呼び出し
 - 型マッピング (Clojure ↔ Wasm)
-
----
-
-## 現在の実装状況
-
-### 組み込み関数 (core.zig)
-
-```
-算術:      +, -, *, /
-比較:      =, <, >, <=, >=
-述語:      nil?, number?, integer?, float?, string?, keyword?,
-           symbol?, fn?, coll?, list?, vector?, map?, set?, empty?
-コレクション: first, rest, cons, conj, count, nth, list, vector
-出力:      println, pr-str
-```
-
-### 特殊形式 (Analyzer)
-
-```
-制御:      if, do, let, loop, recur
-関数:      fn, def, defmacro
-引用:      quote
-高階:      apply, partial, comp, reduce
-```
-
-### 未実装の重要機能
-
-| 機能 | 影響度 | 状態 |
-|------|--------|------|
-| 遅延シーケンス | 高 | 未実装（無限シーケンスに必須） |
-| プロトコル | 高 | ✅ 実装済み (Phase 8.15) |
-| メタデータ | 低 | 未実装 |
-| マルチメソッド | 低 | ✅ 実装済み (Phase 8.14) |
 
 ---
 
@@ -295,5 +198,7 @@ map, filter, take など基本的なシーケンス操作の前提。
 - 型設計: `docs/reference/type_design.md`
 - Zigガイド: `docs/reference/zig_guide.md`
 - 進捗メモ: `.claude/tracking/memo.md`
+- 技術ノート: `.claude/tracking/notes.md`
+- 実装状況: `status/vars.yaml`
 - sci: `~/Documents/OSS/sci`
 - 本家Clojure: `~/Documents/OSS/clojure`

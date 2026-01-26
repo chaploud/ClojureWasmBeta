@@ -2,8 +2,6 @@
 
 Clojure本家との動作互換を追跡するための構造化データ。
 
-詳細な設計は [plan/004_status_design.md](../plan/004_status_design.md) を参照。
-
 ---
 
 ## ファイル
@@ -29,9 +27,58 @@ Clojure本家との動作互換を追跡するための構造化データ。
 
 ## Var の type 定義
 
+Clojure 本家での種別。
+
 | type | 説明 |
 |------|------|
 | `special-form` | 評価器で直接処理 |
-| `function` | 関数（Zigで実装） |
+| `function` | 関数 |
 | `macro` | マクロ |
 | `dynamic-var` | 動的束縛可能なVar |
+| `var` | 通常のVar |
+
+---
+
+## impl_type 定義
+
+このプロジェクトでの実装方式。
+
+| impl_type | 説明 |
+|-----------|------|
+| `builtin` | core.zig の BuiltinFn |
+| `special_form` | Analyzer の analyzeList 直接ディスパッチ |
+| `macro` | Analyzer の expandBuiltinMacro |
+| `none` | 未実装 |
+
+**暫定特殊形式の検出**: `type: function` かつ `impl_type: special_form` のエントリが「暫定特殊形式」（本家では関数だが特殊形式として実装）。
+
+---
+
+## layer 定義
+
+| layer | 説明 |
+|-------|------|
+| `host` | Zig でしか実装できない（VM opcode, Value 型操作等） |
+| `bridge` | 原理的には Clojure で書けるが Zig で実装（ブートストラップ/性能） |
+| `pure` | 既存プリミティブの組合せで実装可能（将来 .clj 移行候補） |
+
+---
+
+## yq クエリ例
+
+```bash
+# 実装済み数
+yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml
+
+# 暫定特殊形式（本家では関数）
+yq '.vars.clojure_core | to_entries[] | select(.value.type == "function" and .value.impl_type == "special_form") | .key' status/vars.yaml
+
+# layer 別集計
+yq '[.vars.clojure_core | to_entries[] | select(.value.status == "done") | .value.layer] | group_by(.) | map({(.[0]): length})' status/vars.yaml
+
+# 未実装で重要な関数を探す
+yq '.vars.clojure_core | to_entries[] | select(.value.status == "todo" and .value.type == "function") | .key' status/vars.yaml
+
+# スキップ済み（JVM固有）
+yq '.vars.clojure_core | to_entries[] | select(.value.status == "skip") | .key' status/vars.yaml
+```
