@@ -415,6 +415,22 @@ pub const VM = struct {
                     }
                 }
 
+                // 可変長引数の処理
+                // [x y & rest] の場合、余剰引数をリストにまとめる
+                if (arity.variadic) {
+                    const closure_len = if (f.closure_bindings) |cb| cb.len else 0;
+                    const args_start = fn_idx + 1 + closure_len;
+                    const fixed_count = arity.params.len - 1; // rest パラメータを除く
+
+                    // 余剰引数をリストに変換
+                    const rest_args = self.stack[args_start + fixed_count .. self.sp];
+                    const rest_list = value_mod.PersistentList.fromSlice(self.allocator, rest_args) catch return error.OutOfMemory;
+
+                    // スタックを調整: [固定引数, rest_list]
+                    self.stack[args_start + fixed_count] = Value{ .list = rest_list };
+                    self.sp = args_start + fixed_count + 1;
+                }
+
                 // 新しいフレームを作成
                 self.frames[self.frame_count] = .{
                     .proto = proto,

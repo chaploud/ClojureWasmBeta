@@ -7,26 +7,22 @@
 
 ## 前回完了
 
-- Phase 8.1.5: メモリ管理改善 ✓
-  - Allocators 構造体を導入 (`src/runtime/allocators.zig`)
-    - persistent: 長寿命（Var, Namespace, 組み込み関数）
-    - scratch: 一時的（Form, Node）
-  - main.zig を新パターンに修正
-    - Reader/Analyzer は scratch アロケータ使用
-    - 式評価ごとに `resetScratch()` で解放
-  - メモリ管理ドキュメント作成 (`docs/reference/memory_strategy.md`)
+- Phase 8.2.1: 可変長引数 (& rest) ✓
+  - Evaluator: 余剰引数をリストにまとめてバインド
+  - VM: 同様の処理を実装
+  - 両バックエンドで動作確認（--compare）
+  - E2E テスト追加
 
 ---
 
 ## 次回タスク
 
-### Phase 8.2: 機能拡張（短サイクル開発）
+### Phase 8.2: 機能拡張（継続）
 
 **開発サイクル**: TreeWalk 一機能追加 → VM 同期 → 繰り返し
 
 **候補機能**:
 - 複数アリティ fn
-- 可変長引数 (& rest)
 - コレクションリテラル (vec_new, map_new 等)
 - tail_call 最適化
 - apply
@@ -39,7 +35,6 @@
 - マップ/セットは Reader で nil を返す仮実装
 - コレクションは配列ベースの簡易実装（永続データ構造は将来）
 - 複数アリティ fn は未実装（単一アリティのみ）
-- 可変長引数（& rest）は解析のみ、評価は未実装
 - BuiltinFn は value.zig では anyopaque、core.zig で型定義、evaluator.zig でキャスト
 - char_val は Form に対応していない（valueToForm でエラー）
 - **メモリリーク（Phase 9 GC で対応予定）**:

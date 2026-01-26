@@ -481,3 +481,24 @@ test "compare: 関数呼び出し（組み込み）" {
     try expectIntBoth(allocator, &env, "(* 3 4)", 12);
     try expectIntBoth(allocator, &env, "(- 10 3)", 7);
 }
+
+test "compare: 可変長引数" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // rest の first を取得
+    try expectIntBoth(allocator, &env, "((fn [x & rest] (first rest)) 1 2 3)", 2);
+
+    // rest が空の場合
+    try expectNilBoth(allocator, &env, "((fn [x & rest] (first rest)) 1)");
+
+    // rest のみ（固定引数なし）
+    try expectIntBoth(allocator, &env, "((fn [& args] (first args)) 42)", 42);
+
+    // 固定引数を使う
+    try expectIntBoth(allocator, &env, "((fn [x y & rest] (+ x y)) 10 20 30)", 30);
+}

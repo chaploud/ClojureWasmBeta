@@ -184,7 +184,25 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
             }
 
             // 引数をバインド
-            fn_ctx = fn_ctx.withBindings(args) catch return error.OutOfMemory;
+            if (arity.variadic) {
+                // 可変長: 固定引数 + rest リスト
+                const fixed_count = arity.params.len - 1; // rest パラメータを除く
+
+                // 固定引数 + rest リスト用に params.len 個のバインディングを作成
+                var bindings_arr = ctx.allocator.alloc(Value, arity.params.len) catch return error.OutOfMemory;
+
+                // 固定引数をコピー
+                @memcpy(bindings_arr[0..fixed_count], args[0..fixed_count]);
+
+                // 残りの引数をリストにまとめる
+                const rest_list = value_mod.PersistentList.fromSlice(ctx.allocator, args[fixed_count..]) catch return error.OutOfMemory;
+                bindings_arr[fixed_count] = Value{ .list = rest_list };
+
+                fn_ctx = fn_ctx.withBindings(bindings_arr) catch return error.OutOfMemory;
+            } else {
+                // 固定アリティ: 引数をそのままバインド
+                fn_ctx = fn_ctx.withBindings(args) catch return error.OutOfMemory;
+            }
 
             // ボディを評価
             const body: *const Node = @ptrCast(@alignCast(arity.body));
