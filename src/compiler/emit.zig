@@ -106,6 +106,8 @@ pub const Compiler = struct {
             .take_while_node => |node| try self.emitTakeWhile(node),
             .drop_while_node => |node| try self.emitDropWhile(node),
             .map_indexed_node => |node| try self.emitMapIndexed(node),
+            .sort_by_node => |node| try self.emitSortBy(node),
+            .group_by_node => |node| try self.emitGroupBy(node),
             .defmulti_node => |node| try self.emitDefmulti(node),
             .defmethod_node => |node| try self.emitDefmethod(node),
             .defprotocol_node => |node| try self.emitDefprotocol(node),
@@ -700,6 +702,22 @@ pub const Compiler = struct {
         try self.compile(node.fn_node);
         try self.compile(node.coll_node);
         try self.chunk.emit(.map_indexed_seq, 0);
+        self.sp_depth -= 1;
+    }
+
+    /// sort-by コンパイル: (sort-by f coll)
+    fn emitSortBy(self: *Compiler, node: *const node_mod.SortByNode) CompileError!void {
+        try self.compile(node.fn_node);
+        try self.compile(node.coll_node);
+        try self.chunk.emit(.sort_by_seq, 0);
+        self.sp_depth -= 1;
+    }
+
+    /// group-by コンパイル: (group-by f coll)
+    fn emitGroupBy(self: *Compiler, node: *const node_mod.GroupByNode) CompileError!void {
+        try self.compile(node.fn_node);
+        try self.compile(node.coll_node);
+        try self.chunk.emit(.group_by_seq, 0);
         self.sp_depth -= 1;
     }
 

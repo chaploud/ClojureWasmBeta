@@ -366,6 +366,12 @@ pub const VM = struct {
                 .map_indexed_seq => {
                     try self.executeMapIndexedWithExceptionHandling();
                 },
+                .sort_by_seq => {
+                    try self.executeSortByWithExceptionHandling();
+                },
+                .group_by_seq => {
+                    try self.executeGroupByWithExceptionHandling();
+                },
 
                 // ═══════════════════════════════════════════════════════
                 // [H] loop/recur
@@ -1611,6 +1617,139 @@ pub const VM = struct {
         };
     }
 
+    /// sort-by を実行
+    fn executeSortBy(self: *VM) VMError!void {
+        const coll_val = self.pop();
+        const fn_val = self.pop();
+
+        const items: []const Value = switch (coll_val) {
+            .list => |l| l.items,
+            .vector => |v| v.items,
+            .nil => &[_]Value{},
+            else => return error.TypeError,
+        };
+
+        if (items.len == 0) {
+            const result = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+            result.* = .{ .items = &[_]Value{} };
+            try self.push(Value{ .list = result });
+            return;
+        }
+
+        // 各要素のキーを計算
+        var keys = self.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+        for (items, 0..) |item, i| {
+            try self.push(fn_val);
+            try self.push(item);
+            try self.callValue(1);
+            keys[i] = self.pop();
+        }
+
+        // insertion sort（安定ソート、キーの比較で）
+        var sorted = self.allocator.dupe(Value, items) catch return error.OutOfMemory;
+        var sorted_keys = self.allocator.dupe(Value, keys) catch return error.OutOfMemory;
+        for (1..sorted.len) |i| {
+            const val_i = sorted[i];
+            const key_i = sorted_keys[i];
+            var j: usize = i;
+            while (j > 0 and vmValueCompare(sorted_keys[j - 1], key_i) == .gt) {
+                sorted[j] = sorted[j - 1];
+                sorted_keys[j] = sorted_keys[j - 1];
+                j -= 1;
+            }
+            sorted[j] = val_i;
+            sorted_keys[j] = key_i;
+        }
+
+        const result = self.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+        result.* = .{ .items = sorted };
+        try self.push(Value{ .list = result });
+    }
+
+    /// group-by を実行
+    fn executeGroupBy(self: *VM) VMError!void {
+        const coll_val = self.pop();
+        const fn_val = self.pop();
+
+        const items: []const Value = switch (coll_val) {
+            .list => |l| l.items,
+            .vector => |v| v.items,
+            .nil => &[_]Value{},
+            else => return error.TypeError,
+        };
+
+        // キーごとにグループ化
+        var group_keys: std.ArrayListUnmanaged(Value) = .empty;
+        var group_vals: std.ArrayListUnmanaged(std.ArrayListUnmanaged(Value)) = .empty;
+
+        for (items) |item| {
+            try self.push(fn_val);
+            try self.push(item);
+            try self.callValue(1);
+            const key = self.pop();
+
+            // 既存キーを探す
+            var found = false;
+            for (group_keys.items, 0..) |gk, i| {
+                if (key.eql(gk)) {
+                    group_vals.items[i].append(self.allocator, item) catch return error.OutOfMemory;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                group_keys.append(self.allocator, key) catch return error.OutOfMemory;
+                var new_list: std.ArrayListUnmanaged(Value) = .empty;
+                new_list.append(self.allocator, item) catch return error.OutOfMemory;
+                group_vals.append(self.allocator, new_list) catch return error.OutOfMemory;
+            }
+        }
+
+        // マップに変換: {key1 [v1 v2], key2 [v3] ...}
+        const entries = self.allocator.alloc(Value, group_keys.items.len * 2) catch return error.OutOfMemory;
+        for (group_keys.items, 0..) |key, i| {
+            entries[i * 2] = key;
+            const vec_items = group_vals.items[i].toOwnedSlice(self.allocator) catch return error.OutOfMemory;
+            const vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
+            vec.* = .{ .items = vec_items };
+            entries[i * 2 + 1] = Value{ .vector = vec };
+        }
+
+        const result = self.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+        result.* = .{ .entries = entries };
+        try self.push(Value{ .map = result });
+    }
+
+    /// executeSortBy のラッパー
+    fn executeSortByWithExceptionHandling(self: *VM) VMError!void {
+        self.executeSortBy() catch |e| {
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
+            return e;
+        };
+    }
+
+    /// executeGroupBy のラッパー
+    fn executeGroupByWithExceptionHandling(self: *VM) VMError!void {
+        self.executeGroupBy() catch |e| {
+            if (self.handler_count > 0) {
+                if (e == error.UserException) {
+                    if (self.handleThrowFromError()) return;
+                    return e;
+                }
+                const exception_val = self.internalErrorToValue(e);
+                if (self.handleThrow(exception_val)) return;
+            }
+            return e;
+        };
+    }
+
     /// 内部エラーを Value マップに変換（TreeWalk の internalErrorToValue と同等）
     /// {:type :type-error, :message "..."} 形式
     fn internalErrorToValue(self: *VM, e: VMError) Value {
@@ -1746,6 +1885,29 @@ pub const VM = struct {
         return self.stack[self.sp - 1 - distance];
     }
 };
+
+/// 値の比較（sort-by 用）
+fn vmValueCompare(a: Value, b: Value) std.math.Order {
+    if (a == .int and b == .int) {
+        return std.math.order(a.int, b.int);
+    }
+    if (a == .float and b == .float) {
+        return std.math.order(a.float, b.float);
+    }
+    if (a == .int and b == .float) {
+        return std.math.order(@as(f64, @floatFromInt(a.int)), b.float);
+    }
+    if (a == .float and b == .int) {
+        return std.math.order(a.float, @as(f64, @floatFromInt(b.int)));
+    }
+    if (a == .string and b == .string) {
+        return std.mem.order(u8, a.string.data, b.string.data);
+    }
+    if (a == .keyword and b == .keyword) {
+        return std.mem.order(u8, a.keyword.name, b.keyword.name);
+    }
+    return .eq;
+}
 
 // === テスト ===
 

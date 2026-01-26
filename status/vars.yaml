@@ -176,8 +176,8 @@ vars:
       layer: pure
     assert:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     binding:
       type: macro
       status: todo
@@ -203,12 +203,12 @@ vars:
       layer: pure
     cond->:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     cond->>:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     condp:
       type: macro
       status: done
@@ -216,8 +216,8 @@ vars:
       layer: pure
     declare:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     definline:
       type: macro
       status: todo
@@ -248,12 +248,12 @@ vars:
       layer: pure
     defn-:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     defonce:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     defprotocol:
       type: macro
       status: done
@@ -291,8 +291,8 @@ vars:
       layer: pure
     doto:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     extend-protocol:
       type: macro
       status: done
@@ -310,8 +310,8 @@ vars:
       layer: host
     for:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     future:
       type: macro
       status: todo
@@ -336,8 +336,8 @@ vars:
       layer: pure
     if-some:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     import:
       type: macro
       status: todo
@@ -434,8 +434,8 @@ vars:
       layer: pure
     when-first:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     when-let:
       type: macro
       status: done
@@ -448,12 +448,12 @@ vars:
       layer: pure
     when-some:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     while:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     with-bindings:
       type: macro
       status: todo
@@ -727,8 +727,8 @@ vars:
       layer: pure
     associative?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     atom:
       type: function
       status: done
@@ -768,8 +768,8 @@ vars:
       impl_type: none
     bit-and:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     bit-and-not:
       type: function
       status: todo
@@ -784,36 +784,36 @@ vars:
       impl_type: none
     bit-not:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     bit-or:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     bit-set:
       type: function
       status: todo
       impl_type: none
     bit-shift-left:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     bit-shift-right:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     bit-test:
       type: function
       status: todo
       impl_type: none
     bit-xor:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     boolean:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     boolean-array:
       type: function
       status: todo
@@ -840,8 +840,8 @@ vars:
       impl_type: none
     butlast:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     byte:
       type: function
       status: todo
@@ -1010,8 +1010,8 @@ vars:
       layer: host
     counted?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     create-ns:
       type: function
       status: todo
@@ -1072,8 +1072,8 @@ vars:
       impl_type: none
     disj:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     disj!:
       type: function
       status: todo
@@ -1094,20 +1094,20 @@ vars:
       layer: host
     distinct?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     doall:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     dorun:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     double:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     double-array:
       type: function
       status: todo
@@ -1127,8 +1127,8 @@ vars:
       layer: host
     drop-last:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     drop-while:
       type: function
       status: done
@@ -1178,8 +1178,8 @@ vars:
       layer: host
     every-pred:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     every?:
       type: function
       status: done
@@ -1218,12 +1218,12 @@ vars:
       impl_type: none
     false?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     ffirst:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     file-seq:
       type: function
       status: todo
@@ -1240,8 +1240,8 @@ vars:
       layer: pure
     find:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     find-keyword:
       type: function
       status: todo
@@ -1300,24 +1300,24 @@ vars:
       layer: host
     fnext:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     fnil:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     force:
       type: function
       status: todo
       impl_type: none
     format:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     frequencies:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     future-call:
       type: function
       status: todo
@@ -1370,16 +1370,16 @@ vars:
       impl_type: none
     group-by:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     halt-when:
       type: function
       status: todo
       impl_type: none
     hash:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     hash-combine:
       type: function
       status: todo
@@ -1457,8 +1457,8 @@ vars:
       impl_type: none
     int:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     int-array:
       type: function
       status: todo
@@ -1474,16 +1474,16 @@ vars:
       layer: host
     interleave:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     intern:
       type: function
       status: todo
       impl_type: none
     interpose:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     into:
       type: function
       status: done
@@ -1519,12 +1519,12 @@ vars:
       impl_type: none
     keep:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     keep-indexed:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     key:
       type: function
       status: todo
@@ -1536,8 +1536,8 @@ vars:
       layer: host
     keyword:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     keyword?:
       type: function
       status: done
@@ -1545,8 +1545,8 @@ vars:
       layer: host
     last:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     line-seq:
       type: function
       status: todo
@@ -1630,8 +1630,8 @@ vars:
       layer: host
     mapcat:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     mapv:
       type: function
       status: done
@@ -1661,8 +1661,8 @@ vars:
       impl_type: none
     meta:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     method-sig:
       type: function
       status: todo
@@ -1726,12 +1726,12 @@ vars:
       impl_type: none
     next:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     nfirst:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     nil?:
       type: function
       status: done
@@ -1739,8 +1739,8 @@ vars:
       layer: host
     nnext:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     not:
       type: function
       status: done
@@ -1868,12 +1868,12 @@ vars:
       layer: bridge
     partition:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     partition-all:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     partition-by:
       type: function
       status: todo
@@ -1892,8 +1892,8 @@ vars:
       impl_type: none
     peek:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     persistent!:
       type: function
       status: todo
@@ -1904,8 +1904,8 @@ vars:
       impl_type: none
     pop:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     pop!:
       type: function
       status: todo
@@ -1925,9 +1925,9 @@ vars:
       layer: host
     pr:
       type: function
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: builtin
     pr-str:
       type: function
       status: done
@@ -1943,8 +1943,8 @@ vars:
       impl_type: none
     print:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     print-ctor:
       type: function
       status: todo
@@ -1955,8 +1955,8 @@ vars:
       impl_type: none
     print-str:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     printf:
       type: function
       status: todo
@@ -1972,12 +1972,12 @@ vars:
       impl_type: none
     prn:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     prn-str:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     promise:
       type: function
       status: todo
@@ -2012,16 +2012,16 @@ vars:
       impl_type: none
     quot:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     rand:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     rand-int:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     rand-nth:
       type: function
       status: todo
@@ -2158,8 +2158,8 @@ vars:
       impl_type: none
     rem:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     remove:
       type: function
       status: todo
@@ -2195,8 +2195,8 @@ vars:
       impl_type: none
     replace:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     replicate:
       type: function
       status: todo
@@ -2247,8 +2247,8 @@ vars:
       layer: host
     reversible?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     rseq:
       type: function
       status: todo
@@ -2259,8 +2259,8 @@ vars:
       impl_type: none
     run!:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     satisfies?:
       type: function
       status: done
@@ -2268,8 +2268,8 @@ vars:
       layer: pure
     second:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     select-keys:
       type: function
       status: done
@@ -2298,12 +2298,12 @@ vars:
       impl_type: none
     seq?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     seqable?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     seque:
       type: function
       status: todo
@@ -2314,12 +2314,12 @@ vars:
       impl_type: none
     sequential?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     set:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     set-agent-send-executor!:
       type: function
       status: todo
@@ -2359,8 +2359,8 @@ vars:
       impl_type: none
     shuffle:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     shutdown-agents:
       type: function
       status: todo
@@ -2388,8 +2388,8 @@ vars:
       layer: pure
     some-fn:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     some?:
       type: function
       status: done
@@ -2397,12 +2397,12 @@ vars:
       layer: host
     sort:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     sort-by:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     sorted-map:
       type: function
       status: todo
@@ -2421,8 +2421,8 @@ vars:
       impl_type: none
     sorted?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     special-symbol?:
       type: function
       status: todo
@@ -2433,8 +2433,8 @@ vars:
       impl_type: none
     split-at:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     split-with:
       type: function
       status: todo
@@ -2488,8 +2488,8 @@ vars:
       impl_type: none
     subvec:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     supers:
       type: function
       status: todo
@@ -2505,8 +2505,8 @@ vars:
       impl_type: none
     symbol:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     symbol?:
       type: function
       status: done
@@ -2527,12 +2527,12 @@ vars:
       layer: host
     take-last:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     take-nth:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     take-while:
       type: function
       status: done
@@ -2580,8 +2580,8 @@ vars:
       impl_type: none
     true?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     type:
       type: function
       status: done
@@ -2778,8 +2778,8 @@ vars:
       impl_type: none
     with-meta:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     with-redefs-fn:
       type: function
       status: todo

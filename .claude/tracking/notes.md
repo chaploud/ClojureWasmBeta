@@ -116,6 +116,28 @@
 - 型名マッピング: "String"→"string", "Integer"→"integer" 等（mapUserTypeName 関数）
 - compare モードのテストでは defprotocol/extend-type と呼び出しを同一 do ブロック内に記述
 
+## Phase 8.19: 実用関数・マクロ大量追加
+
+- **~70 builtin 関数**: core.zig に追加、`builtins` comptime 配列に登録
+- **~20 組み込みマクロ**: analyze.zig の `expandBuiltinMacro` に追加
+- **sort-by / group-by**: HOF ノードパイプライン（Node → Analyzer → Evaluator → Compiler → VM）
+  - `SortByNode`, `GroupByNode` を node.zig に追加
+  - Evaluator: insertion sort（安定ソート）+ `valueCompare` ヘルパー
+  - VM: `sort_by_seq`(0x99), `group_by_seq`(0x9A) opcodes
+  - `vmValueCompare`: vm.zig にファイルレベル関数として定義
+- **マクロ展開パターン**:
+  - `keep`/`keep-indexed`/`mapcat`: 既存プリミティブの合成（`(filter some? (map f coll))` 等）
+  - `for`: 単一 → `(map ...)`, ネスト → `(mapcat (fn [x] (for [...] body)) coll)`
+  - `cond->` / `cond->>`: 逆順構築で let-if チェーンに展開
+  - `while`: `(loop [] (when test body... (recur)))`
+
+## 既知のバグ: トークナイザ `] [` パターン
+
+- `(let [x 1] [x])`, `(fn [x] [x])` で `InvalidToken` エラー
+- `]` の直後に空白を挟んで `[` が来るとトークナイザが失敗する
+- Phase 8.19 以前から存在する問題
+- 回避策: `(vector x)` 関数呼び出しを使う
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

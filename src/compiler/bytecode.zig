@@ -216,7 +216,11 @@ pub const OpCode = enum(u8) {
     drop_while_seq = 0x97,
     /// map-indexed（スタック上に [関数, コレクション]）→ リスト
     map_indexed_seq = 0x98,
-    // 0x99-0x9F: 予約
+    /// sort-by（スタック上に [関数, コレクション]）→ ソート済みリスト
+    sort_by_seq = 0x99,
+    /// group-by（スタック上に [関数, コレクション]）→ マップ
+    group_by_seq = 0x9A,
+    // 0x9B-0x9F: 予約
 
     // ═══════════════════════════════════════════════════════
     // [K] 例外処理 (0xA0-0xAF)

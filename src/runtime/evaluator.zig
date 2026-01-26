@@ -60,6 +60,8 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .take_while_node => |n| runTakeWhile(n, ctx),
         .drop_while_node => |n| runDropWhile(n, ctx),
         .map_indexed_node => |n| runMapIndexed(n, ctx),
+        .sort_by_node => |n| runSortBy(n, ctx),
+        .group_by_node => |n| runGroupBy(n, ctx),
         .defmulti_node => |n| runDefmulti(n, ctx),
         .defmethod_node => |n| runDefmethod(n, ctx),
         .defprotocol_node => |n| runDefprotocol(n, ctx),
@@ -950,6 +952,132 @@ fn runMapIndexed(node: *const node_mod.MapIndexedNode, ctx: *Context) EvalError!
     const result_list = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
     result_list.* = .{ .items = result_items };
     return Value{ .list = result_list };
+}
+
+/// sort-by 評価
+/// (sort-by keyfn coll)
+fn runSortBy(node: *const node_mod.SortByNode, ctx: *Context) EvalError!Value {
+    const fn_val = try run(node.fn_node, ctx);
+    const coll_val = try run(node.coll_node, ctx);
+
+    const items: []const Value = switch (coll_val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        else => return error.TypeError,
+    };
+
+    if (items.len == 0) {
+        const result = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+        result.* = .{ .items = &[_]Value{} };
+        return Value{ .list = result };
+    }
+
+    // 各要素のキーを計算
+    var keys = ctx.allocator.alloc(Value, items.len) catch return error.OutOfMemory;
+    for (items, 0..) |item, i| {
+        const args = ctx.allocator.alloc(Value, 1) catch return error.OutOfMemory;
+        args[0] = item;
+        keys[i] = try callWithArgs(fn_val, args, ctx);
+    }
+
+    // insertion sort（安定ソート、キーの比較で）
+    // items と keys を同時に並べ替え
+    var sorted = ctx.allocator.dupe(Value, items) catch return error.OutOfMemory;
+    var sorted_keys = ctx.allocator.dupe(Value, keys) catch return error.OutOfMemory;
+    for (1..sorted.len) |i| {
+        const val_i = sorted[i];
+        const key_i = sorted_keys[i];
+        var j: usize = i;
+        while (j > 0 and valueCompare(sorted_keys[j - 1], key_i) == .gt) {
+            sorted[j] = sorted[j - 1];
+            sorted_keys[j] = sorted_keys[j - 1];
+            j -= 1;
+        }
+        sorted[j] = val_i;
+        sorted_keys[j] = key_i;
+    }
+
+    const result = ctx.allocator.create(value_mod.PersistentList) catch return error.OutOfMemory;
+    result.* = .{ .items = sorted };
+    return Value{ .list = result };
+}
+
+/// 値の比較（sort-by 用）
+fn valueCompare(a: Value, b: Value) std.math.Order {
+    if (a == .int and b == .int) {
+        return std.math.order(a.int, b.int);
+    }
+    if (a == .float and b == .float) {
+        return std.math.order(a.float, b.float);
+    }
+    if (a == .int and b == .float) {
+        return std.math.order(@as(f64, @floatFromInt(a.int)), b.float);
+    }
+    if (a == .float and b == .int) {
+        return std.math.order(a.float, @as(f64, @floatFromInt(b.int)));
+    }
+    if (a == .string and b == .string) {
+        return std.mem.order(u8, a.string.data, b.string.data);
+    }
+    if (a == .keyword and b == .keyword) {
+        return std.mem.order(u8, a.keyword.name, b.keyword.name);
+    }
+    return .eq;
+}
+
+/// group-by 評価
+/// (group-by f coll)
+fn runGroupBy(node: *const node_mod.GroupByNode, ctx: *Context) EvalError!Value {
+    const fn_val = try run(node.fn_node, ctx);
+    const coll_val = try run(node.coll_node, ctx);
+
+    const items: []const Value = switch (coll_val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        else => return error.TypeError,
+    };
+
+    // キーごとにグループ化
+    var group_keys: std.ArrayListUnmanaged(Value) = .empty;
+    var group_vals: std.ArrayListUnmanaged(std.ArrayListUnmanaged(Value)) = .empty;
+
+    for (items) |item| {
+        const args = ctx.allocator.alloc(Value, 1) catch return error.OutOfMemory;
+        args[0] = item;
+        const key = try callWithArgs(fn_val, args, ctx);
+
+        // 既存キーを探す
+        var found = false;
+        for (group_keys.items, 0..) |gk, i| {
+            if (key.eql(gk)) {
+                group_vals.items[i].append(ctx.allocator, item) catch return error.OutOfMemory;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            group_keys.append(ctx.allocator, key) catch return error.OutOfMemory;
+            var new_list: std.ArrayListUnmanaged(Value) = .empty;
+            new_list.append(ctx.allocator, item) catch return error.OutOfMemory;
+            group_vals.append(ctx.allocator, new_list) catch return error.OutOfMemory;
+        }
+    }
+
+    // マップに変換: {key1 [v1 v2], key2 [v3] ...}
+    const entries = ctx.allocator.alloc(Value, group_keys.items.len * 2) catch return error.OutOfMemory;
+    for (group_keys.items, 0..) |key, i| {
+        entries[i * 2] = key;
+        const vec_items = group_vals.items[i].toOwnedSlice(ctx.allocator) catch return error.OutOfMemory;
+        const vec = ctx.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
+        vec.* = .{ .items = vec_items };
+        entries[i * 2 + 1] = Value{ .vector = vec };
+    }
+
+    const result = ctx.allocator.create(value_mod.PersistentMap) catch return error.OutOfMemory;
+    result.* = .{ .entries = entries };
+    return Value{ .map = result };
 }
 
 /// (swap! atom f) または (swap! atom f x y ...)

@@ -245,6 +245,22 @@ pub const MapIndexedNode = struct {
     stack: SourceInfo,
 };
 
+/// sort-by ノード
+/// (sort-by keyfn coll)
+pub const SortByNode = struct {
+    fn_node: *Node, // キー関数
+    coll_node: *Node, // コレクション
+    stack: SourceInfo,
+};
+
+/// group-by ノード
+/// (group-by f coll)
+pub const GroupByNode = struct {
+    fn_node: *Node, // グループ化関数
+    coll_node: *Node, // コレクション
+    stack: SourceInfo,
+};
+
 /// defprotocol ノード
 /// (defprotocol Name (method1 [this]) (method2 [this arg]))
 pub const DefprotocolNode = struct {
@@ -325,6 +341,10 @@ pub const Node = union(enum) {
     drop_while_node: *DropWhileNode,
     map_indexed_node: *MapIndexedNode,
 
+    // HOF 追加（Phase 8.19）
+    sort_by_node: *SortByNode,
+    group_by_node: *GroupByNode,
+
     // マルチメソッド
     defmulti_node: *DefmultiNode,
     defmethod_node: *DefmethodNode,
@@ -361,6 +381,8 @@ pub const Node = union(enum) {
             .take_while_node => |n| n.stack,
             .drop_while_node => |n| n.stack,
             .map_indexed_node => |n| n.stack,
+            .sort_by_node => |n| n.stack,
+            .group_by_node => |n| n.stack,
             .defmulti_node => |n| n.stack,
             .defmethod_node => |n| n.stack,
             .defprotocol_node => |n| n.stack,
@@ -396,6 +418,8 @@ pub const Node = union(enum) {
             .take_while_node => "take-while",
             .drop_while_node => "drop-while",
             .map_indexed_node => "map-indexed",
+            .sort_by_node => "sort-by",
+            .group_by_node => "group-by",
             .defmulti_node => "defmulti",
             .defmethod_node => "defmethod",
             .defprotocol_node => "defprotocol",
@@ -612,6 +636,24 @@ pub const Node = union(enum) {
                     .stack = n.stack,
                 };
                 break :blk .{ .map_indexed_node = d };
+            },
+            .sort_by_node => |n| blk: {
+                const d = try allocator.create(SortByNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .coll_node = try n.coll_node.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .sort_by_node = d };
+            },
+            .group_by_node => |n| blk: {
+                const d = try allocator.create(GroupByNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .coll_node = try n.coll_node.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .group_by_node = d };
             },
             .defmulti_node => |n| blk: {
                 const d = try allocator.create(DefmultiNode);
