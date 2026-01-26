@@ -29,6 +29,7 @@ pub const VMError = error{
     UndefinedVar,
     OutOfMemory,
     InvalidInstruction,
+    UserException,
 };
 
 /// スタックサイズ
@@ -36,6 +37,23 @@ const STACK_MAX: usize = 256 * 64;
 
 /// コールフレームの最大数
 const FRAMES_MAX: usize = 64;
+
+/// 例外ハンドラの最大数
+const HANDLERS_MAX: usize = 32;
+
+/// 例外ハンドラ（try ブロックの状態保存）
+const ExceptionHandler = struct {
+    /// catch 節の IP
+    catch_ip: usize,
+    /// try 開始時のスタックポインタ
+    saved_sp: usize,
+    /// try 開始時のフレーム数
+    saved_frame_count: usize,
+    /// try ブロックのコードポインタ
+    code_ptr: []const Instruction,
+    /// try ブロックの定数テーブル
+    constants_ptr: []const Value,
+};
 
 /// コールフレーム
 const CallFrame = struct {
@@ -62,6 +80,14 @@ pub const VM = struct {
     frame_count: usize,
     /// グローバル環境
     env: *Env,
+    /// 例外ハンドラスタック
+    handlers: [HANDLERS_MAX]ExceptionHandler,
+    /// アクティブなハンドラ数
+    handler_count: usize,
+    /// 例外伝搬用フラグ（ネストした execute 間の伝搬）
+    pending_exception: bool,
+    /// 伝搬中の例外値
+    pending_exception_value: Value,
 
     /// 初期化
     pub fn init(allocator: std.mem.Allocator, env: *Env) VM {
@@ -72,6 +98,10 @@ pub const VM = struct {
             .frames = undefined,
             .frame_count = 0,
             .env = env,
+            .handlers = undefined,
+            .handler_count = 0,
+            .pending_exception = false,
+            .pending_exception_value = value_mod.nil,
         };
     }
 
@@ -238,23 +268,23 @@ pub const VM = struct {
                 // ═══════════════════════════════════════════════════════
                 .call => {
                     const arg_count = instr.operand;
-                    try self.callValue(@intCast(arg_count));
+                    try self.callValueWithExceptionHandling(@intCast(arg_count));
                 },
-                .call_0 => try self.callValue(0),
-                .call_1 => try self.callValue(1),
-                .call_2 => try self.callValue(2),
-                .call_3 => try self.callValue(3),
+                .call_0 => try self.callValueWithExceptionHandling(0),
+                .call_1 => try self.callValueWithExceptionHandling(1),
+                .call_2 => try self.callValueWithExceptionHandling(2),
+                .call_3 => try self.callValueWithExceptionHandling(3),
                 .tail_call => {
                     // TODO: 末尾呼び出し最適化
                     const arg_count = instr.operand;
-                    try self.callValue(@intCast(arg_count));
+                    try self.callValueWithExceptionHandling(@intCast(arg_count));
                 },
                 .apply => {
                     // apply: (apply f x y z seq)
                     // スタック: [... fn, arg0, arg1, ..., seq]
                     // オペランド: 中間引数の数
                     const middle_count = instr.operand;
-                    try self.applyValue(@intCast(middle_count));
+                    try self.applyValueWithExceptionHandling(@intCast(middle_count));
                 },
                 .ret => {
                     const result = self.pop();
@@ -297,13 +327,13 @@ pub const VM = struct {
                 .reduce => {
                     // reduce を実行
                     const has_init = instr.operand != 0;
-                    try self.executeReduce(has_init);
+                    try self.executeReduceWithExceptionHandling(has_init);
                 },
                 .map_seq => {
-                    try self.executeMap();
+                    try self.executeMapWithExceptionHandling();
                 },
                 .filter_seq => {
-                    try self.executeFilter();
+                    try self.executeFilterWithExceptionHandling();
                 },
 
                 // ═══════════════════════════════════════════════════════
@@ -353,11 +383,45 @@ pub const VM = struct {
                 },
 
                 // ═══════════════════════════════════════════════════════
-                // [K] 例外処理（未実装）
+                // [K] 例外処理
                 // ═══════════════════════════════════════════════════════
-                .try_begin, .catch_begin, .finally_begin, .try_end, .throw_ex => {
-                    // TODO: Phase 9 で実装
-                    return error.InvalidInstruction;
+                .try_begin => {
+                    // ハンドラを登録
+                    if (self.handler_count >= HANDLERS_MAX) return error.StackOverflow;
+                    const catch_ip = frame.ip + instr.operand; // catch 節の位置
+                    self.handlers[self.handler_count] = .{
+                        .catch_ip = catch_ip,
+                        .saved_sp = self.sp,
+                        .saved_frame_count = self.frame_count,
+                        .code_ptr = code,
+                        .constants_ptr = constants,
+                    };
+                    self.handler_count += 1;
+                },
+                .catch_begin => {
+                    // ハンドラを解除（try body が正常終了した場合ここに来る）
+                    if (self.handler_count > 0) {
+                        self.handler_count -= 1;
+                    }
+                },
+                .finally_begin => {
+                    // マーカーのみ
+                },
+                .try_end => {
+                    // マーカーのみ
+                },
+                .throw_ex => {
+                    // スタックトップを例外として投げる
+                    const thrown = self.pop();
+                    if (!self.handleThrow(thrown)) {
+                        // ハンドラなし: エラーとして伝搬
+                        const err_mod = @import("../base/error.zig");
+                        const val_ptr = self.allocator.create(Value) catch return error.OutOfMemory;
+                        val_ptr.* = thrown;
+                        err_mod.thrown_value = @ptrCast(val_ptr);
+                        return error.UserException;
+                    }
+                    // ハンドラが IP を調整済み — ループ続行
                 },
 
                 // ═══════════════════════════════════════════════════════
@@ -896,6 +960,101 @@ pub const VM = struct {
 
         // callValue を呼び出す
         try self.callValue(total_args);
+    }
+
+    // === 例外ハンドリング ===
+
+    /// 例外を処理: ハンドラを検索して catch 節にジャンプ
+    /// ハンドラがあれば true を返し、なければ false を返す
+    fn handleThrow(self: *VM, thrown: Value) bool {
+        if (self.handler_count == 0) {
+            // ハンドラなし: pending に設定して呼び出し元に伝搬
+            self.pending_exception = true;
+            self.pending_exception_value = thrown;
+            return false;
+        }
+
+        // ハンドラをポップ
+        self.handler_count -= 1;
+        const handler = self.handlers[self.handler_count];
+
+        // スタックを巻き戻し
+        self.sp = handler.saved_sp;
+
+        // フレームを巻き戻し
+        self.frame_count = handler.saved_frame_count;
+
+        // 例外値をスタックにプッシュ（catch バインディング用）
+        self.push(thrown) catch {
+            self.pending_exception = true;
+            self.pending_exception_value = thrown;
+            return false;
+        };
+
+        // catch 節の IP にジャンプ
+        self.frames[self.frame_count - 1].ip = handler.catch_ip;
+        return true;
+    }
+
+    /// callValue のラッパー: UserException をハンドラに転送
+    fn callValueWithExceptionHandling(self: *VM, arg_count: usize) VMError!void {
+        self.callValue(arg_count) catch |e| {
+            if (e == error.UserException and self.handleThrowFromError()) return;
+            return e;
+        };
+    }
+
+    /// applyValue のラッパー: UserException をハンドラに転送
+    fn applyValueWithExceptionHandling(self: *VM, middle_count: usize) VMError!void {
+        self.applyValue(middle_count) catch |e| {
+            if (e == error.UserException and self.handleThrowFromError()) return;
+            return e;
+        };
+    }
+
+    /// executeReduce のラッパー: UserException をハンドラに転送
+    fn executeReduceWithExceptionHandling(self: *VM, has_init: bool) VMError!void {
+        self.executeReduce(has_init) catch |e| {
+            if (e == error.UserException and self.handleThrowFromError()) return;
+            return e;
+        };
+    }
+
+    /// executeMap のラッパー: UserException をハンドラに転送
+    fn executeMapWithExceptionHandling(self: *VM) VMError!void {
+        self.executeMap() catch |e| {
+            if (e == error.UserException and self.handleThrowFromError()) return;
+            return e;
+        };
+    }
+
+    /// executeFilter のラッパー: UserException をハンドラに転送
+    fn executeFilterWithExceptionHandling(self: *VM) VMError!void {
+        self.executeFilter() catch |e| {
+            if (e == error.UserException and self.handleThrowFromError()) return;
+            return e;
+        };
+    }
+
+    /// UserException エラーから例外値を取得してハンドラに転送
+    /// ハンドラで処理できた場合 true を返す
+    fn handleThrowFromError(self: *VM) bool {
+        // pending_exception が設定されていればそれを使う
+        if (self.pending_exception) {
+            const thrown = self.pending_exception_value;
+            self.pending_exception = false;
+            self.pending_exception_value = value_mod.nil;
+            return self.handleThrow(thrown);
+        }
+
+        // threadlocal から取得
+        const err_mod = @import("../base/error.zig");
+        if (err_mod.getThrownValue()) |thrown_ptr| {
+            const thrown = @as(*const Value, @ptrCast(@alignCast(thrown_ptr))).*;
+            return self.handleThrow(thrown);
+        }
+
+        return false;
     }
 
     // === スタック操作 ===

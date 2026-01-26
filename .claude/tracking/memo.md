@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.5 制御フロー・スレッディングマクロ・ユーティリティ関数 完了**
+**Phase 8.6 try/catch/finally 例外処理 完了**
 
 ### 完了した機能
 
@@ -23,6 +23,7 @@
 | 8.3 | 分配束縛（シーケンシャル `[a b]`、マップ `{:keys [a]}`) |
 | 8.4 | シーケンス操作 (map, filter, take, drop, range 等) |
 | 8.5 | 制御フローマクロ・スレッディングマクロ・ユーティリティ関数 |
+| 8.6 | try/catch/finally 例外処理 + ex-info/ex-message/ex-data |
 
 ### 組み込み関数
 
@@ -40,6 +41,7 @@
 数値: max, min, abs, mod
 文字列: str
 出力: println, pr-str
+例外: ex-info, ex-message, ex-data
 ユーティリティ: identity
 ```
 
@@ -49,6 +51,7 @@
 制御: if, do, let, loop, recur
 関数: fn, def, defmacro, quote
 高階: apply, partial, comp, reduce, map, filter
+例外: try, throw
 ```
 
 ### 組み込みマクロ（8.5 で追加）
@@ -65,10 +68,9 @@
 
 ## 次回タスク
 
-### Phase 8.6 以降の候補
+### Phase 8.7 以降の候補
 
 候補:
-- try/catch/finally (例外処理)
 - Atom (状態管理)
 - プロトコル (defprotocol, extend-type)
 - LazySeq（真の遅延シーケンス）
@@ -81,7 +83,7 @@
 
 | Phase | 内容 | 依存 |
 |-------|------|------|
-| 8.6+ | 機能拡充 (try/catch, Atom, プロトコル等) | - |
+| 8.7+ | 機能拡充 (Atom, プロトコル等) | - |
 | 9 | LazySeq（真の遅延シーケンス）| 無限シーケンスに必要 |
 | 10 | GC | LazySeq導入後に必須 |
 | 11 | Wasm連携 | 言語機能充実後 |
@@ -113,6 +115,13 @@
 - map/filter は Eager 実装（リスト全体を即座に生成）
 - LazySeq が必要な場合（無限シーケンス、遅延実行）は別途実装が必要
 - `(range)` 引数なし（無限シーケンス）は未サポート
+
+### 例外処理
+- throw は任意の Value を投げられる（Clojure 互換）
+- 内部エラー（TypeError 等）も catch で捕捉可能（TreeWalk のみ、VM は UserException のみ）
+- thrown_value は threadlocal に `*anyopaque` で格納（レイヤリング維持）
+- VM: ExceptionHandler スタックで try/catch の状態を管理、ネスト対応
+- Zig 0.15.2 で `catch` + `continue` パターンが LLVM IR エラーを引き起こすため、ラッパー関数で回避
 
 ### 組み込みマクロ
 - and/or は短絡評価（let + if に展開）

@@ -119,6 +119,20 @@ pub const ThrowNode = struct {
     stack: SourceInfo,
 };
 
+/// catch 節
+pub const CatchClause = struct {
+    binding_name: []const u8, // 例外バインディング変数名（e）
+    body: *Node, // catch ハンドラ本体
+};
+
+/// try ノード
+pub const TryNode = struct {
+    body: *Node, // try 本体（do ノードでラップ）
+    catch_clause: ?CatchClause, // catch 節（省略可能）
+    finally_body: ?*Node, // finally 本体（省略可能）
+    stack: SourceInfo,
+};
+
 /// apply ノード
 /// (apply f args) または (apply f x y z args)
 pub const ApplyNode = struct {
@@ -198,6 +212,7 @@ pub const Node = union(enum) {
 
     // 例外
     throw_node: *ThrowNode,
+    try_node: *TryNode,
 
     // 高階関数
     apply_node: *ApplyNode,
@@ -223,6 +238,7 @@ pub const Node = union(enum) {
             .def_node => |n| n.stack,
             .quote_node => |n| n.stack,
             .throw_node => |n| n.stack,
+            .try_node => |n| n.stack,
             .apply_node => |n| n.stack,
             .partial_node => |n| n.stack,
             .comp_node => |n| n.stack,
@@ -248,6 +264,7 @@ pub const Node = union(enum) {
             .def_node => "def",
             .quote_node => "quote",
             .throw_node => "throw",
+            .try_node => "try",
             .apply_node => "apply",
             .partial_node => "partial",
             .comp_node => "comp",

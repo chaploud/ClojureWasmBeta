@@ -29,6 +29,7 @@ pub const EvalError = error{
     DivisionByZero,
     RecurOutsideLoop,
     OutOfMemory,
+    UserException,
 };
 
 /// Node を評価
@@ -46,7 +47,8 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .call_node => |n| runCall(n, ctx),
         .def_node => |n| runDef(n, ctx),
         .quote_node => |n| n.form,
-        .throw_node => return error.TypeError, // TODO: 例外処理
+        .throw_node => |n| runThrow(n, ctx),
+        .try_node => |n| runTry(n, ctx),
         .apply_node => |n| runApply(n, ctx),
         .partial_node => |n| runPartial(n, ctx),
         .comp_node => |n| runComp(n, ctx),
@@ -258,6 +260,118 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
         },
         else => error.TypeError,
     };
+}
+
+/// throw 評価
+fn runThrow(node: *const node_mod.ThrowNode, ctx: *Context) EvalError!Value {
+    // 式を評価
+    const val = try run(node.expr, ctx);
+
+    // アリーナに Value を確保して threadlocal に格納
+    const val_ptr = ctx.allocator.create(Value) catch return error.OutOfMemory;
+    val_ptr.* = val;
+    err.thrown_value = @ptrCast(val_ptr);
+    return error.UserException;
+}
+
+/// try/catch/finally 評価
+fn runTry(node: *const node_mod.TryNode, ctx: *Context) EvalError!Value {
+    // body を実行
+    var result: Value = undefined;
+    var body_err: ?EvalError = null;
+
+    if (run(node.body, ctx)) |val| {
+        result = val;
+    } else |e| {
+        body_err = e;
+    }
+
+    if (body_err) |the_err| {
+        // エラー発生: catch 節をチェック
+        if (node.catch_clause) |clause| {
+            // 例外値を取得
+            var exception_val: Value = value_mod.nil;
+            if (the_err == error.UserException) {
+                // ユーザー throw
+                if (err.getThrownValue()) |thrown_ptr| {
+                    exception_val = @as(*const Value, @ptrCast(@alignCast(thrown_ptr))).*;
+                }
+            } else {
+                // 内部エラーをマップに変換
+                exception_val = internalErrorToValue(the_err, ctx);
+            }
+
+            // catch バインディングでハンドラ実行
+            var catch_ctx = ctx.withBinding(exception_val) catch return error.OutOfMemory;
+            result = try runFinally(node.finally_body, ctx, run(clause.body, &catch_ctx));
+            return result;
+        } else {
+            // catch なし: finally だけ実行してエラーを再 throw
+            runFinallyIgnoreResult(node.finally_body, ctx);
+            return the_err;
+        }
+    }
+
+    // 成功: finally を実行して結果を返す
+    runFinallyIgnoreResult(node.finally_body, ctx);
+    return result;
+}
+
+/// finally 実行（結果を透過）
+fn runFinally(finally_body: ?*const Node, ctx: *Context, inner_result: EvalError!Value) EvalError!Value {
+    runFinallyIgnoreResult(finally_body, ctx);
+    return inner_result;
+}
+
+/// finally 実行（結果を無視）
+fn runFinallyIgnoreResult(finally_body: ?*const Node, ctx: *Context) void {
+    if (finally_body) |finally_n| {
+        _ = run(finally_n, ctx) catch {};
+    }
+}
+
+/// 内部エラーを Value マップに変換
+/// {:type :type-error, :message "..."} 形式
+fn internalErrorToValue(e: EvalError, ctx: *Context) Value {
+    const type_str: []const u8 = switch (e) {
+        error.TypeError => "type-error",
+        error.ArityError => "arity-error",
+        error.UndefinedSymbol => "undefined-symbol",
+        error.DivisionByZero => "division-by-zero",
+        error.RecurOutsideLoop => "recur-outside-loop",
+        error.OutOfMemory => "out-of-memory",
+        error.UserException => "user-exception",
+    };
+
+    // {:type :type-error, :message "..."} マップを作成
+    // フラットな [k1, v1, k2, v2, ...] 形式
+    const map_ptr = ctx.allocator.create(value_mod.PersistentMap) catch return value_mod.nil;
+
+    // エントリ配列: [:type, :error-type, :message, "error-type"]
+    const entries = ctx.allocator.alloc(Value, 4) catch return value_mod.nil;
+
+    // :type キー
+    const type_kw = ctx.allocator.create(value_mod.Keyword) catch return value_mod.nil;
+    type_kw.* = value_mod.Keyword.init("type");
+    entries[0] = Value{ .keyword = type_kw };
+
+    // :type 値（キーワード）
+    const err_type_kw = ctx.allocator.create(value_mod.Keyword) catch return value_mod.nil;
+    err_type_kw.* = value_mod.Keyword.init(type_str);
+    entries[1] = Value{ .keyword = err_type_kw };
+
+    // :message キー
+    const msg_kw = ctx.allocator.create(value_mod.Keyword) catch return value_mod.nil;
+    msg_kw.* = value_mod.Keyword.init("message");
+    entries[2] = Value{ .keyword = msg_kw };
+
+    // :message 値（文字列）
+    const msg_str = ctx.allocator.create(value_mod.String) catch return value_mod.nil;
+    msg_str.* = value_mod.String.init(type_str);
+    entries[3] = Value{ .string = msg_str };
+
+    map_ptr.* = .{ .entries = entries };
+    return Value{ .map = map_ptr };
 }
 
 /// def 評価

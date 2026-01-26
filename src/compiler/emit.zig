@@ -81,7 +81,8 @@ pub const Compiler = struct {
             .call_node => |node| try self.emitCall(node),
             .def_node => |node| try self.emitDef(node),
             .quote_node => |node| try self.emitQuote(node),
-            .throw_node => return error.InvalidNode, // TODO
+            .throw_node => |node| try self.emitThrow(node),
+            .try_node => |node| try self.emitTry(node),
             .apply_node => |node| try self.emitApply(node),
             .partial_node => |node| try self.emitPartial(node),
             .comp_node => |node| try self.emitComp(node),
@@ -427,6 +428,76 @@ pub const Compiler = struct {
         try self.compile(node.fn_node);
         try self.compile(node.coll_node);
         try self.chunk.emit(.filter_seq, 0);
+    }
+
+    // === 例外処理 ===
+
+    /// throw コンパイル: (throw expr)
+    fn emitThrow(self: *Compiler, node: *const node_mod.ThrowNode) CompileError!void {
+        // 式をコンパイル（スタックに値をプッシュ）
+        try self.compile(node.expr);
+        // throw_ex 命令
+        try self.chunk.emitOp(.throw_ex);
+    }
+
+    /// try/catch/finally コンパイル
+    /// try_begin [catch_offset]
+    /// ... body ...
+    /// jump [end_offset]      ; 成功時は catch/finally をスキップ
+    /// catch_begin             ; catch 節開始
+    /// ... catch handler ...
+    /// finally_begin           ; finally 開始
+    /// ... finally ...
+    /// try_end
+    fn emitTry(self: *Compiler, node: *const node_mod.TryNode) CompileError!void {
+        // try_begin: catch 節へのオフセット（後でパッチ）
+        const try_begin_idx = self.chunk.emitJump(.try_begin) catch return error.OutOfMemory;
+
+        // body をコンパイル
+        try self.compile(node.body);
+
+        // 成功時: catch をスキップして finally/end へジャンプ
+        const jump_to_finally = self.chunk.emitJump(.jump) catch return error.OutOfMemory;
+
+        // catch 節開始位置をパッチ
+        self.chunk.patchJump(try_begin_idx);
+
+        // catch 節
+        if (node.catch_clause) |clause| {
+            try self.chunk.emitOp(.catch_begin);
+
+            // catch バインディング用のスコープ
+            self.scope_depth += 1;
+            const base_locals = self.locals.items.len;
+
+            // 例外値はスタックトップに置かれる（VM がプッシュ）
+            try self.addLocal(clause.binding_name);
+
+            // catch ハンドラ本体をコンパイル
+            try self.compile(clause.body);
+
+            // ローカルを削除
+            self.locals.shrinkRetainingCapacity(base_locals);
+            self.scope_depth -= 1;
+        } else {
+            // catch なし: nil をプッシュ（catch_begin マーカー）
+            try self.chunk.emitOp(.catch_begin);
+            try self.chunk.emitOp(.nil);
+        }
+
+        // finally/end へのジャンプをパッチ
+        self.chunk.patchJump(jump_to_finally);
+
+        // finally 節
+        if (node.finally_body) |finally_n| {
+            try self.chunk.emitOp(.finally_begin);
+            try self.compile(finally_n);
+            // finally の結果は捨てる（try/catch の結果を維持）
+            try self.chunk.emitOp(.pop);
+        }
+
+        // try_end マーカー
+        try self.chunk.emitOp(.try_end);
     }
 
     // === ヘルパー ===

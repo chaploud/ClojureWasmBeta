@@ -167,6 +167,10 @@ pub const Analyzer = struct {
                 return self.analyzeMap2(items);
             } else if (std.mem.eql(u8, sym_name, "filter")) {
                 return self.analyzeFilter(items);
+            } else if (std.mem.eql(u8, sym_name, "throw")) {
+                return self.analyzeThrow(items);
+            } else if (std.mem.eql(u8, sym_name, "try")) {
+                return self.analyzeTry(items);
             }
 
             // 組み込みマクロ展開（Form→Form 変換して再解析）
@@ -1207,6 +1211,122 @@ pub const Analyzer = struct {
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = .{ .filter_node = filter_data };
+        return node;
+    }
+
+    // ============================================================
+    // 例外処理
+    // ============================================================
+
+    /// (throw expr) の解析
+    fn analyzeThrow(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len != 2) {
+            return err.parseError(.invalid_arity, "throw requires 1 argument", .{});
+        }
+
+        const expr = try self.analyze(items[1]);
+
+        const throw_data = self.allocator.create(node_mod.ThrowNode) catch return error.OutOfMemory;
+        throw_data.* = .{
+            .expr = expr,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .throw_node = throw_data };
+        return node;
+    }
+
+    /// (try body* (catch Exception e handler*) (finally cleanup*)) の解析
+    fn analyzeTry(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "try requires at least a body expression", .{});
+        }
+
+        // items[0] は "try" シンボル自体
+        // 残りを走査して body / catch / finally に分離
+        var body_forms: std.ArrayListUnmanaged(Form) = .empty;
+        var catch_clause: ?node_mod.CatchClause = null;
+        var finally_body: ?*Node = null;
+
+        for (items[1..]) |item| {
+            if (item == .list) {
+                const sub_items = item.list;
+                if (sub_items.len > 0 and sub_items[0] == .symbol) {
+                    const name = sub_items[0].symbol.name;
+
+                    if (std.mem.eql(u8, name, "catch")) {
+                        // (catch Exception e handler-body*)
+                        if (sub_items.len < 4) {
+                            return err.parseError(.invalid_arity, "catch requires (catch ExceptionType name body*)", .{});
+                        }
+                        // sub_items[1] は Exception 型（初期は無視）
+                        // sub_items[2] はバインディング名
+                        if (sub_items[2] != .symbol) {
+                            return err.parseError(.invalid_binding, "catch binding must be a symbol", .{});
+                        }
+                        const binding_name = sub_items[2].symbol.name;
+
+                        // catch ハンドラ本体を解析
+                        // ローカルバインディングを追加してハンドラを解析
+                        const saved_depth = self.locals.items.len;
+                        self.locals.append(self.allocator, .{
+                            .name = binding_name,
+                            .idx = @intCast(saved_depth),
+                        }) catch return error.OutOfMemory;
+
+                        const handler_body = if (sub_items.len == 4)
+                            try self.analyze(sub_items[3])
+                        else
+                            try self.analyze(try self.wrapInDo(sub_items[3..]));
+
+                        // ローカルを復元
+                        self.locals.shrinkRetainingCapacity(saved_depth);
+
+                        catch_clause = .{
+                            .binding_name = binding_name,
+                            .body = handler_body,
+                        };
+                        continue;
+                    }
+
+                    if (std.mem.eql(u8, name, "finally")) {
+                        // (finally cleanup-body*)
+                        if (sub_items.len < 2) {
+                            return err.parseError(.invalid_arity, "finally requires at least one expression", .{});
+                        }
+
+                        finally_body = if (sub_items.len == 2)
+                            try self.analyze(sub_items[1])
+                        else
+                            try self.analyze(try self.wrapInDo(sub_items[1..]));
+                        continue;
+                    }
+                }
+            }
+
+            // catch/finally 以外は body
+            body_forms.append(self.allocator, item) catch return error.OutOfMemory;
+        }
+
+        // body を do ノードにラップ
+        const body_node = if (body_forms.items.len == 1)
+            try self.analyze(body_forms.items[0])
+        else if (body_forms.items.len == 0)
+            try self.makeConstant(value_mod.nil)
+        else
+            try self.analyze(try self.wrapInDo(body_forms.items));
+
+        const try_data = self.allocator.create(node_mod.TryNode) catch return error.OutOfMemory;
+        try_data.* = .{
+            .body = body_node,
+            .catch_clause = catch_clause,
+            .finally_body = finally_body,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .try_node = try_data };
         return node;
     }
 

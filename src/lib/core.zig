@@ -1561,6 +1561,80 @@ fn flattenInto(allocator: std.mem.Allocator, val: Value, buf: *std.ArrayListUnma
 }
 
 // ============================================================
+// 例外処理
+// ============================================================
+
+/// ex-info: (ex-info msg data) → {:message msg, :data data}
+pub fn exInfo(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+
+    const msg = args[0];
+    const data = args[1];
+
+    // {:message msg, :data data} マップを作成
+    const Keyword = value_mod.Keyword;
+    const map_ptr = try allocator.create(value_mod.PersistentMap);
+    const entries = try allocator.alloc(Value, 4);
+
+    // :message キー
+    const msg_kw = try allocator.create(Keyword);
+    msg_kw.* = Keyword.init("message");
+    entries[0] = Value{ .keyword = msg_kw };
+    entries[1] = msg;
+
+    // :data キー
+    const data_kw = try allocator.create(Keyword);
+    data_kw.* = Keyword.init("data");
+    entries[2] = Value{ .keyword = data_kw };
+    entries[3] = data;
+
+    map_ptr.* = .{ .entries = entries };
+    return Value{ .map = map_ptr };
+}
+
+/// ex-message: (ex-message ex) → (:message ex) 相当
+pub fn exMessage(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+
+    const ex = args[0];
+    if (ex != .map) return value_mod.nil;
+
+    // :message キーで検索
+    const entries = ex.map.entries;
+    var i: usize = 0;
+    while (i < entries.len) : (i += 2) {
+        if (entries[i] == .keyword) {
+            if (std.mem.eql(u8, entries[i].keyword.name, "message")) {
+                return entries[i + 1];
+            }
+        }
+    }
+    return value_mod.nil;
+}
+
+/// ex-data: (ex-data ex) → (:data ex) 相当
+pub fn exData(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+
+    const ex = args[0];
+    if (ex != .map) return value_mod.nil;
+
+    // :data キーで検索
+    const entries = ex.map.entries;
+    var i: usize = 0;
+    while (i < entries.len) : (i += 2) {
+        if (entries[i] == .keyword) {
+            if (std.mem.eql(u8, entries[i].keyword.name, "data")) {
+                return entries[i + 1];
+            }
+        }
+    }
+    return value_mod.nil;
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -1649,6 +1723,10 @@ const builtins = [_]BuiltinDef{
     // 出力
     .{ .name = "println", .func = println_fn },
     .{ .name = "pr-str", .func = prStr },
+    // 例外
+    .{ .name = "ex-info", .func = exInfo },
+    .{ .name = "ex-message", .func = exMessage },
+    .{ .name = "ex-data", .func = exData },
 };
 
 /// clojure.core の組み込み関数を Env に登録

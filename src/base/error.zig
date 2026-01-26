@@ -126,6 +126,9 @@ pub const Error = error{
     IndexOutOfBounds,
     TypeError,
 
+    // 例外（ユーザー throw）
+    UserException,
+
     // Memory
     OutOfMemory,
 };
@@ -133,6 +136,23 @@ pub const Error = error{
 /// スレッドローカルなエラー詳細格納用
 /// Zig の error は情報を持てないため、詳細はここに格納
 pub threadlocal var last_error: ?Info = null;
+
+/// ユーザー throw で投げられた値（anyopaque でレイヤリング維持）
+/// evaluator/vm 側で Value* にキャストして使用
+pub threadlocal var thrown_value: ?*anyopaque = null;
+
+/// ユーザー例外を設定し UserException エラーを返す
+pub fn throwValue(val_ptr: *anyopaque) Error {
+    thrown_value = val_ptr;
+    return error.UserException;
+}
+
+/// ユーザー例外の値を取得してクリア
+pub fn getThrownValue() ?*anyopaque {
+    const val = thrown_value;
+    thrown_value = null;
+    return val;
+}
 
 /// エラー詳細を設定し、対応する Zig error を返す
 pub fn setError(info: Info) Error {
