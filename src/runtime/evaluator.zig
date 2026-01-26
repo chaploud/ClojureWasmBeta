@@ -50,6 +50,7 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .apply_node => |n| runApply(n, ctx),
         .partial_node => |n| runPartial(n, ctx),
         .comp_node => |n| runComp(n, ctx),
+        .reduce_node => |n| runReduce(n, ctx),
     };
 }
 
@@ -359,6 +360,52 @@ fn runComp(node: *const node_mod.CompNode, ctx: *Context) EvalError!Value {
     };
 
     return Value{ .comp_fn = comp_fn };
+}
+
+/// reduce 評価
+/// (reduce f coll) または (reduce f init coll)
+fn runReduce(node: *const node_mod.ReduceNode, ctx: *Context) EvalError!Value {
+    // 関数を評価
+    const fn_val = try run(node.fn_node, ctx);
+
+    // コレクションを評価
+    const coll_val = try run(node.coll_node, ctx);
+
+    // コレクションから要素を取得
+    const items: []const Value = switch (coll_val) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{}, // nil は空シーケンス
+        else => return error.TypeError,
+    };
+
+    // 初期値を決定
+    var acc: Value = undefined;
+    var start_idx: usize = 0;
+
+    if (node.init_node) |init_n| {
+        // (reduce f init coll) - 初期値あり
+        acc = try run(init_n, ctx);
+    } else {
+        // (reduce f coll) - 初期値なし、最初の要素を使用
+        if (items.len == 0) {
+            // 空コレクションで初期値なしは (f) を呼び出す
+            const empty_args = ctx.allocator.alloc(Value, 0) catch return error.OutOfMemory;
+            return callWithArgs(fn_val, empty_args, ctx);
+        }
+        acc = items[0];
+        start_idx = 1;
+    }
+
+    // 畳み込みを実行
+    for (items[start_idx..]) |item| {
+        const args = ctx.allocator.alloc(Value, 2) catch return error.OutOfMemory;
+        args[0] = acc;
+        args[1] = item;
+        acc = try callWithArgs(fn_val, args, ctx);
+    }
+
+    return acc;
 }
 
 // === テスト ===

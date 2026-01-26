@@ -294,6 +294,11 @@ pub const VM = struct {
                     const fn_count = instr.operand;
                     try self.createCompFn(@intCast(fn_count));
                 },
+                .reduce => {
+                    // reduce を実行
+                    const has_init = instr.operand != 0;
+                    try self.executeReduce(has_init);
+                },
 
                 // ═══════════════════════════════════════════════════════
                 // [H] loop/recur
@@ -717,6 +722,59 @@ pub const VM = struct {
         };
 
         try self.push(Value{ .comp_fn = comp });
+    }
+
+    /// reduce を実行
+    fn executeReduce(self: *VM, has_init: bool) VMError!void {
+        // スタック:
+        //   初期値あり: [関数, 初期値, コレクション] (コレクションがトップ)
+        //   初期値なし: [関数, コレクション] (コレクションがトップ)
+
+        // コレクションを取り出し
+        const coll_val = self.pop();
+        const items: []const Value = switch (coll_val) {
+            .list => |l| l.items,
+            .vector => |v| v.items,
+            .nil => &[_]Value{},
+            else => return error.TypeError,
+        };
+
+        // 初期値とスタート位置を決定
+        var acc: Value = undefined;
+        var start_idx: usize = 0;
+
+        if (has_init) {
+            // 初期値あり
+            acc = self.pop();
+        } else {
+            // 初期値なし - 最初の要素を使用
+            if (items.len == 0) {
+                // 空コレクションで初期値なし - 関数を 0 引数で呼び出す
+                // 関数はスタックにある
+                try self.callValue(0);
+                return;
+            }
+            acc = items[0];
+            start_idx = 1;
+        }
+
+        // 関数を取り出し
+        const fn_val = self.pop();
+
+        // 畳み込みを実行
+        for (items[start_idx..]) |item| {
+            // スタックに [関数, acc, item] をプッシュして呼び出し
+            try self.push(fn_val);
+            try self.push(acc);
+            try self.push(item);
+            try self.callValue(2);
+
+            // 結果を取得
+            acc = self.pop();
+        }
+
+        // 結果をプッシュ
+        try self.push(acc);
     }
 
     /// def を実行

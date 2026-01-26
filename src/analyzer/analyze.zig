@@ -153,6 +153,8 @@ pub const Analyzer = struct {
                 return self.analyzePartial(items);
             } else if (std.mem.eql(u8, sym_name, "comp")) {
                 return self.analyzeComp(items);
+            } else if (std.mem.eql(u8, sym_name, "reduce")) {
+                return self.analyzeReduce(items);
             }
         }
 
@@ -647,6 +649,39 @@ pub const Analyzer = struct {
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = .{ .comp_node = comp_data };
+        return node;
+    }
+
+    fn analyzeReduce(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (reduce f coll) または (reduce f init coll)
+        if (items.len < 3 or items.len > 4) {
+            return err.parseError(.invalid_arity, "reduce requires 2 or 3 arguments", .{});
+        }
+
+        const fn_node = try self.analyze(items[1]);
+
+        var init_node: ?*Node = null;
+        var coll_node: *Node = undefined;
+
+        if (items.len == 3) {
+            // (reduce f coll) - 初期値なし
+            coll_node = try self.analyze(items[2]);
+        } else {
+            // (reduce f init coll)
+            init_node = try self.analyze(items[2]);
+            coll_node = try self.analyze(items[3]);
+        }
+
+        const reduce_data = self.allocator.create(node_mod.ReduceNode) catch return error.OutOfMemory;
+        reduce_data.* = .{
+            .fn_node = fn_node,
+            .init_node = init_node,
+            .coll_node = coll_node,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .reduce_node = reduce_data };
         return node;
     }
 

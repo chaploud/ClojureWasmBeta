@@ -609,3 +609,37 @@ test "compare: comp" {
     // 複数引数を受け取る最右の関数
     try expectIntBoth(allocator, &env, "((comp (partial * 2) +) 1 2 3)", 12); // (+ 1 2 3) = 6 -> (* 2 6) = 12
 }
+
+test "compare: reduce" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本的な reduce（初期値なし）
+    try expectIntBoth(allocator, &env, "(reduce + [1 2 3 4 5])", 15);
+
+    // 初期値あり
+    try expectIntBoth(allocator, &env, "(reduce + 0 [1 2 3 4 5])", 15);
+    try expectIntBoth(allocator, &env, "(reduce + 100 [1 2 3])", 106);
+
+    // 空コレクションと初期値
+    try expectIntBoth(allocator, &env, "(reduce + 10 [])", 10);
+
+    // 空コレクションで初期値なし（(+) = 0）
+    try expectIntBoth(allocator, &env, "(reduce + [])", 0);
+
+    // 単一要素（初期値なし）
+    try expectIntBoth(allocator, &env, "(reduce + [42])", 42);
+
+    // 単一要素（初期値あり）
+    try expectIntBoth(allocator, &env, "(reduce + 10 [42])", 52);
+
+    // ユーザー定義関数（二乗の和）
+    try expectIntBoth(allocator, &env, "(reduce (fn [acc x] (+ acc (* x x))) 0 [1 2 3 4])", 30);
+
+    // リストでも動作
+    try expectIntBoth(allocator, &env, "(reduce + '(1 2 3 4))", 10);
+}

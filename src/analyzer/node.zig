@@ -143,6 +143,15 @@ pub const CompNode = struct {
     stack: SourceInfo,
 };
 
+/// reduce ノード
+/// (reduce f coll) または (reduce f init coll)
+pub const ReduceNode = struct {
+    fn_node: *Node, // 畳み込み関数
+    init_node: ?*Node, // 初期値（nilの場合はcollの最初の要素を使用）
+    coll_node: *Node, // コレクション
+    stack: SourceInfo,
+};
+
 // === Node 本体 ===
 
 /// 実行可能ノード
@@ -178,6 +187,7 @@ pub const Node = union(enum) {
     apply_node: *ApplyNode,
     partial_node: *PartialNode,
     comp_node: *CompNode,
+    reduce_node: *ReduceNode,
 
     /// スタック情報を取得
     pub fn stack(self: Node) SourceInfo {
@@ -198,6 +208,7 @@ pub const Node = union(enum) {
             .apply_node => |n| n.stack,
             .partial_node => |n| n.stack,
             .comp_node => |n| n.stack,
+            .reduce_node => |n| n.stack,
         };
     }
 
@@ -220,6 +231,7 @@ pub const Node = union(enum) {
             .apply_node => "apply",
             .partial_node => "partial",
             .comp_node => "comp",
+            .reduce_node => "reduce",
         };
     }
 };

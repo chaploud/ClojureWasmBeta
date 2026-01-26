@@ -12,14 +12,13 @@
 - Phase 8.2.3: 複数アリティ fn ✓
 - Phase 8.2.4: partial ✓
 - Phase 8.2.5: comp ✓
-  - value.zig: CompFn 型追加
-  - analyzer/node.zig: CompNode 追加
-  - analyzer/analyze.zig: analyzeComp 実装
-  - evaluator.zig: runComp + callWithArgs で comp_fn 対応
-  - bytecode.zig: comp オペコード (0x6B) 追加
-  - emit.zig: emitComp 実装
-  - vm.zig: createCompFn + callValue で comp_fn 対応
-  - **修正**: createClosure で frame.base > 0 のみキャプチャ（トップレベルクロージャバグ修正）
+- Phase 8.2.6: reduce ✓
+  - node.zig: ReduceNode 追加
+  - analyze.zig: analyzeReduce 実装
+  - evaluator.zig: runReduce 実装
+  - bytecode.zig: reduce オペコード (0x6C) 追加
+  - emit.zig: emitReduce 実装
+  - vm.zig: executeReduce 実装
   - 両バックエンドで動作確認
 
 ---
@@ -34,7 +33,7 @@
 - コレクションリテラル (vec_new, map_new 等)
 - tail_call 最適化
 - マップ操作 (assoc, dissoc, get, contains?, keys, vals)
-- reduce
+- filter / map (高階関数としての実装)
 
 ---
 

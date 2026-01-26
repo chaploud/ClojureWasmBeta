@@ -85,6 +85,7 @@ pub const Compiler = struct {
             .apply_node => |node| try self.emitApply(node),
             .partial_node => |node| try self.emitPartial(node),
             .comp_node => |node| try self.emitComp(node),
+            .reduce_node => |node| try self.emitReduce(node),
         }
     }
 
@@ -393,6 +394,23 @@ pub const Compiler = struct {
 
         // comp 命令（オペランド: 関数の数）
         try self.chunk.emit(.comp, @intCast(node.fns.len));
+    }
+
+    fn emitReduce(self: *Compiler, node: *const node_mod.ReduceNode) CompileError!void {
+        // 関数をコンパイル
+        try self.compile(node.fn_node);
+
+        // 初期値がある場合はコンパイル
+        const has_init: u16 = if (node.init_node) |init_n| blk: {
+            try self.compile(init_n);
+            break :blk 1;
+        } else 0;
+
+        // コレクションをコンパイル
+        try self.compile(node.coll_node);
+
+        // reduce 命令（オペランド: 初期値フラグ）
+        try self.chunk.emit(.reduce, has_init);
     }
 
     // === ヘルパー ===
