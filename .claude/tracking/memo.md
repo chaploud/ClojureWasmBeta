@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.8 文字列操作拡充 完了**
+**Phase 8.9 defnマクロ・追加マクロ + クロス式メモリ安全性修正 完了**
 
 ### 完了した機能
 
@@ -26,6 +26,7 @@
 | 8.6 | try/catch/finally 例外処理 + ex-info/ex-message/ex-data |
 | 8.7 | Atom 状態管理 (atom, deref/@, reset!, swap!, atom?) |
 | 8.8 | 文字列操作拡充 (subs, name, namespace, join, trim 等) |
+| 8.9 | defnマクロ・dotimes・doseq・if-not・comment + メモリ安全性修正 |
 
 ### 組み込み関数
 
@@ -60,10 +61,13 @@ Atom: atom, deref, reset!, swap!
 Atom: swap!
 ```
 
-### 組み込みマクロ（8.5 で追加）
+### 組み込みマクロ
 
 ```
-制御フロー: cond, when, when-not, if-let, when-let, and, or
+制御フロー: cond, when, when-not, if-let, when-let, if-not, and, or
+繰り返し: dotimes, doseq
+定義: defn
+コメント: comment
 スレッディング: ->, ->>
 ```
 
@@ -74,15 +78,16 @@ Atom: swap!
 
 ## 次回タスク
 
-### Phase 8.9 以降の候補
+### Phase 8.10 以降の候補
 
 候補:
 - プロトコル (defprotocol, extend-type)
 - LazySeq（真の遅延シーケンス）
 - 正規表現
 - マルチメソッド (defmulti, defmethod)
-- defn マクロ（defn name [params] body → def + fn）
 - letfn（相互再帰ローカル関数）
+- defn の docstring サポート
+- defn の複数アリティサポート: `(defn f ([a] ...) ([a b] ...))`
 
 ---
 
@@ -90,7 +95,7 @@ Atom: swap!
 
 | Phase | 内容 | 依存 |
 |-------|------|------|
-| 8.9+ | 機能拡充 (プロトコル、defn 等) | - |
+| 8.10+ | 機能拡充 (プロトコル等) | - |
 | 9 | LazySeq（真の遅延シーケンス）| 無限シーケンスに必要 |
 | 10 | GC | LazySeq導入後に必須 |
 | 11 | Wasm連携 | 言語機能充実後 |
@@ -110,13 +115,29 @@ Atom: swap!
 - char_val は Form に対応していない（valueToForm でエラー）
 
 ### メモリ管理
+- **Deep Clone による scratch→persistent 安全化**:
+  - `runDef`: def'd 値を deepClone してから bindRoot（scratch 上のコレクション参照を排除）
+  - `runFn`: fn body ノードを deepClone（scratch 上の Node ツリーを persistent にコピー）
+  - `runSwap` / `resetBang`: atom 更新前に値を deepClone
+  - `Chunk.addConstant`: VM bytecode 定数を deepClone
+  - `Value.deepClone`: Atom の内部値も再帰的にクローン
 - **メモリリーク（Phase 10 GC で対応予定）**:
+  - deepClone により古い値が孤立する（GC で回収予定）
   - evaluator.zig の args 配列（バインディングスタック改善で対応）
   - Value 所有権（Var 破棄時に内部 Fn が解放されない）
   - context.withBinding の配列（バインディング毎に新配列を確保）
 
+### Analyzer
+- `analyzeDef` で Var を init 式解析前に intern（再帰的 defn の自己参照を可能に）
+
 ### VM
 - createClosure: frame.base > 0 のみキャプチャ（トップレベルクロージャバグ修正済み）
+
+### compare モード
+- Var スナップショット機構: 各バックエンドが独自の Var 状態を維持
+  - `VarSnapshot` 構造体: Var roots の保存・復元
+  - TreeWalk 実行後に tw_state 保存 → vm_snapshot 復元 → VM 実行後に vm_snapshot 保存 → tw_state 復元
+  - Atom はスナップショット対象外（別インスタンスが作られる）
 
 ### シーケンス操作
 - map/filter は Eager 実装（リスト全体を即座に生成）
@@ -133,11 +154,15 @@ Atom: swap!
 ### Atom
 - `swap!` は特殊形式（関数呼び出しが必要なため通常の BuiltinFn では不可）
 - `atom`, `deref`, `reset!`, `atom?` は通常の組み込み関数
-- `--compare` モードではミュータブル状態が両バックエンドで共有されるため、Atom 操作の比較結果がずれる場合がある
 
 ### 組み込みマクロ
 - and/or は短絡評価（let + if に展開）
-- 合成シンボル名 `__and__`, `__or__` を使用（衝突の可能性は低いが gensym が理想）
+- 合成シンボル名 `__and__`, `__or__`, `__items__` 等を使用（gensym が理想）
+- doseq の recur に `(seq (rest ...))` が必要（空リストは truthy なので nil 変換が必要）
+
+### CLI テスト時の注意
+- bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある
+- `swap!`, `reset!` 等を含む式は Write ツールでファイル経由で渡すか、`$(cat file)` で回避
 
 ---
 

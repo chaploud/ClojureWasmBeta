@@ -285,10 +285,12 @@ pub const Chunk = struct {
     }
 
     /// 定数テーブルに追加し、インデックスを返す
+    /// Value を永続アロケータに深コピーする（scratch arena 解放後も安全にするため）
     pub fn addConstant(self: *Chunk, val: Value) !u16 {
         const idx = self.constants.items.len;
         if (idx > std.math.maxInt(u16)) return error.TooManyConstants;
-        try self.constants.append(self.allocator, val);
+        const cloned = try val.deepClone(self.allocator);
+        try self.constants.append(self.allocator, cloned);
         return @intCast(idx);
     }
 

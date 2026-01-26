@@ -13,6 +13,7 @@ const Value = @import("value.zig").Value;
 const Context = @import("context.zig").Context;
 const Env = @import("env.zig").Env;
 const tree_walk = @import("evaluator.zig");
+const Var = @import("var.zig").Var;
 const Compiler = @import("../compiler/emit.zig").Compiler;
 const VM = @import("../vm/vm.zig").VM;
 const OpCode = @import("../compiler/bytecode.zig").OpCode;
@@ -68,30 +69,102 @@ pub const EvalEngine = struct {
     }
 };
 
+/// 比較実行の結果
+pub const CompareResult = struct {
+    tree_walk: Value,
+    vm: Value,
+    match: bool,
+};
+
 /// 両バックエンドで実行して比較（開発・テスト用）
+/// TreeWalk と VM は fn body の型が異なるため、各バックエンドの
+/// Var 状態を独立に維持する。vm_snapshot に VM 用の Var root 値を保持。
 pub fn runAndCompare(
     allocator: std.mem.Allocator,
     env: *Env,
     node: *const Node,
-) !struct { tree_walk: Value, vm: Value, match: bool } {
+    vm_snapshot: ?VarSnapshot,
+) !struct { result: CompareResult, vm_snapshot: VarSnapshot } {
+    // TreeWalk を実行（現在の Var 状態 = TreeWalk 用）
     var tw_engine = EvalEngine.init(allocator, env, .tree_walk);
     const tw_result = try tw_engine.run(node);
 
+    // TreeWalk 実行後の Var 状態を保存
+    const tw_state = try saveVarRoots(allocator, env);
+
+    // VM 用の Var 状態を復元（前回の VM 実行後の状態）
+    if (vm_snapshot) |snap| {
+        restoreVarRoots(snap);
+    }
+
+    // VM を実行
     var vm_engine = EvalEngine.init(allocator, env, .vm);
     const vm_result = vm_engine.run(node) catch {
         // VM がまだ未実装の機能でエラーになる場合
+        const new_vm_snap = saveVarRoots(allocator, env) catch VarSnapshot{ .vars = &.{} };
+        restoreVarRoots(tw_state);
         return .{
-            .tree_walk = tw_result,
-            .vm = Value.nil,
-            .match = false,
+            .result = .{ .tree_walk = tw_result, .vm = Value.nil, .match = false },
+            .vm_snapshot = new_vm_snap,
         };
     };
 
+    // VM 実行後の Var 状態を保存
+    const new_vm_snap = try saveVarRoots(allocator, env);
+
+    // TreeWalk の Var 状態を復元（次の式で TreeWalk が正しい状態を見るため）
+    restoreVarRoots(tw_state);
+
     return .{
-        .tree_walk = tw_result,
-        .vm = vm_result,
-        .match = tw_result.eql(vm_result),
+        .result = .{ .tree_walk = tw_result, .vm = vm_result, .match = tw_result.eql(vm_result) },
+        .vm_snapshot = new_vm_snap,
     };
+}
+
+/// Var → root 値のスナップショット
+pub const VarSnapshot = struct {
+    vars: []VarEntry,
+
+    const VarEntry = struct {
+        var_ptr: *Var,
+        root: Value,
+    };
+};
+
+/// 全 Namespace の全 Var の root 値を保存
+fn saveVarRoots(allocator: std.mem.Allocator, env: *Env) !VarSnapshot {
+    // まず総数をカウント
+    var count: usize = 0;
+    var ns_iter = env.namespaces.iterator();
+    while (ns_iter.next()) |ns_entry| {
+        var var_iter = ns_entry.value_ptr.*.getAllVars();
+        while (var_iter.next()) |_| {
+            count += 1;
+        }
+    }
+
+    const entries = try allocator.alloc(VarSnapshot.VarEntry, count);
+    var idx: usize = 0;
+    ns_iter = env.namespaces.iterator();
+    while (ns_iter.next()) |ns_entry| {
+        var var_iter = ns_entry.value_ptr.*.getAllVars();
+        while (var_iter.next()) |var_entry| {
+            entries[idx] = .{
+                .var_ptr = var_entry.value_ptr.*,
+                .root = var_entry.value_ptr.*.root,
+            };
+            idx += 1;
+        }
+    }
+
+    return .{ .vars = entries };
+}
+
+/// 保存した root 値を復元
+fn restoreVarRoots(snapshot: VarSnapshot) void {
+    for (snapshot.vars) |entry| {
+        entry.var_ptr.root = entry.root;
+    }
 }
 
 // === テスト ===
@@ -140,9 +213,9 @@ test "runAndCompare" {
 
     const value_mod = @import("value.zig");
     var node = Node{ .constant = value_mod.intVal(42) };
-    const result = try runAndCompare(allocator, &env, &node);
+    const out = try runAndCompare(allocator, &env, &node, null);
 
-    try std.testing.expect(result.match);
-    try std.testing.expect(result.tree_walk.eql(value_mod.intVal(42)));
-    try std.testing.expect(result.vm.eql(value_mod.intVal(42)));
+    try std.testing.expect(out.result.match);
+    try std.testing.expect(out.result.tree_walk.eql(value_mod.intVal(42)));
+    try std.testing.expect(out.result.vm.eql(value_mod.intVal(42)));
 }

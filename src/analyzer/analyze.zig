@@ -937,6 +937,12 @@ pub const Analyzer = struct {
         }
 
         const sym_name = items[1].symbol.name;
+
+        // Var を先に作成（再帰的な defn で fn body から参照できるように）
+        if (self.env.getCurrentNs()) |ns| {
+            _ = ns.intern(sym_name) catch return error.OutOfMemory;
+        }
+
         const init_node = if (items.len == 3)
             try self.analyze(items[2])
         else
@@ -1390,6 +1396,16 @@ pub const Analyzer = struct {
             return try self.expandThreadFirst(items);
         } else if (std.mem.eql(u8, name, "->>")) {
             return try self.expandThreadLast(items);
+        } else if (std.mem.eql(u8, name, "defn")) {
+            return try self.expandDefn(items);
+        } else if (std.mem.eql(u8, name, "if-not")) {
+            return try self.expandIfNot(items);
+        } else if (std.mem.eql(u8, name, "dotimes")) {
+            return try self.expandDotimes(items);
+        } else if (std.mem.eql(u8, name, "doseq")) {
+            return try self.expandDoseq(items);
+        } else if (std.mem.eql(u8, name, "comment")) {
+            return Form.nil; // (comment ...) → nil
         }
         return null;
     }
@@ -1685,6 +1701,194 @@ pub const Analyzer = struct {
         do_forms[0] = Form{ .symbol = form_mod.Symbol.init("do") };
         @memcpy(do_forms[1..], body);
         return Form{ .list = do_forms };
+    }
+
+    // ============================================================
+    // defn / if-not / dotimes / doseq マクロ展開
+    // ============================================================
+
+    /// (defn name [params] body...) → (def name (fn name [params] body...))
+    /// (defn name ([a] body1) ([a b] body2)) → (def name (fn name ([a] body1) ([a b] body2)))
+    fn expandDefn(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "defn requires a name and at least one body", .{});
+        }
+
+        // items[0] = defn, items[1] = name
+        const name_form = items[1];
+        const name_sym = switch (name_form) {
+            .symbol => |s| s,
+            else => return err.parseError(.invalid_token, "defn name must be a symbol", .{}),
+        };
+
+        // (def name (fn name ...)) を構築
+        // fn 部分: items[2..] をそのまま fn に渡す
+        const fn_forms_len = 2 + (items.len - 2); // fn, name, rest...
+        const fn_forms = self.allocator.alloc(Form, fn_forms_len) catch return error.OutOfMemory;
+        fn_forms[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        fn_forms[1] = name_form; // fn に名前を渡す
+        @memcpy(fn_forms[2..], items[2..]);
+
+        // (def name (fn name ...))
+        const def_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        def_forms[0] = Form{ .symbol = form_mod.Symbol.init("def") };
+        def_forms[1] = Form{ .symbol = name_sym };
+        def_forms[2] = Form{ .list = fn_forms };
+        return Form{ .list = def_forms };
+    }
+
+    /// (if-not test then) → (if (not test) then)
+    /// (if-not test then else) → (if (not test) then else)
+    fn expandIfNot(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3 or items.len > 4) {
+            return err.parseError(.invalid_arity, "if-not requires 2 or 3 arguments", .{});
+        }
+
+        // (not test)
+        const not_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        not_forms[0] = Form{ .symbol = form_mod.Symbol.init("not") };
+        not_forms[1] = items[1];
+
+        // (if (not test) then else?)
+        const if_len: usize = if (items.len == 4) 4 else 3;
+        const if_forms = self.allocator.alloc(Form, if_len) catch return error.OutOfMemory;
+        if_forms[0] = Form{ .symbol = form_mod.Symbol.init("if") };
+        if_forms[1] = Form{ .list = not_forms };
+        if_forms[2] = items[2];
+        if (items.len == 4) {
+            if_forms[3] = items[3];
+        }
+        return Form{ .list = if_forms };
+    }
+
+    /// (dotimes [i n] body...) → (loop [i 0] (when (< i n) body... (recur (inc i))))
+    fn expandDotimes(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "dotimes requires a binding vector and body", .{});
+        }
+
+        const binding_vec = switch (items[1]) {
+            .vector => |v| v,
+            else => return err.parseError(.invalid_binding, "dotimes requires a binding vector [i n]", .{}),
+        };
+        if (binding_vec.len != 2) {
+            return err.parseError(.invalid_binding, "dotimes binding must be [i n]", .{});
+        }
+
+        const var_sym = binding_vec[0];
+        const count_form = binding_vec[1];
+        const body = items[2..];
+
+        // (recur (inc i))
+        const inc_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        inc_forms[0] = Form{ .symbol = form_mod.Symbol.init("inc") };
+        inc_forms[1] = var_sym;
+
+        const recur_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        recur_forms[0] = Form{ .symbol = form_mod.Symbol.init("recur") };
+        recur_forms[1] = Form{ .list = inc_forms };
+
+        // (< i n)
+        const lt_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        lt_forms[0] = Form{ .symbol = form_mod.Symbol.init("<") };
+        lt_forms[1] = var_sym;
+        lt_forms[2] = count_form;
+
+        // (when (< i n) body... (recur (inc i)))
+        const when_forms = self.allocator.alloc(Form, 2 + body.len + 1) catch return error.OutOfMemory;
+        when_forms[0] = Form{ .symbol = form_mod.Symbol.init("when") };
+        when_forms[1] = Form{ .list = lt_forms };
+        @memcpy(when_forms[2 .. 2 + body.len], body);
+        when_forms[2 + body.len] = Form{ .list = recur_forms };
+
+        // loop バインディング [i 0]
+        const loop_bindings = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        loop_bindings[0] = var_sym;
+        loop_bindings[1] = Form{ .int = 0 };
+
+        // (loop [i 0] (when ...))
+        const loop_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        loop_forms[0] = Form{ .symbol = form_mod.Symbol.init("loop") };
+        loop_forms[1] = Form{ .vector = loop_bindings };
+        loop_forms[2] = Form{ .list = when_forms };
+        return Form{ .list = loop_forms };
+    }
+
+    /// (doseq [x coll] body...) → 各要素について body を実行、nil を返す
+    /// 展開: (loop [__items (seq coll)] (when __items (let [x (first __items)] body... (recur (rest __items)))))
+    fn expandDoseq(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "doseq requires a binding vector and body", .{});
+        }
+
+        const binding_vec = switch (items[1]) {
+            .vector => |v| v,
+            else => return err.parseError(.invalid_binding, "doseq requires a binding vector [x coll]", .{}),
+        };
+        if (binding_vec.len != 2) {
+            return err.parseError(.invalid_binding, "doseq binding must be [x coll]", .{});
+        }
+
+        const var_sym = binding_vec[0];
+        const coll_form = binding_vec[1];
+        const body = items[2..];
+
+        const items_sym = Form{ .symbol = form_mod.Symbol.init("__doseq_items__") };
+
+        // (seq coll)
+        const seq_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        seq_forms[0] = Form{ .symbol = form_mod.Symbol.init("seq") };
+        seq_forms[1] = coll_form;
+
+        // (first __items)
+        const first_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        first_forms[0] = Form{ .symbol = form_mod.Symbol.init("first") };
+        first_forms[1] = items_sym;
+
+        // (rest __items)
+        const rest_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        rest_forms[0] = Form{ .symbol = form_mod.Symbol.init("rest") };
+        rest_forms[1] = items_sym;
+
+        // (seq (rest __items))  — seq で空リストを nil に変換
+        const seq_rest_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        seq_rest_forms[0] = Form{ .symbol = form_mod.Symbol.init("seq") };
+        seq_rest_forms[1] = Form{ .list = rest_forms };
+
+        // (recur (seq (rest __items)))
+        const recur_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        recur_forms[0] = Form{ .symbol = form_mod.Symbol.init("recur") };
+        recur_forms[1] = Form{ .list = seq_rest_forms };
+
+        // let バインディング [x (first __items)]
+        const let_bindings = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        let_bindings[0] = var_sym;
+        let_bindings[1] = Form{ .list = first_forms };
+
+        // (let [x (first __items)] body... (recur (rest __items)))
+        const let_forms = self.allocator.alloc(Form, 2 + body.len + 1) catch return error.OutOfMemory;
+        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        let_forms[1] = Form{ .vector = let_bindings };
+        @memcpy(let_forms[2 .. 2 + body.len], body);
+        let_forms[2 + body.len] = Form{ .list = recur_forms };
+
+        // (when __items (let ...))
+        const when_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        when_forms[0] = Form{ .symbol = form_mod.Symbol.init("when") };
+        when_forms[1] = items_sym;
+        when_forms[2] = Form{ .list = let_forms };
+
+        // loop バインディング [__items (seq coll)]
+        const loop_bindings = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        loop_bindings[0] = items_sym;
+        loop_bindings[1] = Form{ .list = seq_forms };
+
+        // (loop [__items (seq coll)] (when ...))
+        const loop_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        loop_forms[0] = Form{ .symbol = form_mod.Symbol.init("loop") };
+        loop_forms[1] = Form{ .vector = loop_bindings };
+        loop_forms[2] = Form{ .list = when_forms };
+        return Form{ .list = loop_forms };
     }
 
     fn analyzeCall(self: *Analyzer, items: []const Form) err.Error!*Node {

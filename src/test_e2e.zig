@@ -57,14 +57,14 @@ fn evalBothAndCompare(allocator: std.mem.Allocator, env: *Env, source: []const u
     const node = try analyzer.analyze(form);
 
     // 両バックエンドで実行
-    const result = try engine_mod.runAndCompare(allocator, env, node);
+    const out = try engine_mod.runAndCompare(allocator, env, node, null);
 
     // 一致を検証（VM が動作する場合のみ）
-    if (result.vm != .nil or result.tree_walk == .nil) {
-        try std.testing.expect(result.match);
+    if (out.result.vm != .nil or out.result.tree_walk == .nil) {
+        try std.testing.expect(out.result.match);
     }
 
-    return result.tree_walk;
+    return out.result.tree_walk;
 }
 
 /// 式を評価して整数を期待

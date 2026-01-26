@@ -1666,12 +1666,13 @@ pub fn derefFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value
 /// reset!: Atom の値を新しい値に置換
 /// (reset! atom new-val) → new-val
 pub fn resetBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
     if (args.len != 2) return error.ArityError;
     return switch (args[0]) {
         .atom => |a| {
-            a.value = args[1];
-            return args[1];
+            // scratch 参照を排除するためディープクローン
+            const cloned = try args[1].deepClone(allocator);
+            a.value = cloned;
+            return cloned;
         },
         else => error.TypeError,
     };

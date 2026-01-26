@@ -94,7 +94,14 @@ fn runLet(node: *const node_mod.LetNode, ctx: *Context) EvalError!Value {
     }
 
     // 新しいコンテキストでボディを評価
-    return run(node.body, &current_ctx);
+    const result = try run(node.body, &current_ctx);
+
+    // recur フラグを伝搬（loop 内の let で recur が発生した場合）
+    if (current_ctx.hasRecur()) {
+        ctx.recur_values = current_ctx.recur_values;
+    }
+
+    return result;
 }
 
 /// loop 評価
@@ -142,12 +149,14 @@ fn runRecur(node: *const node_mod.RecurNode, ctx: *Context) EvalError!Value {
 /// fn 評価（クロージャ作成）
 fn runFn(node: *const node_mod.FnNode, ctx: *Context) EvalError!Value {
     // FnNode の arities を FnArityRuntime に変換
+    // body を永続アロケータに深コピー（scratch arena 解放後も安全にするため）
     const runtime_arities = ctx.allocator.alloc(value_mod.FnArityRuntime, node.arities.len) catch return error.OutOfMemory;
     for (node.arities, 0..) |arity, i| {
+        const cloned_body = arity.body.deepClone(ctx.allocator) catch return error.OutOfMemory;
         runtime_arities[i] = .{
             .params = arity.params,
             .variadic = arity.variadic,
-            .body = @ptrCast(@constCast(arity.body)),
+            .body = @ptrCast(cloned_body),
         };
     }
 
@@ -382,7 +391,9 @@ fn runDef(node: *const node_mod.DefNode, ctx: *Context) EvalError!Value {
 
     if (node.init) |init_node| {
         const val = try run(init_node, ctx);
-        v.bindRoot(val);
+        // scratch アロケータ上の参照を排除するため persistent にディープクローン
+        const cloned = val.deepClone(ctx.allocator) catch return error.OutOfMemory;
+        v.bindRoot(cloned);
     }
 
     // マクロフラグを設定
@@ -610,9 +621,12 @@ fn runSwap(node: *const node_mod.SwapNode, ctx: *Context) EvalError!Value {
     // 関数を適用
     const new_val = try callWithArgs(fn_val, all_args, ctx);
 
+    // scratch 参照を排除するためディープクローン
+    const cloned = new_val.deepClone(ctx.allocator) catch return error.OutOfMemory;
+
     // Atom を更新
-    atom_ptr.value = new_val;
-    return new_val;
+    atom_ptr.value = cloned;
+    return cloned;
 }
 
 // === テスト ===

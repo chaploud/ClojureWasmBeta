@@ -599,6 +599,84 @@ pub const Value = union(enum) {
             },
         }
     }
+
+    /// Value を指定アロケータに深コピー（scratch → persistent 移行用）
+    /// ヒープ確保されたデータ（String, Keyword, Symbol, コレクション）を複製する。
+    /// fn_val, partial_fn, comp_fn, fn_proto, var_val, atom はそのままコピー
+    /// （これらは persistent アロケータで作成されるため）。
+    pub fn deepClone(self: Value, allocator: std.mem.Allocator) error{OutOfMemory}!Value {
+        return switch (self) {
+            // インライン値はそのまま
+            .nil, .bool_val, .int, .float, .char_val => self,
+            // ヒープ確保の識別子/文字列を複製
+            .string => |s| blk: {
+                const new_s = try allocator.create(String);
+                new_s.* = .{
+                    .data = try allocator.dupe(u8, s.data),
+                    .cached_hash = s.cached_hash,
+                };
+                break :blk .{ .string = new_s };
+            },
+            .keyword => |k| blk: {
+                const new_k = try allocator.create(Keyword);
+                new_k.* = .{
+                    .name = try allocator.dupe(u8, k.name),
+                    .namespace = if (k.namespace) |ns| try allocator.dupe(u8, ns) else null,
+                };
+                break :blk .{ .keyword = new_k };
+            },
+            .symbol => |sym| blk: {
+                const new_sym = try allocator.create(Symbol);
+                new_sym.* = .{
+                    .name = try allocator.dupe(u8, sym.name),
+                    .namespace = if (sym.namespace) |ns| try allocator.dupe(u8, ns) else null,
+                };
+                break :blk .{ .symbol = new_sym };
+            },
+            // コレクションを再帰的に複製
+            .list => |l| blk: {
+                const new_l = try allocator.create(PersistentList);
+                const items = try deepCloneValues(allocator, l.items);
+                new_l.* = .{ .items = items };
+                break :blk .{ .list = new_l };
+            },
+            .vector => |v| blk: {
+                const new_v = try allocator.create(PersistentVector);
+                const items = try deepCloneValues(allocator, v.items);
+                new_v.* = .{ .items = items };
+                break :blk .{ .vector = new_v };
+            },
+            .map => |m| blk: {
+                const new_m = try allocator.create(PersistentMap);
+                const entries = try deepCloneValues(allocator, m.entries);
+                new_m.* = .{ .entries = entries };
+                break :blk .{ .map = new_m };
+            },
+            .set => |s| blk: {
+                const new_s = try allocator.create(PersistentSet);
+                const items = try deepCloneValues(allocator, s.items);
+                new_s.* = .{ .items = items };
+                break :blk .{ .set = new_s };
+            },
+            // Atom は内部値を深コピー（scratch 参照を排除）
+            .atom => |a| blk: {
+                const new_a = try allocator.create(Atom);
+                new_a.* = .{ .value = try a.value.deepClone(allocator) };
+                break :blk .{ .atom = new_a };
+            },
+            // 他のランタイムオブジェクトはそのまま（persistent で作成済み）
+            .fn_val, .partial_fn, .comp_fn, .fn_proto, .var_val => self,
+        };
+    }
+
+    /// Value スライスを再帰的に深コピー
+    fn deepCloneValues(allocator: std.mem.Allocator, values: []const Value) error{OutOfMemory}![]const Value {
+        const cloned = try allocator.alloc(Value, values.len);
+        for (values, 0..) |v, i| {
+            cloned[i] = try v.deepClone(allocator);
+        }
+        return cloned;
+    }
 };
 
 // === ヘルパー関数 ===

@@ -117,16 +117,18 @@ pub fn main() !void {
     try core.registerCore(&env);
 
     // 各式を評価
+    var vm_snapshot: ?engine_mod.VarSnapshot = null;
     for (expressions.items) |expr| {
         // scratch をリセット（前回の Form/Node を解放）
         allocs.resetScratch();
 
         if (compare_mode) {
-            runCompare(&allocs, &env, expr, stdout, stderr) catch |err| {
+            const compare_out = runCompare(&allocs, &env, expr, vm_snapshot, stdout, stderr) catch |err| {
                 stderr.print("Error: {any}\n", .{err}) catch {};
                 stderr.flush() catch {};
                 std.process.exit(1);
             };
+            vm_snapshot = compare_out;
         } else {
             runWithBackend(&allocs, &env, expr, backend, stdout) catch |err| {
                 stderr.print("Error: {any}\n", .{err}) catch {};
@@ -168,9 +170,10 @@ fn runCompare(
     allocs: *Allocators,
     env: *Env,
     source: []const u8,
+    vm_snapshot: ?engine_mod.VarSnapshot,
     writer: *std.Io.Writer,
     err_writer: *std.Io.Writer,
-) !void {
+) !engine_mod.VarSnapshot {
     // Reader（scratch アロケータ）
     var reader = Reader.init(allocs.scratch(), source);
     const form = try reader.read() orelse return error.EmptyInput;
@@ -179,8 +182,9 @@ fn runCompare(
     var analyzer = Analyzer.init(allocs.scratch(), env);
     const node = try analyzer.analyze(form);
 
-    // 両バックエンドで評価（persistent アロケータ）
-    const result = try engine_mod.runAndCompare(allocs.persistent(), env, node);
+    // 両バックエンドで評価（persistent アロケータ、VM snapshot を伝搬）
+    const out = try engine_mod.runAndCompare(allocs.persistent(), env, node, vm_snapshot);
+    const result = out.result;
 
     // TreeWalk の結果を出力
     try writer.writeAll("tree_walk: ");
@@ -199,6 +203,8 @@ fn runCompare(
         try err_writer.writeAll("=> MISMATCH!\n");
         err_writer.flush() catch {};
     }
+
+    return out.vm_snapshot;
 }
 
 /// 値を出力

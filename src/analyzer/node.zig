@@ -287,7 +287,199 @@ pub const Node = union(enum) {
             .swap_node => "swap!",
         };
     }
+
+    /// Node ツリーを指定アロケータに深コピー（scratch → persistent 移行用）
+    /// TreeWalk 評価器で fn body を永続化するために使用。
+    /// constant ノードの Value もヒープデータごと複製する。
+    pub fn deepClone(self: *const Node, allocator: std.mem.Allocator) error{OutOfMemory}!*Node {
+        const new_node = try allocator.create(Node);
+        new_node.* = switch (self.*) {
+            .constant => |val| .{ .constant = try val.deepClone(allocator) },
+            .var_ref => |ref| .{ .var_ref = ref },
+            .local_ref => |ref| .{ .local_ref = ref },
+            .if_node => |n| blk: {
+                const d = try allocator.create(IfNode);
+                d.* = .{
+                    .test_node = try n.test_node.deepClone(allocator),
+                    .then_node = try n.then_node.deepClone(allocator),
+                    .else_node = if (n.else_node) |e| try e.deepClone(allocator) else null,
+                    .stack = n.stack,
+                };
+                break :blk .{ .if_node = d };
+            },
+            .do_node => |n| blk: {
+                const stmts = try cloneNodeSlice(allocator, n.statements);
+                const d = try allocator.create(DoNode);
+                d.* = .{ .statements = stmts, .stack = n.stack };
+                break :blk .{ .do_node = d };
+            },
+            .let_node => |n| blk: {
+                const bindings = try cloneLetBindings(allocator, n.bindings);
+                const d = try allocator.create(LetNode);
+                d.* = .{
+                    .bindings = bindings,
+                    .body = try n.body.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .let_node = d };
+            },
+            .loop_node => |n| blk: {
+                const bindings = try cloneLetBindings(allocator, n.bindings);
+                const d = try allocator.create(LoopNode);
+                d.* = .{
+                    .bindings = bindings,
+                    .body = try n.body.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .loop_node = d };
+            },
+            .recur_node => |n| blk: {
+                const d = try allocator.create(RecurNode);
+                d.* = .{ .args = try cloneNodeSlice(allocator, n.args), .stack = n.stack };
+                break :blk .{ .recur_node = d };
+            },
+            .fn_node => |n| blk: {
+                const arities = try allocator.alloc(FnArity, n.arities.len);
+                for (n.arities, 0..) |a, i| {
+                    arities[i] = .{
+                        .params = a.params,
+                        .variadic = a.variadic,
+                        .body = try a.body.deepClone(allocator),
+                    };
+                }
+                const d = try allocator.create(FnNode);
+                d.* = .{ .name = n.name, .arities = arities, .stack = n.stack };
+                break :blk .{ .fn_node = d };
+            },
+            .call_node => |n| blk: {
+                const d = try allocator.create(CallNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .args = try cloneNodeSlice(allocator, n.args),
+                    .stack = n.stack,
+                };
+                break :blk .{ .call_node = d };
+            },
+            .def_node => |n| blk: {
+                const d = try allocator.create(DefNode);
+                d.* = .{
+                    .sym_name = n.sym_name,
+                    .init = if (n.init) |init| try init.deepClone(allocator) else null,
+                    .is_macro = n.is_macro,
+                    .stack = n.stack,
+                };
+                break :blk .{ .def_node = d };
+            },
+            .quote_node => |n| blk: {
+                const d = try allocator.create(QuoteNode);
+                d.* = .{ .form = try n.form.deepClone(allocator), .stack = n.stack };
+                break :blk .{ .quote_node = d };
+            },
+            .throw_node => |n| blk: {
+                const d = try allocator.create(ThrowNode);
+                d.* = .{ .expr = try n.expr.deepClone(allocator), .stack = n.stack };
+                break :blk .{ .throw_node = d };
+            },
+            .try_node => |n| blk: {
+                const d = try allocator.create(TryNode);
+                d.* = .{
+                    .body = try n.body.deepClone(allocator),
+                    .catch_clause = if (n.catch_clause) |c| CatchClause{
+                        .binding_name = c.binding_name,
+                        .body = try c.body.deepClone(allocator),
+                    } else null,
+                    .finally_body = if (n.finally_body) |f| try f.deepClone(allocator) else null,
+                    .stack = n.stack,
+                };
+                break :blk .{ .try_node = d };
+            },
+            .apply_node => |n| blk: {
+                const d = try allocator.create(ApplyNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .args = try cloneNodeSlice(allocator, n.args),
+                    .seq_node = try n.seq_node.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .apply_node = d };
+            },
+            .partial_node => |n| blk: {
+                const d = try allocator.create(PartialNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .args = try cloneNodeSlice(allocator, n.args),
+                    .stack = n.stack,
+                };
+                break :blk .{ .partial_node = d };
+            },
+            .comp_node => |n| blk: {
+                const d = try allocator.create(CompNode);
+                d.* = .{ .fns = try cloneNodeSlice(allocator, n.fns), .stack = n.stack };
+                break :blk .{ .comp_node = d };
+            },
+            .reduce_node => |n| blk: {
+                const d = try allocator.create(ReduceNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .init_node = if (n.init_node) |init| try init.deepClone(allocator) else null,
+                    .coll_node = try n.coll_node.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .reduce_node = d };
+            },
+            .map_node => |n| blk: {
+                const d = try allocator.create(MapNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .coll_node = try n.coll_node.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .map_node = d };
+            },
+            .filter_node => |n| blk: {
+                const d = try allocator.create(FilterNode);
+                d.* = .{
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .coll_node = try n.coll_node.deepClone(allocator),
+                    .stack = n.stack,
+                };
+                break :blk .{ .filter_node = d };
+            },
+            .swap_node => |n| blk: {
+                const d = try allocator.create(SwapNode);
+                d.* = .{
+                    .atom_node = try n.atom_node.deepClone(allocator),
+                    .fn_node = try n.fn_node.deepClone(allocator),
+                    .args = try cloneNodeSlice(allocator, n.args),
+                    .stack = n.stack,
+                };
+                break :blk .{ .swap_node = d };
+            },
+        };
+        return new_node;
+    }
 };
+
+/// Node ポインタのスライスを深コピー
+fn cloneNodeSlice(allocator: std.mem.Allocator, nodes: []const *Node) error{OutOfMemory}![]*Node {
+    const cloned = try allocator.alloc(*Node, nodes.len);
+    for (nodes, 0..) |n, i| {
+        cloned[i] = try n.deepClone(allocator);
+    }
+    return cloned;
+}
+
+/// LetBinding スライスを深コピー
+fn cloneLetBindings(allocator: std.mem.Allocator, bindings: []const LetBinding) error{OutOfMemory}![]LetBinding {
+    const cloned = try allocator.alloc(LetBinding, bindings.len);
+    for (bindings, 0..) |b, i| {
+        cloned[i] = .{
+            .name = b.name,
+            .init = try b.init.deepClone(allocator),
+        };
+    }
+    return cloned;
+}
 
 // === ノード作成ヘルパー ===
 
