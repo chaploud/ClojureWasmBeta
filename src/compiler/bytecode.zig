@@ -274,6 +274,12 @@ pub const FnProto = struct {
     variadic: bool,
     /// ローカル変数の数（引数含む）
     local_count: u16,
+    /// 親スコープからキャプチャするローカル変数の数
+    /// 0 の場合は従来通り frame.base > 0 でキャプチャ判定
+    capture_count: u16 = 0,
+    /// キャプチャ開始のスタックオフセット（frame.base からの相対位置）
+    /// let がネストされた式内にある場合、先行する値をスキップ
+    capture_offset: u16 = 0,
     /// 命令列
     code: []const Instruction,
     /// 定数テーブル

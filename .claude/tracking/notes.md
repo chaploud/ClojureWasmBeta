@@ -68,11 +68,14 @@
 - `swap!` は特殊形式（関数呼び出しが必要なため通常の BuiltinFn では不可）
 - `atom`, `deref`, `reset!`, `atom?` は通常の組み込み関数
 
-## VM: let-closure バグ（既知）
+## VM: let-closure（修正済み）
 
-- `(let [x 0] (fn [] x))` のような let 内で定義した fn が let-local をキャプチャできない
-- fn-within-fn パターン `((fn [x] (fn [] x)) 0)` は正常動作
-- complement/constantly マクロは fn-within-fn で回避済み
+- FnProto に `capture_count` + `capture_offset` を追加
+  - `capture_count`: 親スコープのローカル変数数（コンパイラが設定）
+  - `capture_offset`: 最初のローカルのスロット位置（スタック上の先行値をスキップ）
+- createClosure: `frame.base > 0` は従来通り全ローカルキャプチャ、
+  `frame.base == 0 && capture_count > 0` は `capture_offset` から `capture_count` 分キャプチャ
+- `(pr-str (map (let [x 10] (fn [y] (+ x y))) [1 2 3]))` 等のネスト式も正常動作
 
 ## 組み込みマクロ
 

@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 8.16 完了**
+**Phase 8.17 完了**
 
 | Phase | 内容 |
 |-------|------|
@@ -31,6 +31,7 @@
 | 8.14 | マルチメソッド (defmulti, defmethod) |
 | 8.15 | プロトコル (defprotocol, extend-type, extend-protocol) |
 | 8.16 | ユーティリティ関数・HOF・マクロ拡充 |
+| 8.17 | VM let-closure バグ修正 |
 
 実装状況の詳細: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -38,7 +39,6 @@
 
 ## 次回タスク候補
 
-- VM の let-closure バグ修正（`(let [x 0] (fn [] x))` で x がキャプチャされない）
 - LazySeq（真の遅延シーケンス）
 - 正規表現
 - letfn（相互再帰ローカル関数）

@@ -148,6 +148,11 @@ pub const Compiler = struct {
     /// ローカル変数参照
     fn emitLocalRef(self: *Compiler, ref: node_mod.LocalRefNode) CompileError!void {
         // コンパイラの locals テーブルから実際のスロット位置を取得
+        // ref.idx は Analyzer のグローバルローカルインデックス。
+        // 自スコープの locals に存在すれば slot を使用、
+        // そうでなければ idx をそのまま slot として使用
+        // （closure_bindings がフレーム先頭に配置されるため、
+        //  親スコープ変数の idx がそのまま正しい slot になる）
         const slot = if (ref.idx < self.locals.items.len)
             self.locals.items[ref.idx].slot
         else
@@ -355,11 +360,21 @@ pub const Compiler = struct {
         // FnProto を作成
         const proto = self.allocator.create(FnProto) catch return error.OutOfMemory;
         var fn_chunk = fn_compiler.takeChunk();
+        // 親スコープのローカル変数情報を記録
+        // capture_count: キャプチャするローカル数
+        // capture_offset: 最初のローカルのスロット位置（スタック上の先行値をスキップ）
+        const cap_count: u16 = @intCast(self.locals.items.len);
+        const cap_offset: u16 = if (cap_count > 0)
+            self.locals.items[0].slot
+        else
+            0;
         proto.* = .{
             .name = name,
             .arity = @intCast(arity.params.len),
             .variadic = arity.variadic,
             .local_count = @intCast(fn_compiler.locals.items.len),
+            .capture_count = cap_count,
+            .capture_offset = cap_offset,
             .code = fn_chunk.code.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
             .constants = fn_chunk.constants.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
         };
