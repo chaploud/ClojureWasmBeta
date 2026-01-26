@@ -1688,6 +1688,295 @@ pub fn isAtom(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
 }
 
 // ============================================================
+// 文字列操作（拡充）
+// ============================================================
+
+/// subs: 部分文字列
+/// (subs s start) または (subs s start end)
+pub fn subs(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const start: usize = switch (args[1]) {
+        .int => |n| if (n >= 0) @intCast(n) else return error.TypeError,
+        else => return error.TypeError,
+    };
+    if (start > s.len) return error.TypeError;
+
+    const end: usize = if (args.len == 3)
+        switch (args[2]) {
+            .int => |n| if (n >= 0) @intCast(n) else return error.TypeError,
+            else => return error.TypeError,
+        }
+    else
+        s.len;
+    if (end > s.len or end < start) return error.TypeError;
+
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = s[start..end] };
+    return Value{ .string = str_obj };
+}
+
+/// name: keyword/symbol/string の名前部分
+/// (name :foo) → "foo", (name 'bar) → "bar", (name "baz") → "baz"
+pub fn nameFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const data = switch (args[0]) {
+        .keyword => |k| k.name,
+        .symbol => |s| s.name,
+        .string => |s| s.data,
+        else => return error.TypeError,
+    };
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = data };
+    return Value{ .string = str_obj };
+}
+
+/// namespace: keyword/symbol の名前空間部分
+/// (namespace :foo/bar) → "foo", (namespace :foo) → nil
+pub fn namespaceFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const ns = switch (args[0]) {
+        .keyword => |k| k.namespace,
+        .symbol => |s| s.namespace,
+        else => return error.TypeError,
+    };
+    if (ns) |n| {
+        const str_obj = try allocator.create(value_mod.String);
+        str_obj.* = .{ .data = n };
+        return Value{ .string = str_obj };
+    }
+    return value_mod.nil;
+}
+
+/// str/join 相当: (string-join sep coll)
+/// 将来 clojure.string/join にマッピング
+pub fn stringJoin(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1 or args.len > 2) return error.ArityError;
+
+    // (string-join coll) または (string-join sep coll)
+    var sep: []const u8 = "";
+    const coll: Value = if (args.len == 2) blk: {
+        sep = switch (args[0]) {
+            .string => |s| s.data,
+            else => return error.TypeError,
+        };
+        break :blk args[1];
+    } else args[0];
+
+    const items: []const Value = switch (coll) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        else => return error.TypeError,
+    };
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(allocator);
+
+    for (items, 0..) |item, i| {
+        if (i > 0 and sep.len > 0) try buf.appendSlice(allocator, sep);
+        try valueToString(allocator, &buf, item);
+    }
+
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = try buf.toOwnedSlice(allocator) };
+    return Value{ .string = str_obj };
+}
+
+/// str/upper-case 相当
+pub fn upperCase(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const upper = try allocator.alloc(u8, s.len);
+    for (s, 0..) |c, i| {
+        upper[i] = std.ascii.toUpper(c);
+    }
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = upper };
+    return Value{ .string = str_obj };
+}
+
+/// str/lower-case 相当
+pub fn lowerCase(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const lower = try allocator.alloc(u8, s.len);
+    for (s, 0..) |c, i| {
+        lower[i] = std.ascii.toLower(c);
+    }
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = lower };
+    return Value{ .string = str_obj };
+}
+
+/// str/trim 相当
+pub fn trimStr(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const trimmed = std.mem.trim(u8, s, " \t\n\r");
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = trimmed };
+    return Value{ .string = str_obj };
+}
+
+/// str/triml 相当（左トリム）
+pub fn trimlStr(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const trimmed = std.mem.trimLeft(u8, s, " \t\n\r");
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = trimmed };
+    return Value{ .string = str_obj };
+}
+
+/// str/trimr 相当（右トリム）
+pub fn trimrStr(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const trimmed = std.mem.trimRight(u8, s, " \t\n\r");
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = trimmed };
+    return Value{ .string = str_obj };
+}
+
+/// str/blank? 相当
+pub fn isBlank(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .nil => value_mod.true_val,
+        .string => |s| if (std.mem.trim(u8, s.data, " \t\n\r").len == 0)
+            value_mod.true_val
+        else
+            value_mod.false_val,
+        else => value_mod.false_val,
+    };
+}
+
+/// str/starts-with? 相当
+pub fn startsWith(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const prefix = switch (args[1]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    return if (std.mem.startsWith(u8, s, prefix)) value_mod.true_val else value_mod.false_val;
+}
+
+/// str/ends-with? 相当
+pub fn endsWith(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const suffix = switch (args[1]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    return if (std.mem.endsWith(u8, s, suffix)) value_mod.true_val else value_mod.false_val;
+}
+
+/// str/includes? 相当
+pub fn includesStr(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const substr = switch (args[1]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    return if (std.mem.indexOf(u8, s, substr) != null) value_mod.true_val else value_mod.false_val;
+}
+
+/// str/replace 相当: (string-replace s match replacement)
+pub fn stringReplace(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 3) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const match = switch (args[1]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const replacement = switch (args[2]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+
+    if (match.len == 0) {
+        // 空文字列マッチはそのまま返す
+        const str_obj = try allocator.create(value_mod.String);
+        str_obj.* = .{ .data = s };
+        return Value{ .string = str_obj };
+    }
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < s.len) {
+        if (i + match.len <= s.len and std.mem.eql(u8, s[i..][0..match.len], match)) {
+            try buf.appendSlice(allocator, replacement);
+            i += match.len;
+        } else {
+            try buf.append(allocator, s[i]);
+            i += 1;
+        }
+    }
+
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = try buf.toOwnedSlice(allocator) };
+    return Value{ .string = str_obj };
+}
+
+/// char-at: 文字列のインデックス位置の文字を返す
+/// (char-at s idx) → 文字列
+pub fn charAt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const idx: usize = switch (args[1]) {
+        .int => |n| if (n >= 0) @intCast(n) else return error.TypeError,
+        else => return error.TypeError,
+    };
+    if (idx >= s.len) return error.TypeError;
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = s[idx .. idx + 1] };
+    return Value{ .string = str_obj };
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -1785,6 +2074,22 @@ const builtins = [_]BuiltinDef{
     .{ .name = "deref", .func = derefFn },
     .{ .name = "reset!", .func = resetBang },
     .{ .name = "atom?", .func = isAtom },
+    // 文字列操作（拡充）
+    .{ .name = "subs", .func = subs },
+    .{ .name = "name", .func = nameFn },
+    .{ .name = "namespace", .func = namespaceFn },
+    .{ .name = "string-join", .func = stringJoin },
+    .{ .name = "upper-case", .func = upperCase },
+    .{ .name = "lower-case", .func = lowerCase },
+    .{ .name = "trim", .func = trimStr },
+    .{ .name = "triml", .func = trimlStr },
+    .{ .name = "trimr", .func = trimrStr },
+    .{ .name = "blank?", .func = isBlank },
+    .{ .name = "starts-with?", .func = startsWith },
+    .{ .name = "ends-with?", .func = endsWith },
+    .{ .name = "includes?", .func = includesStr },
+    .{ .name = "string-replace", .func = stringReplace },
+    .{ .name = "char-at", .func = charAt },
 };
 
 /// clojure.core の組み込み関数を Env に登録

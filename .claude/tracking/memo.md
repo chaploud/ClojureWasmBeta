@@ -7,7 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.7 Atom 状態管理 完了**
+**Phase 8.8 文字列操作拡充 完了**
 
 ### 完了した機能
 
@@ -25,6 +25,7 @@
 | 8.5 | 制御フローマクロ・スレッディングマクロ・ユーティリティ関数 |
 | 8.6 | try/catch/finally 例外処理 + ex-info/ex-message/ex-data |
 | 8.7 | Atom 状態管理 (atom, deref/@, reset!, swap!, atom?) |
+| 8.8 | 文字列操作拡充 (subs, name, namespace, join, trim 等) |
 
 ### 組み込み関数
 
@@ -40,7 +41,9 @@
 シーケンス: take, drop, range, concat, into, reverse, seq, vec,
            repeat, distinct, flatten
 数値: max, min, abs, mod
-文字列: str
+文字列: str, subs, name, namespace, string-join, char-at
+       upper-case, lower-case, trim, triml, trimr
+       blank?, starts-with?, ends-with?, includes?, string-replace
 出力: println, pr-str
 例外: ex-info, ex-message, ex-data
 Atom: atom, deref, reset!, swap!
@@ -71,14 +74,15 @@ Atom: swap!
 
 ## 次回タスク
 
-### Phase 8.8 以降の候補
+### Phase 8.9 以降の候補
 
 候補:
 - プロトコル (defprotocol, extend-type)
 - LazySeq（真の遅延シーケンス）
-- 文字列操作拡充 (subs, str/join, etc.)
 - 正規表現
 - マルチメソッド (defmulti, defmethod)
+- defn マクロ（defn name [params] body → def + fn）
+- letfn（相互再帰ローカル関数）
 
 ---
 
@@ -86,7 +90,7 @@ Atom: swap!
 
 | Phase | 内容 | 依存 |
 |-------|------|------|
-| 8.8+ | 機能拡充 (プロトコル、文字列等) | - |
+| 8.9+ | 機能拡充 (プロトコル、defn 等) | - |
 | 9 | LazySeq（真の遅延シーケンス）| 無限シーケンスに必要 |
 | 10 | GC | LazySeq導入後に必須 |
 | 11 | Wasm連携 | 言語機能充実後 |
