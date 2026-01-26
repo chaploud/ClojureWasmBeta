@@ -35,7 +35,7 @@ vars:
       impl_type: none
     catch:
       type: special-form
-      status: todo
+      status: skip
       note: 例外捕捉（try内）
       impl_type: none
     def:
@@ -56,7 +56,7 @@ vars:
       layer: host
     finally:
       type: special-form
-      status: todo
+      status: skip
       note: 後処理（try内）
       impl_type: none
     fn*:
@@ -154,11 +154,11 @@ vars:
       layer: pure
     "..":
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     amap:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     and:
       type: macro
@@ -167,7 +167,7 @@ vars:
       layer: pure
     areduce:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     as->:
       type: macro
@@ -224,7 +224,7 @@ vars:
       impl_type: none
     definterface:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     defmacro:
       type: macro
@@ -282,7 +282,7 @@ vars:
       layer: pure
     dosync:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     dotimes:
       type: macro
@@ -314,15 +314,15 @@ vars:
       impl_type: macro
     future:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     gen-class:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     gen-interface:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     if-let:
       type: macro
@@ -340,11 +340,11 @@ vars:
       impl_type: macro
     import:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     io!:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     lazy-cat:
       type: macro
@@ -365,7 +365,7 @@ vars:
       impl_type: none
     locking:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     loop:
       type: macro
@@ -374,7 +374,7 @@ vars:
       layer: host
     memfn:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     ns:
       type: macro
@@ -387,15 +387,15 @@ vars:
       layer: pure
     proxy:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     proxy-super:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     pvalues:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     refer-clojure:
       type: macro
@@ -403,7 +403,7 @@ vars:
       impl_type: none
     reify:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     some->:
       type: macro
@@ -417,7 +417,7 @@ vars:
       layer: pure
     sync:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     time:
       type: macro
@@ -480,7 +480,7 @@ vars:
       impl_type: none
     with-precision:
       type: macro
-      status: todo
+      status: skip
       impl_type: none
     with-redefs:
       type: macro
@@ -515,31 +515,31 @@ vars:
       impl_type: none
     "->ArrayChunk":
       type: function
-      status: todo
+      status: skip
       impl_type: none
     "->Eduction":
       type: function
-      status: todo
+      status: skip
       impl_type: none
     "->Vec":
       type: function
-      status: todo
+      status: skip
       impl_type: none
     "->VecNode":
       type: function
-      status: todo
+      status: skip
       impl_type: none
     "->VecSeq":
       type: function
-      status: todo
+      status: skip
       impl_type: none
     "-cache-protocol-fn":
       type: function
-      status: todo
+      status: skip
       impl_type: none
     "-reset-methods":
       type: function
-      status: todo
+      status: skip
       impl_type: none
     "/":
       type: function
@@ -585,7 +585,7 @@ vars:
       impl_type: none
     StackTraceElement->vec:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     Throwable->map:
       type: function
@@ -602,11 +602,11 @@ vars:
       impl_type: none
     aclone:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     add-classpath:
       type: function
-      status: todo
+      status: skip
       deprecated: true
       impl_type: none
     add-tap:
@@ -619,24 +619,24 @@ vars:
       impl_type: none
     agent:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     agent-error:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     agent-errors:
       type: function
-      status: todo
+      status: skip
       deprecated: true
       impl_type: none
     aget:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     alength:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     alias:
       type: function
@@ -648,7 +648,7 @@ vars:
       impl_type: none
     alter:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     alter-meta!:
       type: function
@@ -677,39 +677,39 @@ vars:
       impl_type: none
     aset:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     aset-boolean:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     aset-byte:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     aset-char:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     aset-double:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     aset-float:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     aset-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     aset-long:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     aset-short:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     assoc:
       type: function
@@ -736,35 +736,35 @@ vars:
       layer: host
     await:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     await-for:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     await1:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     bases:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     bean:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     bigdec:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     bigint:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     biginteger:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     bit-and:
       type: function
@@ -816,7 +816,7 @@ vars:
       impl_type: builtin
     boolean-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     boolean?:
       type: function
@@ -824,7 +824,7 @@ vars:
       impl_type: none
     booleans:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     bound-fn*:
       type: function
@@ -848,11 +848,11 @@ vars:
       impl_type: none
     byte-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     bytes:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     bytes?:
       type: function
@@ -860,7 +860,7 @@ vars:
       impl_type: none
     cast:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     cat:
       type: function
@@ -872,7 +872,7 @@ vars:
       impl_type: none
     char-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     char?:
       type: function
@@ -880,7 +880,7 @@ vars:
       impl_type: none
     chars:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     chunk:
       type: function
@@ -924,7 +924,7 @@ vars:
       impl_type: none
     clear-agent-errors:
       type: function
-      status: todo
+      status: skip
       deprecated: true
       impl_type: none
     clojure-version:
@@ -938,7 +938,7 @@ vars:
       layer: host
     commute:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     comp:
       type: function
@@ -996,7 +996,7 @@ vars:
       layer: pure
     construct-proxy:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     contains?:
       type: function
@@ -1052,7 +1052,7 @@ vars:
       impl_type: none
     denominator:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     deref:
       type: function
@@ -1111,7 +1111,7 @@ vars:
       impl_type: builtin
     double-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     double?:
       type: function
@@ -1119,7 +1119,7 @@ vars:
       impl_type: none
     doubles:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     drop:
       type: function
@@ -1150,7 +1150,7 @@ vars:
       layer: host
     ensure:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     ensure-reduced:
       type: function
@@ -1158,15 +1158,15 @@ vars:
       impl_type: none
     enumeration-seq:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     error-handler:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     error-mode:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     eval:
       type: function
@@ -1207,15 +1207,15 @@ vars:
       layer: host
     extend:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     extenders:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     extends?:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     false?:
       type: function
@@ -1253,11 +1253,11 @@ vars:
       impl_type: none
     find-protocol-impl:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     find-protocol-method:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     find-var:
       type: function
@@ -1279,7 +1279,7 @@ vars:
       impl_type: none
     float-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     float?:
       type: function
@@ -1288,7 +1288,7 @@ vars:
       layer: host
     floats:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     flush:
       type: function
@@ -1321,23 +1321,23 @@ vars:
       impl_type: builtin
     future-call:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     future-cancel:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     future-cancelled?:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     future-done?:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     future?:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     gensym:
       type: function
@@ -1359,7 +1359,7 @@ vars:
       impl_type: none
     get-proxy-class:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     get-thread-bindings:
       type: function
@@ -1438,11 +1438,11 @@ vars:
       impl_type: none
     init-proxy:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     inst-ms:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     inst-ms*:
       type: function
@@ -1462,7 +1462,7 @@ vars:
       impl_type: builtin
     int-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     int?:
       type: function
@@ -1492,11 +1492,11 @@ vars:
       layer: host
     into-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     ints:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     isa?:
       type: function
@@ -1513,7 +1513,7 @@ vars:
       impl_type: none
     iterator-seq:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     juxt:
       type: function
@@ -1589,11 +1589,11 @@ vars:
       impl_type: none
     long-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     longs:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     macroexpand:
       type: function
@@ -1605,7 +1605,7 @@ vars:
       impl_type: none
     make-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     make-hierarchy:
       type: function
@@ -1668,7 +1668,7 @@ vars:
       impl_type: builtin
     method-sig:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     methods:
       type: function
@@ -1694,7 +1694,7 @@ vars:
       layer: host
     munge:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     name:
       type: function
@@ -1708,7 +1708,7 @@ vars:
       layer: host
     namespace-munge:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     nat-int?:
       type: function
@@ -1833,11 +1833,11 @@ vars:
       layer: host
     numerator:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     object-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     odd?:
       type: function
@@ -1891,7 +1891,7 @@ vars:
       impl_type: none
     pcalls:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     peek:
       type: function
@@ -1903,7 +1903,7 @@ vars:
       impl_type: none
     pmap:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     pop:
       type: function
@@ -1987,15 +1987,15 @@ vars:
       impl_type: none
     proxy-call-with-super:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     proxy-mappings:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     proxy-name:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     push-thread-bindings:
       type: function
@@ -2052,7 +2052,7 @@ vars:
       impl_type: none
     rationalize:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     re-find:
       type: function
@@ -2133,23 +2133,23 @@ vars:
       impl_type: none
     ref:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     ref-history-count:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     ref-max-history:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     ref-min-history:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     ref-set:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     refer:
       type: function
@@ -2157,7 +2157,7 @@ vars:
       impl_type: none
     release-pending-sends:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     rem:
       type: function
@@ -2237,11 +2237,11 @@ vars:
       layer: host
     restart-agent:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     resultset-seq:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     reverse:
       type: function
@@ -2280,15 +2280,15 @@ vars:
       layer: pure
     send:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     send-off:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     send-via:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     seq:
       type: function
@@ -2309,7 +2309,7 @@ vars:
       impl_type: builtin
     seque:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     sequence:
       type: function
@@ -2325,19 +2325,19 @@ vars:
       impl_type: builtin
     set-agent-send-executor!:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     set-agent-send-off-executor!:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     set-error-handler!:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     set-error-mode!:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     set-validator!:
       type: function
@@ -2354,11 +2354,11 @@ vars:
       impl_type: none
     short-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     shorts:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     shuffle:
       type: function
@@ -2366,7 +2366,7 @@ vars:
       impl_type: builtin
     shutdown-agents:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     simple-ident?:
       type: function
@@ -2453,19 +2453,19 @@ vars:
       layer: host
     stream-into!:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     stream-reduce!:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     stream-seq!:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     stream-transduce!:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     string?:
       type: function
@@ -2495,7 +2495,7 @@ vars:
       impl_type: builtin
     supers:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     swap!:
       type: function
@@ -2559,11 +2559,11 @@ vars:
       impl_type: none
     to-array:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     to-array-2d:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     trampoline:
       type: function
@@ -2592,87 +2592,87 @@ vars:
       layer: host
     unchecked-add:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-add-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-byte:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-char:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-dec:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-dec-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-divide-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-double:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-float:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-inc:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-inc-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-long:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-multiply:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-multiply-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-negate:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-negate-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-remainder-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-short:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-subtract:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     unchecked-subtract-int:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     underive:
       type: function
@@ -2701,7 +2701,7 @@ vars:
       impl_type: none
     update-proxy:
       type: function
-      status: todo
+      status: skip
       impl_type: none
     update-vals:
       type: function
@@ -2808,12 +2808,12 @@ vars:
       impl_type: none
     "*2":
       type: dynamic-var
-      status: todo
+      status: skip
       dynamic: true
       impl_type: none
     "*3":
       type: dynamic-var
-      status: todo
+      status: skip
       dynamic: true
       impl_type: none
     "*clojure-version*":
@@ -2858,7 +2858,7 @@ vars:
       impl_type: none
     "*verbose-defrecords*":
       type: dynamic-var
-      status: todo
+      status: skip
       dynamic: true
       impl_type: none
     "*agent*":
@@ -2867,7 +2867,7 @@ vars:
       impl_type: none
     "*allow-unresolved-vars*":
       type: var
-      status: todo
+      status: skip
       impl_type: none
     "*assert*":
       type: var
@@ -2875,7 +2875,7 @@ vars:
       impl_type: none
     "*command-line-args*":
       type: var
-      status: todo
+      status: skip
       impl_type: none
     "*compile-files*":
       type: var
@@ -2903,7 +2903,7 @@ vars:
       impl_type: none
     "*fn-loader*":
       type: var
-      status: todo
+      status: skip
       impl_type: none
     "*in*":
       type: var
@@ -2911,7 +2911,7 @@ vars:
       impl_type: none
     "*math-context*":
       type: var
-      status: todo
+      status: skip
       impl_type: none
     "*ns*":
       type: var
@@ -2943,7 +2943,7 @@ vars:
       impl_type: none
     "*source-path*":
       type: var
-      status: todo
+      status: skip
       impl_type: none
     "*suppress-read*":
       type: var
@@ -2951,23 +2951,23 @@ vars:
       impl_type: none
     "*unchecked-math*":
       type: var
-      status: todo
+      status: skip
       impl_type: none
     "*use-context-classloader*":
       type: var
-      status: todo
+      status: skip
       impl_type: none
     "*warn-on-reflection*":
       type: var
-      status: todo
+      status: skip
       impl_type: none
     EMPTY-NODE:
       type: var
-      status: todo
+      status: skip
       impl_type: none
     Inst:
       type: var
-      status: todo
+      status: skip
       impl_type: none
     char-escape-string:
       type: var
@@ -2991,7 +2991,7 @@ vars:
       impl_type: none
     primitives-classnames:
       type: var
-      status: todo
+      status: skip
       impl_type: none
     print-dup:
       type: var
@@ -3003,11 +3003,11 @@ vars:
       impl_type: none
     unquote:
       type: var
-      status: todo
+      status: skip
       impl_type: none
     unquote-splicing:
       type: var
-      status: todo
+      status: skip
       impl_type: none
   clojure_repl:
     dir:
