@@ -11,13 +11,15 @@
 - Phase 8.2.2: apply ✓
 - Phase 8.2.3: 複数アリティ fn ✓
 - Phase 8.2.4: partial ✓
-  - value.zig: PartialFn 型追加
-  - analyzer/node.zig: PartialNode 追加
-  - analyzer/analyze.zig: analyzePartial 実装
-  - evaluator.zig: runPartial + callWithArgs でネスト partial 対応
-  - bytecode.zig: partial オペコード (0x6A) 追加
-  - emit.zig: emitPartial 実装
-  - vm.zig: createPartialFn + callValue で partial_fn 対応
+- Phase 8.2.5: comp ✓
+  - value.zig: CompFn 型追加
+  - analyzer/node.zig: CompNode 追加
+  - analyzer/analyze.zig: analyzeComp 実装
+  - evaluator.zig: runComp + callWithArgs で comp_fn 対応
+  - bytecode.zig: comp オペコード (0x6B) 追加
+  - emit.zig: emitComp 実装
+  - vm.zig: createCompFn + callValue で comp_fn 対応
+  - **修正**: createClosure で frame.base > 0 のみキャプチャ（トップレベルクロージャバグ修正）
   - 両バックエンドで動作確認
 
 ---
@@ -31,7 +33,8 @@
 **候補機能**:
 - コレクションリテラル (vec_new, map_new 等)
 - tail_call 最適化
-- comp
+- マップ操作 (assoc, dissoc, get, contains?, keys, vals)
+- reduce
 
 ---
 

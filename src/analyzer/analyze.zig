@@ -151,6 +151,8 @@ pub const Analyzer = struct {
                 return self.analyzeApply(items);
             } else if (std.mem.eql(u8, sym_name, "partial")) {
                 return self.analyzePartial(items);
+            } else if (std.mem.eql(u8, sym_name, "comp")) {
+                return self.analyzeComp(items);
             }
         }
 
@@ -626,6 +628,28 @@ pub const Analyzer = struct {
         return node;
     }
 
+    fn analyzeComp(self: *Analyzer, items: []const Form) err.Error!*Node {
+        // (comp) => identity
+        // (comp f) => f
+        // (comp f g h ...) => 関数合成
+
+        // 関数を解析
+        var fns = self.allocator.alloc(*Node, items.len - 1) catch return error.OutOfMemory;
+        for (items[1..], 0..) |item, i| {
+            fns[i] = try self.analyze(item);
+        }
+
+        const comp_data = self.allocator.create(node_mod.CompNode) catch return error.OutOfMemory;
+        comp_data.* = .{
+            .fns = fns,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .comp_node = comp_data };
+        return node;
+    }
+
     fn analyzeCall(self: *Analyzer, items: []const Form) err.Error!*Node {
         // (fn arg1 arg2 ...)
         const fn_node = try self.analyze(items[0]);
@@ -878,7 +902,7 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .vector = forms };
             },
-            .char_val, .map, .set, .fn_val, .partial_fn, .fn_proto, .var_val => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .fn_proto, .var_val => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

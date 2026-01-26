@@ -289,6 +289,11 @@ pub const VM = struct {
                     const arg_count = instr.operand;
                     try self.createPartialFn(@intCast(arg_count));
                 },
+                .comp => {
+                    // comp 関数を作成
+                    const fn_count = instr.operand;
+                    try self.createCompFn(@intCast(fn_count));
+                },
 
                 // ═══════════════════════════════════════════════════════
                 // [H] loop/recur
@@ -504,6 +509,47 @@ pub const VM = struct {
                 // 元の関数を呼び出し（再帰的にpartial_fnもサポート）
                 try self.callValue(total_args);
             },
+            .comp_fn => |c| {
+                // comp_fn: 右から左へ関数を適用
+                // ((comp f g h) x) => (f (g (h x)))
+                if (c.fns.len == 0) {
+                    // (comp) は identity、最初の引数を返す
+                    self.sp = fn_idx;
+                    if (arg_count > 0) {
+                        const args = self.stack[fn_idx + 1 .. fn_idx + 1 + arg_count];
+                        try self.push(args[0]);
+                    } else {
+                        try self.push(value_mod.nil);
+                    }
+                    return;
+                }
+
+                // 引数を取り出す
+                const args = self.stack[fn_idx + 1 .. fn_idx + 1 + arg_count];
+                const args_copy = self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
+                defer self.allocator.free(args_copy);
+                @memcpy(args_copy, args);
+
+                // スタックを巻き戻し
+                self.sp = fn_idx;
+
+                // 最後の関数に引数を適用
+                try self.push(c.fns[c.fns.len - 1]);
+                for (args_copy) |arg| {
+                    try self.push(arg);
+                }
+                try self.callValue(arg_count);
+
+                // 残りの関数を右から左へ適用（1引数で呼び出し）
+                var i = c.fns.len - 1;
+                while (i > 0) {
+                    i -= 1;
+                    const result = self.pop();
+                    try self.push(c.fns[i]);
+                    try self.push(result);
+                    try self.callValue(1);
+                }
+            },
             else => return error.TypeError,
         }
     }
@@ -531,14 +577,19 @@ pub const VM = struct {
         };
 
         // 現在のフレームのローカル変数をキャプチャ
+        // 注: frame.base > 0 の場合のみキャプチャ（ネストされたスコープ内）
+        // frame.base == 0 はトップレベルなのでキャプチャ不要
         const frame = &self.frames[self.frame_count - 1];
-        const locals_count = self.sp - frame.base;
-        const closure_bindings: ?[]const Value = if (locals_count > 0) blk: {
-            const bindings = self.allocator.alloc(Value, locals_count) catch return error.OutOfMemory;
-            for (0..locals_count) |i| {
-                bindings[i] = self.stack[frame.base + i];
+        const closure_bindings: ?[]const Value = if (frame.base > 0) blk: {
+            const locals_count = self.sp - frame.base;
+            if (locals_count > 0) {
+                const bindings = self.allocator.alloc(Value, locals_count) catch return error.OutOfMemory;
+                for (0..locals_count) |i| {
+                    bindings[i] = self.stack[frame.base + i];
+                }
+                break :blk bindings;
             }
-            break :blk bindings;
+            break :blk null;
         } else null;
 
         fn_obj.* = .{
@@ -634,6 +685,38 @@ pub const VM = struct {
         };
 
         try self.push(Value{ .partial_fn = partial });
+    }
+
+    /// comp 関数を作成
+    fn createCompFn(self: *VM, fn_count: usize) VMError!void {
+        // スタック: [f1, f2, f3, ...] (最後の関数がトップ)
+        // 0個の場合は identity を返す（nil として代用）
+        if (fn_count == 0) {
+            try self.push(value_mod.nil);
+            return;
+        }
+
+        // 1個の場合はその関数をそのまま返す
+        if (fn_count == 1) {
+            // スタックにすでに関数があるので何もしない
+            return;
+        }
+
+        // 関数を取り出す（逆順で）
+        var fns = self.allocator.alloc(Value, fn_count) catch return error.OutOfMemory;
+        var i = fn_count;
+        while (i > 0) {
+            i -= 1;
+            fns[i] = self.pop();
+        }
+
+        // CompFn を作成
+        const comp = self.allocator.create(value_mod.CompFn) catch return error.OutOfMemory;
+        comp.* = .{
+            .fns = fns,
+        };
+
+        try self.push(Value{ .comp_fn = comp });
     }
 
     /// def を実行

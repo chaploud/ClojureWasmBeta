@@ -49,6 +49,7 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
         .throw_node => return error.TypeError, // TODO: 例外処理
         .apply_node => |n| runApply(n, ctx),
         .partial_node => |n| runPartial(n, ctx),
+        .comp_node => |n| runComp(n, ctx),
     };
 }
 
@@ -225,6 +226,29 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
             // 元の関数を呼び出し（再帰的にpartial_fnもサポート）
             break :blk callWithArgs(p.fn_val, all_args, ctx);
         },
+        .comp_fn => |c| blk: {
+            // comp_fn: 右から左へ関数を適用
+            // ((comp f g h) x) => (f (g (h x)))
+            if (c.fns.len == 0) {
+                // (comp) は identity、最初の引数を返す
+                if (args.len > 0) break :blk args[0];
+                break :blk value_mod.nil;
+            }
+
+            // 最後の関数に引数を適用
+            var result = try callWithArgs(c.fns[c.fns.len - 1], args, ctx);
+
+            // 残りの関数を右から左へ適用（1引数で呼び出し）
+            var i = c.fns.len - 1;
+            while (i > 0) {
+                i -= 1;
+                const single_arg = ctx.allocator.alloc(Value, 1) catch return error.OutOfMemory;
+                single_arg[0] = result;
+                result = try callWithArgs(c.fns[i], single_arg, ctx);
+            }
+
+            break :blk result;
+        },
         else => error.TypeError,
     };
 }
@@ -301,6 +325,40 @@ fn runPartial(node: *const node_mod.PartialNode, ctx: *Context) EvalError!Value 
     };
 
     return Value{ .partial_fn = partial_fn };
+}
+
+/// comp 評価
+fn runComp(node: *const node_mod.CompNode, ctx: *Context) EvalError!Value {
+    // (comp) => identity を返す
+    // (comp f) => f を返す
+    // (comp f g h ...) => CompFn を作成
+
+    // 0引数の場合は identity を返す
+    if (node.fns.len == 0) {
+        // identity 関数をビルトインから取得（なければエラー）
+        // 簡易実装: identity 相当の fn を作成する代わりに nil を返す
+        // TODO: 実際の identity 実装
+        return value_mod.nil;
+    }
+
+    // 1引数の場合はその関数を返す
+    if (node.fns.len == 1) {
+        return try run(node.fns[0], ctx);
+    }
+
+    // 関数を評価
+    var fns = ctx.allocator.alloc(Value, node.fns.len) catch return error.OutOfMemory;
+    for (node.fns, 0..) |fn_node, i| {
+        fns[i] = try run(fn_node, ctx);
+    }
+
+    // CompFn を作成
+    const comp_fn = ctx.allocator.create(value_mod.CompFn) catch return error.OutOfMemory;
+    comp_fn.* = .{
+        .fns = fns,
+    };
+
+    return Value{ .comp_fn = comp_fn };
 }
 
 // === テスト ===

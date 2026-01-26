@@ -734,6 +734,7 @@ fn printValue(writer: anytype, val: Value) !void {
             try writer.writeByte('>');
         },
         .partial_fn => try writer.writeAll("#<partial-fn>"),
+        .comp_fn => try writer.writeAll("#<comp-fn>"),
         .fn_proto => try writer.writeAll("#<fn-proto>"),
         .var_val => try writer.writeAll("#<var>"),
     }

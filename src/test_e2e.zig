@@ -572,3 +572,40 @@ test "compare: partial" {
     // apply と partial の組み合わせ
     try expectIntBoth(allocator, &env, "(apply (partial + 10) [1 2 3])", 16);
 }
+
+test "compare: comp" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 基本的な comp（右から左に適用）
+    // (comp (partial + 1) (partial * 2)) = (fn [x] (+ 1 (* 2 x)))
+    // 5 -> (* 2 5) = 10 -> (+ 1 10) = 11
+    try expectIntBoth(allocator, &env, "((comp (partial + 1) (partial * 2)) 5)", 11);
+
+    // 単一関数の comp
+    try expectIntBoth(allocator, &env, "((comp (partial + 1)) 5)", 6);
+
+    // 3つの関数合成
+    // (comp f g h) = (fn [x] (f (g (h x))))
+    // 2 -> (+ 3 2) = 5 -> (* 2 5) = 10 -> (+ 1 10) = 11
+    try expectIntBoth(allocator, &env, "((comp (partial + 1) (partial * 2) (partial + 3)) 2)", 11);
+
+    // let で束縛
+    try expectIntBoth(allocator, &env,
+        \\(let [inc-then-double (comp (partial * 2) (partial + 1))]
+        \\  (inc-then-double 5))
+    , 12); // 5 -> (+ 1 5) = 6 -> (* 2 6) = 12
+
+    // ユーザー定義関数との組み合わせ
+    try expectIntBoth(allocator, &env, "((comp (partial + 1) (fn [x] (* x x))) 3)", 10); // 3 -> 9 -> 10
+
+    // comp と partial の組み合わせ
+    try expectIntBoth(allocator, &env, "((comp + (fn [x y] (+ x y))) 5 10)", 15);
+
+    // 複数引数を受け取る最右の関数
+    try expectIntBoth(allocator, &env, "((comp (partial * 2) +) 1 2 3)", 12); // (+ 1 2 3) = 6 -> (* 2 6) = 12
+}

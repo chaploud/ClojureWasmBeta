@@ -136,6 +136,13 @@ pub const PartialNode = struct {
     stack: SourceInfo,
 };
 
+/// comp ノード
+/// (comp f g h ...)
+pub const CompNode = struct {
+    fns: []const *Node, // 合成する関数（左から右の順、実行は右から左）
+    stack: SourceInfo,
+};
+
 // === Node 本体 ===
 
 /// 実行可能ノード
@@ -170,6 +177,7 @@ pub const Node = union(enum) {
     // 高階関数
     apply_node: *ApplyNode,
     partial_node: *PartialNode,
+    comp_node: *CompNode,
 
     /// スタック情報を取得
     pub fn stack(self: Node) SourceInfo {
@@ -189,6 +197,7 @@ pub const Node = union(enum) {
             .throw_node => |n| n.stack,
             .apply_node => |n| n.stack,
             .partial_node => |n| n.stack,
+            .comp_node => |n| n.stack,
         };
     }
 
@@ -210,6 +219,7 @@ pub const Node = union(enum) {
             .throw_node => "throw",
             .apply_node => "apply",
             .partial_node => "partial",
+            .comp_node => "comp",
         };
     }
 };
