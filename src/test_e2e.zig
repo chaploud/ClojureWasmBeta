@@ -97,6 +97,15 @@ fn expectBoolBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8, e
     try std.testing.expectEqual(Value{ .bool_val = expected }, result);
 }
 
+/// 両バックエンドで文字列を期待
+fn expectStrBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8, expected: []const u8) !void {
+    const result = try evalBothAndCompare(allocator, env, source);
+    switch (result) {
+        .string => |s| try std.testing.expectEqualStrings(expected, s.data),
+        else => return error.UnexpectedValue,
+    }
+}
+
 /// 両バックエンドで nil を期待
 fn expectNilBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8) !void {
     const result = try evalBothAndCompare(allocator, env, source);
@@ -739,4 +748,54 @@ test "compare: maps" {
     // contains?
     try expectBoolBoth(allocator, &env, "(contains? {:a 1 :b 2} :a)", true);
     try expectBoolBoth(allocator, &env, "(contains? {:a 1 :b 2} :c)", false);
+}
+
+test "compare: map destructuring" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // :keys による分配
+    try expectStrBoth(allocator, &env,
+        \\(let [{:keys [name age]} {:name "Alice" :age 30}] name)
+    , "Alice");
+    try expectIntBoth(allocator, &env,
+        \\(let [{:keys [name age]} {:name "Alice" :age 30}] age)
+    , 30);
+
+    // 直接キーバインディング {x :x y :y}
+    try expectIntBoth(allocator, &env,
+        \\(let [{x :x y :y} {:x 1 :y 2}] (+ x y))
+    , 3);
+
+    // :or デフォルト値
+    try expectIntBoth(allocator, &env,
+        \\(let [{:keys [a] :or {a 0}} {}] a)
+    , 0);
+    try expectIntBoth(allocator, &env,
+        \\(let [{:keys [a b] :or {a 10 b 20}} {:a 1}] (+ a b))
+    , 21);
+
+    // :as エイリアス
+    try expectIntBoth(allocator, &env,
+        \\(let [{:keys [a b] :as m} {:a 1 :b 2 :c 3}] (+ a b (count m)))
+    , 6);
+
+    // :strs による文字列キー分配
+    try expectStrBoth(allocator, &env,
+        \\(let [{:strs [name]} {"name" "Bob"}] name)
+    , "Bob");
+
+    // fn 引数でのマップ分配
+    try expectIntBoth(allocator, &env,
+        \\((fn [{:keys [x y]}] (+ x y)) {:x 3 :y 4})
+    , 7);
+
+    // fn 引数: 通常パラメータとマップ分配の混合
+    try expectIntBoth(allocator, &env,
+        \\((fn [z {:keys [x y]}] (+ z x y)) 10 {:x 3 :y 4})
+    , 17);
 }

@@ -369,8 +369,12 @@ pub const Analyzer = struct {
                 // シーケンシャル分配: [a b c] = coll
                 try self.expandSequentialPattern(elems, init_node, bindings);
             },
+            .map => |entries| {
+                // マップ分配: {:keys [a b], x :x, :or {a 0}, :as all}
+                try self.expandMapPattern(entries, init_node, bindings);
+            },
             else => {
-                return err.parseError(.invalid_binding, "binding pattern must be a symbol or vector", .{});
+                return err.parseError(.invalid_binding, "binding pattern must be a symbol, vector, or map", .{});
             },
         }
     }
@@ -445,6 +449,188 @@ pub const Analyzer = struct {
             try self.expandBindingPattern(elem, nth_init, bindings);
             pos += 1;
         }
+    }
+
+    /// マップ分配を展開
+    /// {:keys [a b]} -> a = (get coll :a), b = (get coll :b)
+    /// {x :x, y :y} -> x = (get coll :x), y = (get coll :y)
+    /// {:keys [a] :or {a 0}} -> a = (get coll :a) ?? 0
+    /// {:keys [a] :as all} -> a = (get coll :a), all = coll
+    fn expandMapPattern(
+        self: *Analyzer,
+        entries: []const Form,
+        init_node: *Node,
+        bindings: *std.ArrayListUnmanaged(node_mod.LetBinding),
+    ) err.Error!void {
+        // まず全体を一時変数にバインド
+        const temp_name = "__destructure_map__";
+        const temp_idx: u32 = @intCast(self.locals.items.len);
+        self.locals.append(self.allocator, .{ .name = temp_name, .idx = temp_idx }) catch return error.OutOfMemory;
+        bindings.append(self.allocator, .{ .name = temp_name, .init = init_node }) catch return error.OutOfMemory;
+
+        const temp_ref = try self.makeLocalRef(temp_name, temp_idx);
+
+        // :or のデフォルト値マップを探す
+        var defaults: ?[]const Form = null;
+
+        // まず :or を探す
+        var i: usize = 0;
+        while (i < entries.len) : (i += 2) {
+            if (i + 1 >= entries.len) break;
+            const key = entries[i];
+            const val = entries[i + 1];
+
+            if (key == .keyword and std.mem.eql(u8, key.keyword.name, "or")) {
+                if (val == .map) {
+                    defaults = val.map;
+                }
+            }
+        }
+
+        // 各エントリを処理
+        i = 0;
+        while (i < entries.len) : (i += 2) {
+            if (i + 1 >= entries.len) break;
+            const key = entries[i];
+            const val = entries[i + 1];
+
+            if (key == .keyword) {
+                const kw_name = key.keyword.name;
+
+                if (std.mem.eql(u8, kw_name, "keys")) {
+                    // :keys [a b c] -> 各シンボルを同名キーワードで get
+                    if (val != .vector) {
+                        return err.parseError(.invalid_binding, ":keys must be followed by a vector", .{});
+                    }
+                    for (val.vector) |sym_form| {
+                        if (sym_form != .symbol) {
+                            return err.parseError(.invalid_binding, ":keys elements must be symbols", .{});
+                        }
+                        const sym_name = sym_form.symbol.name;
+                        const get_init = try self.makeGet(temp_ref, sym_name, defaults);
+                        const bind_idx: u32 = @intCast(self.locals.items.len);
+                        self.locals.append(self.allocator, .{ .name = sym_name, .idx = bind_idx }) catch return error.OutOfMemory;
+                        bindings.append(self.allocator, .{ .name = sym_name, .init = get_init }) catch return error.OutOfMemory;
+                    }
+                } else if (std.mem.eql(u8, kw_name, "strs")) {
+                    // :strs [a b] -> 各シンボルを同名文字列キーで get
+                    if (val != .vector) {
+                        return err.parseError(.invalid_binding, ":strs must be followed by a vector", .{});
+                    }
+                    for (val.vector) |sym_form| {
+                        if (sym_form != .symbol) {
+                            return err.parseError(.invalid_binding, ":strs elements must be symbols", .{});
+                        }
+                        const sym_name = sym_form.symbol.name;
+                        const get_init = try self.makeGetStr(temp_ref, sym_name, defaults);
+                        const bind_idx: u32 = @intCast(self.locals.items.len);
+                        self.locals.append(self.allocator, .{ .name = sym_name, .idx = bind_idx }) catch return error.OutOfMemory;
+                        bindings.append(self.allocator, .{ .name = sym_name, .init = get_init }) catch return error.OutOfMemory;
+                    }
+                } else if (std.mem.eql(u8, kw_name, "as")) {
+                    // :as all -> all = coll
+                    try self.expandBindingPattern(val, temp_ref, bindings);
+                } else if (std.mem.eql(u8, kw_name, "or")) {
+                    // :or は既に処理済み、スキップ
+                    continue;
+                } else {
+                    // 未知のキーワード
+                    return err.parseError(.invalid_binding, "unknown map destructuring keyword", .{});
+                }
+            } else if (key == .symbol) {
+                // {x :x, y :y} -> x = (get coll :x)
+                const sym_name = key.symbol.name;
+                if (val != .keyword) {
+                    return err.parseError(.invalid_binding, "map destructuring: value must be a keyword", .{});
+                }
+                const get_init = try self.makeGetKeyword(temp_ref, val.keyword.name);
+                const bind_idx: u32 = @intCast(self.locals.items.len);
+                self.locals.append(self.allocator, .{ .name = sym_name, .idx = bind_idx }) catch return error.OutOfMemory;
+                bindings.append(self.allocator, .{ .name = sym_name, .init = get_init }) catch return error.OutOfMemory;
+            } else {
+                return err.parseError(.invalid_binding, "map destructuring: key must be keyword or symbol", .{});
+            }
+        }
+    }
+
+    /// (get coll :key) を生成（:keys 用、:or デフォルト対応）
+    fn makeGet(self: *Analyzer, coll_node: *Node, key_name: []const u8, defaults: ?[]const Form) err.Error!*Node {
+        // デフォルト値を探す
+        const default_node: ?*Node = if (defaults) |defs| blk: {
+            var j: usize = 0;
+            while (j < defs.len) : (j += 2) {
+                if (j + 1 >= defs.len) break;
+                if (defs[j] == .symbol and std.mem.eql(u8, defs[j].symbol.name, key_name)) {
+                    break :blk try self.analyze(defs[j + 1]);
+                }
+            }
+            break :blk null;
+        } else null;
+
+        return self.makeGetKeywordWithDefault(coll_node, key_name, default_node);
+    }
+
+    /// (get coll "key") を生成（:strs 用）
+    fn makeGetStr(self: *Analyzer, coll_node: *Node, key_name: []const u8, defaults: ?[]const Form) err.Error!*Node {
+        // デフォルト値を探す
+        const default_node: ?*Node = if (defaults) |defs| blk: {
+            var j: usize = 0;
+            while (j < defs.len) : (j += 2) {
+                if (j + 1 >= defs.len) break;
+                if (defs[j] == .symbol and std.mem.eql(u8, defs[j].symbol.name, key_name)) {
+                    break :blk try self.analyze(defs[j + 1]);
+                }
+            }
+            break :blk null;
+        } else null;
+
+        // 文字列キーを生成
+        const str = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+        str.* = value_mod.String.init(key_name);
+        const key_node = try self.makeConstant(.{ .string = str });
+
+        return self.makeGetCall(coll_node, key_node, default_node);
+    }
+
+    /// (get coll :keyword) を生成
+    fn makeGetKeyword(self: *Analyzer, coll_node: *Node, key_name: []const u8) err.Error!*Node {
+        return self.makeGetKeywordWithDefault(coll_node, key_name, null);
+    }
+
+    /// (get coll :keyword default) を生成
+    fn makeGetKeywordWithDefault(self: *Analyzer, coll_node: *Node, key_name: []const u8, default_node: ?*Node) err.Error!*Node {
+        // キーワード値を生成
+        const kw = self.allocator.create(value_mod.Keyword) catch return error.OutOfMemory;
+        kw.* = value_mod.Keyword.init(key_name);
+        const key_node = try self.makeConstant(.{ .keyword = kw });
+
+        return self.makeGetCall(coll_node, key_node, default_node);
+    }
+
+    /// (get coll key) または (get coll key default) を生成
+    fn makeGetCall(self: *Analyzer, coll_node: *Node, key_node: *Node, default_node: ?*Node) err.Error!*Node {
+        const get_sym = RuntimeSymbol.init("get");
+        const get_var = self.env.resolve(get_sym) orelse return err.parseError(.undefined_symbol, "get not found", .{});
+        const fn_node = try self.makeVarRef(get_var);
+
+        const arg_count: usize = if (default_node != null) 3 else 2;
+        const args = self.allocator.alloc(*Node, arg_count) catch return error.OutOfMemory;
+        args[0] = coll_node;
+        args[1] = key_node;
+        if (default_node) |def| {
+            args[2] = def;
+        }
+
+        const call_data = self.allocator.create(node_mod.CallNode) catch return error.OutOfMemory;
+        call_data.* = .{
+            .fn_node = fn_node,
+            .args = args,
+            .stack = .{},
+        };
+
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = .{ .call_node = call_data };
+        return node;
     }
 
     /// (nth coll idx) を生成
@@ -609,7 +795,7 @@ pub const Analyzer = struct {
                     const idx: u32 = @intCast(self.locals.items.len);
                     self.locals.append(self.allocator, .{ .name = param_name, .idx = idx }) catch return error.OutOfMemory;
                 },
-                .vector => {
+                .vector, .map => {
                     // 分配パターン → 合成パラメータ名を生成
                     const synthetic_name = try self.makeSyntheticParamName(param_idx);
                     params.append(self.allocator, synthetic_name) catch return error.OutOfMemory;
@@ -622,7 +808,7 @@ pub const Analyzer = struct {
                     self.locals.append(self.allocator, .{ .name = synthetic_name, .idx = idx }) catch return error.OutOfMemory;
                 },
                 else => {
-                    return err.parseError(.invalid_binding, "fn parameter must be a symbol or vector pattern", .{});
+                    return err.parseError(.invalid_binding, "fn parameter must be a symbol, vector, or map pattern", .{});
                 },
             }
             param_idx += 1;

@@ -7,8 +7,7 @@
 
 ## 現在地点
 
-**Phase 8.3 シーケンシャル分配 完了** - ベクター分配、fn 引数分配が動作。
-マップ分配 `{:keys [...]}` は未実装。
+**Phase 8.3 分配束縛 完了** - シーケンシャル分配・マップ分配の両方が動作。
 
 ### 完了した機能
 
@@ -21,7 +20,7 @@
 | 8.0 | VM基盤 (Bytecode, Compiler, VM, --compare) |
 | 8.1 | クロージャ完成, 複数アリティfn, 可変長引数 |
 | 8.2 | 高階関数 (apply, partial, comp, reduce) |
-| 8.3 | シーケンシャル分配 `[a b]` `[x & rest]` `[a :as all]` |
+| 8.3 | 分配束縛（シーケンシャル `[a b]`、マップ `{:keys [a]}`) |
 
 ### 組み込み関数
 
@@ -48,15 +47,22 @@
 ### 分配束縛（8.3 で追加）
 
 ```clojure
-;; let での分配
+;; シーケンシャル分配
 (let [[a b c] [1 2 3]] (+ a b c))      ; => 6
 (let [[x & rest] [1 2 3 4]] rest)      ; => (2 3 4)
 (let [[a b :as all] [1 2]] all)        ; => [1 2]
 (let [[a [b c]] [1 [2 3]]] (+ a b c))  ; => 6 (ネスト)
 
-;; fn 引数での分配
-((fn [[a b]] (+ a b)) [1 2])           ; => 3
-((fn [x [a b]] (+ x a b)) 10 [1 2])    ; => 13
+;; マップ分配
+(let [{:keys [name age]} {:name "Alice" :age 30}] name) ; => "Alice"
+(let [{x :x y :y} {:x 1 :y 2}] (+ x y))               ; => 3
+(let [{:keys [a] :or {a 0}} {}] a)                      ; => 0
+(let [{:keys [a b] :as m} {:a 1 :b 2}] m)               ; => {:a 1 :b 2}
+(let [{:strs [name]} {"name" "Bob"}] name)              ; => "Bob"
+
+;; fn 引数での分配（ベクター・マップ両対応）
+((fn [[a b]] (+ a b)) [1 2])             ; => 3
+((fn [{:keys [x y]}] (+ x y)) {:x 3 :y 4}) ; => 7
 
 ;; 順次バインディング（後続が前のバインディングを参照）
 (let [x 1 y x] y)                      ; => 1
@@ -65,22 +71,6 @@
 ---
 
 ## 次回タスク
-
-### Phase 8.3 続き: マップ分配
-
-シーケンシャル分配は完了。マップ分配は別途実装が必要。
-
-```clojure
-;; 未実装
-(let [{:keys [name age]} {:name "Alice" :age 30}] name)
-(let [{x :x y :y} {:x 1 :y 2}] (+ x y))
-(let [{:keys [a] :or {a 0}} {}] a)
-```
-
-**必要な変更**:
-1. Analyzer: マップパターンの解析
-2. 新しい expandMapPattern 関数
-3. マップの get 関数が必要（現在未実装）
 
 ### Phase 8.4: 遅延シーケンス (LazySeq)
 
@@ -92,7 +82,6 @@ map, filter, take に必須。
 
 | Phase | 内容 | 依存 |
 |-------|------|------|
-| 8.3+ | マップ分配 | get 関数が必要 |
 | 8.4 | 遅延シーケンス (LazySeq) | map/filter/take に必須 |
 | 8.5 | プロトコル | 型の拡張性に必須 |
 | 9 | GC | LazySeq導入後に必須 |
