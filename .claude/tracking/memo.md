@@ -80,7 +80,9 @@
 | `test/compat/sci/core_test.clj`          | 33     | 123          | PASS |
 | `test/compat/sci/vars_test.clj`          | 7      | 15           | PASS |
 | `test/compat/sci/hierarchies_test.clj`   | 5      | 5            | PASS |
-| **合計**                                 | **45** | **143**      |      |
+| `test/compat/sci/multimethods_test.clj`  | 4      | 4            | PASS |
+| `test/compat/sci/error_test.clj`         | 6      | 12           | PASS |
+| **合計**                                 | **55** | **159**      |      |
 
 ### テスト基盤
 
@@ -119,6 +121,14 @@ deftest body 内 (= defn body 内) で使えない構文:
 | add-watch on var not implemented   | add-watch    | スキップ                       |
 | thread-bound? 1-arity only         | thread-bound | 1引数で使用                    |
 | defmacro inside defn → Undefined   | defmacro     | トップレベルで定義             |
+| with-out-str 未実装 (出力未キャプチャ) | io           | str(do body) に展開、空文字列  |
+
+### 本セッションで実装した機能
+
+- **isa? ベクタ比較**: `(isa? [a b] [c d])` = `(and (isa? a c) (isa? b d))`
+- **isa? ベースのマルチメソッドディスパッチ**: 完全一致なしの場合 isa? で検索
+- **prefer-method**: マルチメソッドの曖昧ディスパッチを優先度テーブルで解決
+- **MultiFn.prefer_table**: MultiFn 構造体に prefer テーブルを追加
 
 ### 既知の制限 (Phase 26 から引き継ぎ)
 

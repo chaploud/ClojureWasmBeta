@@ -281,6 +281,11 @@ fn treeWalkCall(fn_val: Value, args: []const Value, allocator: std.mem.Allocator
 }
 
 /// 関数を引数付きで呼び出し（partial_fn サポート付き）
+/// isa? ベースでマルチメソッドのメソッドを検索（core に委譲）
+fn findIsaMethod(allocator: std.mem.Allocator, mf: *const value_mod.MultiFn, dispatch_value: Value) !?Value {
+    return core.findIsaMethodFromMultiFn(allocator, mf, dispatch_value);
+}
+
 fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Value {
     // LazySeq コールバックを設定
     core.force_lazy_seq_fn = &treeWalkForce;
@@ -378,12 +383,17 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
             // マルチメソッド呼び出し: dispatch_fn で値を取得 → methods からメソッドを検索
             const dispatch_result = try callWithArgs(mf.dispatch_fn, args, ctx);
 
-            // ディスパッチ値でメソッドを検索
+            // 1. 完全一致
             if (mf.methods.get(dispatch_result)) |method| {
                 break :blk callWithArgs(method, args, ctx);
             }
 
-            // :default メソッドを試す
+            // 2. isa? ベースの階層的ディスパッチ
+            if (findIsaMethod(ctx.allocator, mf, dispatch_result) catch null) |method| {
+                break :blk callWithArgs(method, args, ctx);
+            }
+
+            // 3. :default メソッドを試す
             if (mf.default_method) |default| {
                 break :blk callWithArgs(default, args, ctx);
             }
@@ -594,6 +604,7 @@ fn runDefmulti(node: *const node_mod.DefmultiNode, ctx: *Context) EvalError!Valu
         .dispatch_fn = dispatch_fn,
         .methods = empty_map,
         .default_method = null,
+        .prefer_table = null,
     };
 
     v.bindRoot(Value{ .multi_fn = mf });

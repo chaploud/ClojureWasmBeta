@@ -377,6 +377,7 @@ pub const MultiFn = struct {
     dispatch_fn: Value, // ディスパッチ関数
     methods: *PersistentMap, // dispatch-value → fn のマップ
     default_method: ?Value, // :default メソッド
+    prefer_table: ?*PersistentMap, // prefer-method テーブル (dispatch-val → preferred-over set)
 };
 
 // === プロトコル ===

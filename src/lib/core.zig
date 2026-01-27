@@ -6024,15 +6024,47 @@ pub fn removeAllMethods(allocator: std.mem.Allocator, args: []const Value) anyer
 }
 
 /// prefer-method : マルチメソッドの優先度を設定
+/// (prefer-method mf dispatch-val-x dispatch-val-y)
+/// → x を y より優先する
 pub fn preferMethod(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
     if (args.len != 3) return error.ArityError;
-    // (prefer-method mf dispatch-val-x dispatch-val-y)
-    // 現在は no-op（階層システム実装時に有効化）
-    _ = switch (args[0]) {
+    const mf = switch (args[0]) {
         .multi_fn => |m| m,
         else => return error.TypeError,
     };
+    const preferred = args[1];
+    const over = args[2];
+
+    // prefer テーブルの取得または新規作成
+    var pt = if (mf.prefer_table) |t| t.* else value_mod.PersistentMap.empty();
+
+    // preferred の既存セットを取得、なければ空セット作成
+    const existing = pt.get(preferred);
+    var items: []Value = undefined;
+    if (existing) |ex| {
+        if (ex == .set) {
+            // 既存セットに追加
+            const old = ex.set.items;
+            items = try allocator.alloc(Value, old.len + 1);
+            @memcpy(items[0..old.len], old);
+            items[old.len] = over;
+        } else {
+            items = try allocator.alloc(Value, 1);
+            items[0] = over;
+        }
+    } else {
+        items = try allocator.alloc(Value, 1);
+        items[0] = over;
+    }
+
+    const new_set = try allocator.create(value_mod.PersistentSet);
+    new_set.* = .{ .items = items };
+    const set_val = Value{ .set = new_set };
+
+    const new_table = try allocator.create(value_mod.PersistentMap);
+    new_table.* = try pt.assoc(allocator, preferred, set_val);
+    mf.prefer_table = new_table;
+
     return args[0];
 }
 
@@ -7464,22 +7496,38 @@ pub fn descendantsFn(allocator: std.mem.Allocator, args: []const Value) anyerror
 
 /// isa? : child が parent の子孫か（等価も含む）
 /// (isa? child parent) or (isa? h child parent)
+/// ベクタ同士の場合: 各要素ペアが全て isa? なら true
 pub fn isaPred(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
     if (args.len < 2 or args.len > 3) return error.ArityError;
     const h = if (args.len == 3) args[0] else global_hierarchy;
     const child = if (args.len == 3) args[1] else args[0];
     const parent = if (args.len == 3) args[2] else args[1];
 
+    return if (try isaCheck(allocator, h, child, parent)) value_mod.true_val else value_mod.false_val;
+}
+
+/// isa? の内部判定（ベクタ対応）
+fn isaCheck(allocator: std.mem.Allocator, h: ?Value, child: Value, parent: Value) anyerror!bool {
     // 等価チェック
-    if (child.eql(parent)) return value_mod.true_val;
+    if (child.eql(parent)) return true;
+
+    // ベクタ同士: 要素ごとに isa? を確認
+    if (child == .vector and parent == .vector) {
+        const c_items = child.vector.items;
+        const p_items = parent.vector.items;
+        if (c_items.len != p_items.len) return false;
+        for (c_items, p_items) |c, p| {
+            if (!try isaCheck(allocator, h, c, p)) return false;
+        }
+        return true;
+    }
 
     // 階層チェック: parents を再帰的にたどる（推移的関係）
     if (h) |hier| {
-        const parents_map = getHierarchyMap(hier, "parents") orelse return value_mod.false_val;
-        if (isaTransitive(parents_map, child, parent, 0)) return value_mod.true_val;
+        const parents_map = getHierarchyMap(hier, "parents") orelse return false;
+        if (isaTransitive(parents_map, child, parent, 0)) return true;
     }
-    return value_mod.false_val;
+    return false;
 }
 
 /// parents マップを再帰的にたどって isa? を判定
@@ -7495,6 +7543,59 @@ fn isaTransitive(parents_map: *value_mod.PersistentMap, child: Value, target: Va
         }
     }
     return false;
+}
+
+/// isa? ベースでマルチメソッドのメソッドを検索（evaluator/VM 共用）
+pub fn findIsaMethodFromMultiFn(allocator: std.mem.Allocator, mf: *const value_mod.MultiFn, dispatch_value: Value) !?Value {
+    const Match = struct { key: Value, method: Value };
+    var matches = std.ArrayList(Match).empty;
+    defer matches.deinit(allocator);
+
+    // methods マップの全エントリを走査
+    var i: usize = 0;
+    while (i + 1 < mf.methods.entries.len) : (i += 2) {
+        const method_key = mf.methods.entries[i];
+        const method_val = mf.methods.entries[i + 1];
+        if (method_key.eql(dispatch_value)) continue;
+        if (try isaCheck(allocator, global_hierarchy, dispatch_value, method_key)) {
+            try matches.append(allocator, .{ .key = method_key, .method = method_val });
+        }
+    }
+
+    if (matches.items.len == 0) return null;
+    if (matches.items.len == 1) return matches.items[0].method;
+
+    // 複数マッチ: prefer テーブルで解決
+    if (mf.prefer_table) |pt| {
+        for (matches.items) |candidate| {
+            var is_preferred = true;
+            for (matches.items) |other| {
+                if (candidate.key.eql(other.key)) continue;
+                // candidate が other より優先?
+                if (pt.get(candidate.key)) |pref_set| {
+                    if (pref_set == .set) {
+                        var found = false;
+                        for (pref_set.set.items) |p| {
+                            if (p.eql(other.key)) { found = true; break; }
+                        }
+                        if (found) continue;
+                    }
+                }
+                // other が candidate より優先?
+                if (pt.get(other.key)) |pref_set| {
+                    if (pref_set == .set) {
+                        for (pref_set.set.items) |p| {
+                            if (p.eql(candidate.key)) { is_preferred = false; break; }
+                        }
+                    }
+                }
+                if (!is_preferred) break;
+            }
+            if (is_preferred) return candidate.method;
+        }
+    }
+
+    return matches.items[0].method;
 }
 
 // ============================================================

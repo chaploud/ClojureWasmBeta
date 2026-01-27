@@ -797,8 +797,9 @@ pub const VM = struct {
                 // ディスパッチ結果を取得
                 const dispatch_result = self.pop();
 
-                // メソッドを検索
+                // メソッドを検索: 完全一致 → isa? → :default
                 const method = mf.methods.get(dispatch_result) orelse
+                    (core.findIsaMethodFromMultiFn(self.allocator, mf, dispatch_result) catch null) orelse
                     mf.default_method orelse return error.TypeError;
 
                 // メソッドを呼び出し
@@ -1212,6 +1213,7 @@ pub const VM = struct {
             .dispatch_fn = dispatch_fn,
             .methods = empty_map,
             .default_method = null,
+            .prefer_table = null,
         };
 
         // Var にバインド
