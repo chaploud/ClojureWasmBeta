@@ -4231,13 +4231,107 @@ pub const Analyzer = struct {
         return Form{ .list = delay_forms };
     }
 
-    fn expandMemoize(_: *Analyzer, items: []const Form) err.Error!Form {
+    fn expandMemoize(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
             return err.parseError(.invalid_arity, "memoize requires exactly one argument", .{});
         }
-        // 現在は fn をそのまま返す（atom ベースのメモ化は Phase 15 の Atom 拡張後に本実装）
-        // TODO: atom + hash-map でキャッシュ実装
-        return items[1];
+        // (memoize f) →
+        // (let [__memo_f__ f
+        //       __memo_cache__ (atom (hash-map))]
+        //   (fn [& __memo_args__]
+        //     (if (contains? (deref __memo_cache__) __memo_args__)
+        //       (get (deref __memo_cache__) __memo_args__)
+        //       (let [__memo_ret__ (apply __memo_f__ __memo_args__)]
+        //         (swap! __memo_cache__ assoc __memo_args__ __memo_ret__)
+        //         __memo_ret__))))
+        const alloc = self.allocator;
+
+        const sym_f = form_mod.Symbol.init("__memo_f__");
+        const sym_cache = form_mod.Symbol.init("__memo_cache__");
+        const sym_args = form_mod.Symbol.init("__memo_args__");
+        const sym_ret = form_mod.Symbol.init("__memo_ret__");
+
+        // (atom (hash-map))
+        const hm_call = alloc.alloc(Form, 1) catch return error.OutOfMemory;
+        hm_call[0] = Form{ .symbol = form_mod.Symbol.init("hash-map") };
+        const atom_call = alloc.alloc(Form, 2) catch return error.OutOfMemory;
+        atom_call[0] = Form{ .symbol = form_mod.Symbol.init("atom") };
+        atom_call[1] = Form{ .list = hm_call };
+
+        // (deref __memo_cache__)
+        const deref_call = alloc.alloc(Form, 2) catch return error.OutOfMemory;
+        deref_call[0] = Form{ .symbol = form_mod.Symbol.init("deref") };
+        deref_call[1] = Form{ .symbol = sym_cache };
+
+        // (contains? (deref __memo_cache__) __memo_args__)
+        const contains_call = alloc.alloc(Form, 3) catch return error.OutOfMemory;
+        contains_call[0] = Form{ .symbol = form_mod.Symbol.init("contains?") };
+        contains_call[1] = Form{ .list = deref_call };
+        contains_call[2] = Form{ .symbol = sym_args };
+
+        // (deref __memo_cache__) — 別インスタンス (get 用)
+        const deref_call2 = alloc.alloc(Form, 2) catch return error.OutOfMemory;
+        deref_call2[0] = Form{ .symbol = form_mod.Symbol.init("deref") };
+        deref_call2[1] = Form{ .symbol = sym_cache };
+
+        // (get (deref __memo_cache__) __memo_args__)
+        const get_call = alloc.alloc(Form, 3) catch return error.OutOfMemory;
+        get_call[0] = Form{ .symbol = form_mod.Symbol.init("get") };
+        get_call[1] = Form{ .list = deref_call2 };
+        get_call[2] = Form{ .symbol = sym_args };
+
+        // (apply __memo_f__ __memo_args__)
+        const apply_call = alloc.alloc(Form, 3) catch return error.OutOfMemory;
+        apply_call[0] = Form{ .symbol = form_mod.Symbol.init("apply") };
+        apply_call[1] = Form{ .symbol = sym_f };
+        apply_call[2] = Form{ .symbol = sym_args };
+
+        // (swap! __memo_cache__ assoc __memo_args__ __memo_ret__)
+        const swap_call = alloc.alloc(Form, 5) catch return error.OutOfMemory;
+        swap_call[0] = Form{ .symbol = form_mod.Symbol.init("swap!") };
+        swap_call[1] = Form{ .symbol = sym_cache };
+        swap_call[2] = Form{ .symbol = form_mod.Symbol.init("assoc") };
+        swap_call[3] = Form{ .symbol = sym_args };
+        swap_call[4] = Form{ .symbol = sym_ret };
+
+        // 内側 let: (let [__memo_ret__ (apply ...)] (swap! ...) __memo_ret__)
+        const inner_bindings = alloc.alloc(Form, 2) catch return error.OutOfMemory;
+        inner_bindings[0] = Form{ .symbol = sym_ret };
+        inner_bindings[1] = Form{ .list = apply_call };
+        const inner_let = alloc.alloc(Form, 4) catch return error.OutOfMemory;
+        inner_let[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        inner_let[1] = Form{ .vector = inner_bindings };
+        inner_let[2] = Form{ .list = swap_call };
+        inner_let[3] = Form{ .symbol = sym_ret };
+
+        // (if (contains? ...) (get ...) (let [...] ...))
+        const if_form = alloc.alloc(Form, 4) catch return error.OutOfMemory;
+        if_form[0] = Form{ .symbol = form_mod.Symbol.init("if") };
+        if_form[1] = Form{ .list = contains_call };
+        if_form[2] = Form{ .list = get_call };
+        if_form[3] = Form{ .list = inner_let };
+
+        // (fn [& __memo_args__] (if ...))
+        const fn_params = alloc.alloc(Form, 2) catch return error.OutOfMemory;
+        fn_params[0] = Form{ .symbol = form_mod.Symbol.init("&") };
+        fn_params[1] = Form{ .symbol = sym_args };
+        const fn_form = alloc.alloc(Form, 3) catch return error.OutOfMemory;
+        fn_form[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        fn_form[1] = Form{ .vector = fn_params };
+        fn_form[2] = Form{ .list = if_form };
+
+        // 外側 let: (let [__memo_f__ f, __memo_cache__ (atom (hash-map))] (fn ...))
+        const outer_bindings = alloc.alloc(Form, 4) catch return error.OutOfMemory;
+        outer_bindings[0] = Form{ .symbol = sym_f };
+        outer_bindings[1] = items[1]; // f の式
+        outer_bindings[2] = Form{ .symbol = sym_cache };
+        outer_bindings[3] = Form{ .list = atom_call };
+        const outer_let = alloc.alloc(Form, 3) catch return error.OutOfMemory;
+        outer_let[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        outer_let[1] = Form{ .vector = outer_bindings };
+        outer_let[2] = Form{ .list = fn_form };
+
+        return Form{ .list = outer_let };
     }
 
     /// (time expr) → (let [start (System/nanoTime)] (let [ret expr] (println "Elapsed time:" ...) ret))

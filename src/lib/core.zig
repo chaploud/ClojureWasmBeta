@@ -788,11 +788,13 @@ pub fn dec(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 
 /// = : 等価比較
 pub fn eq(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
     if (args.len < 2) return error.ArityError;
 
     for (args[0 .. args.len - 1], args[1..]) |a, b| {
-        if (!a.eql(b)) {
+        // lazy-seq は実体化してから比較
+        const ra = try ensureRealized(allocator, a);
+        const rb = try ensureRealized(allocator, b);
+        if (!ra.eql(rb)) {
             return value_mod.false_val;
         }
     }
@@ -1323,6 +1325,46 @@ pub fn conj(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
             const new_vec = try allocator.create(value_mod.PersistentVector);
             new_vec.* = .{ .items = new_items };
             return Value{ .vector = new_vec };
+        },
+        .set => |s| {
+            // セットは重複を除いて要素を追加
+            var result = std.ArrayList(Value).empty;
+            defer result.deinit(allocator);
+            // 既存要素をコピー
+            try result.appendSlice(allocator, s.items);
+            // 新しい要素を重複チェックしながら追加
+            for (elems) |e| {
+                var found = false;
+                for (result.items) |existing| {
+                    if (existing.eql(e)) { found = true; break; }
+                }
+                if (!found) try result.append(allocator, e);
+            }
+            const items = try allocator.alloc(Value, result.items.len);
+            @memcpy(items, result.items);
+            const new_set = try allocator.create(value_mod.PersistentSet);
+            new_set.* = .{ .items = items };
+            return Value{ .set = new_set };
+        },
+        .map => |m| {
+            // マップは [k v] ベクターまたはマップエントリを追加
+            var current = m.*;
+            for (elems) |e| {
+                if (e == .vector and e.vector.items.len == 2) {
+                    current = try current.assoc(allocator, e.vector.items[0], e.vector.items[1]);
+                } else if (e == .map) {
+                    // マップのマージ
+                    var i: usize = 0;
+                    while (i + 1 < e.map.entries.len) : (i += 2) {
+                        current = try current.assoc(allocator, e.map.entries[i], e.map.entries[i + 1]);
+                    }
+                } else {
+                    return error.TypeError;
+                }
+            }
+            const new_map = try allocator.create(value_mod.PersistentMap);
+            new_map.* = current;
+            return Value{ .map = new_map };
         },
         else => return error.TypeError,
     }
@@ -2147,11 +2189,24 @@ pub fn into(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
             return Value{ .set = result };
         },
         .map => |m| {
-            // マップ → キーバリューペアを追加
+            // マップ → 各要素を conj（[k v] ベクタまたはマップエントリ）
             var map = m.*;
-            var i: usize = 0;
-            while (i + 1 < from_items.len) : (i += 2) {
-                map = try map.assoc(allocator, from_items[i], from_items[i + 1]);
+            for (from_items) |item| {
+                if (item == .vector and item.vector.items.len == 2) {
+                    // [k v] ベクタ → assoc
+                    map = try map.assoc(allocator, item.vector.items[0], item.vector.items[1]);
+                } else if (item == .map) {
+                    // マップのマージ
+                    var j: usize = 0;
+                    while (j + 1 < item.map.entries.len) : (j += 2) {
+                        map = try map.assoc(allocator, item.map.entries[j], item.map.entries[j + 1]);
+                    }
+                } else if (item == .list and item.list.items.len == 2) {
+                    // (k v) リスト → assoc
+                    map = try map.assoc(allocator, item.list.items[0], item.list.items[1]);
+                } else {
+                    return error.TypeError;
+                }
             }
             const result = try allocator.create(value_mod.PersistentMap);
             result.* = map;
@@ -2260,6 +2315,18 @@ pub fn vecFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
         .set => |s| blk: {
             const result = try allocator.create(value_mod.PersistentVector);
             result.* = .{ .items = try allocator.dupe(Value, s.items) };
+            break :blk Value{ .vector = result };
+        },
+        .lazy_seq => blk: {
+            // lazy-seq を実体化してから vector に変換
+            const realized = try ensureRealized(allocator, args[0]);
+            const items = switch (realized) {
+                .list => |l| l.items,
+                .nil => &[_]Value{},
+                else => return error.TypeError,
+            };
+            const result = try allocator.create(value_mod.PersistentVector);
+            result.* = .{ .items = try allocator.dupe(Value, items) };
             break :blk Value{ .vector = result };
         },
         else => error.TypeError,
@@ -3759,21 +3826,29 @@ pub fn bitShiftRight(allocator: std.mem.Allocator, args: []const Value) anyerror
 
 /// keyword : 文字列/シンボルからキーワードを作成
 pub fn keywordFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len != 1) return error.ArityError;
-    return switch (args[0]) {
-        .keyword => args[0],
-        .string => |s| blk: {
-            const kw = try allocator.create(value_mod.Keyword);
-            kw.* = .{ .name = s.data, .namespace = null };
-            break :blk Value{ .keyword = kw };
-        },
-        .symbol => |sym| blk: {
-            const kw = try allocator.create(value_mod.Keyword);
-            kw.* = .{ .name = sym.name, .namespace = sym.namespace };
-            break :blk Value{ .keyword = kw };
-        },
-        else => error.TypeError,
-    };
+    if (args.len < 1 or args.len > 2) return error.ArityError;
+    if (args.len == 1) {
+        return switch (args[0]) {
+            .keyword => args[0],
+            .string => |s| blk: {
+                const kw = try allocator.create(value_mod.Keyword);
+                kw.* = .{ .name = s.data, .namespace = null };
+                break :blk Value{ .keyword = kw };
+            },
+            .symbol => |sym| blk: {
+                const kw = try allocator.create(value_mod.Keyword);
+                kw.* = .{ .name = sym.name, .namespace = sym.namespace };
+                break :blk Value{ .keyword = kw };
+            },
+            else => error.TypeError,
+        };
+    }
+    // (keyword ns name) — 2引数: 名前空間付きキーワード作成
+    const ns_str = if (args[0] == .string) args[0].string.data else if (args[0] == .nil) null else return error.TypeError;
+    if (args[1] != .string) return error.TypeError;
+    const kw = try allocator.create(value_mod.Keyword);
+    kw.* = .{ .name = args[1].string.data, .namespace = ns_str };
+    return Value{ .keyword = kw };
 }
 
 /// symbol : 文字列からシンボルを作成
@@ -4202,7 +4277,16 @@ pub fn isIdentical(allocator: std.mem.Allocator, args: []const Value) anyerror!V
         .char_val => |av| if (av == b.char_val) value_mod.true_val else value_mod.false_val,
         // ポインタ型はポインタ比較
         .string => |av| if (av == b.string) value_mod.true_val else value_mod.false_val,
-        .keyword => |av| if (av == b.keyword) value_mod.true_val else value_mod.false_val,
+        .keyword => |av| blk: {
+            // キーワードは Clojure では intern されるため名前比較で identical? = true
+            const bk = b.keyword;
+            const name_eq = std.mem.eql(u8, av.name, bk.name);
+            const ns_eq = if (av.namespace) |ans|
+                (if (bk.namespace) |bns| std.mem.eql(u8, ans, bns) else false)
+            else
+                bk.namespace == null;
+            break :blk if (name_eq and ns_eq) value_mod.true_val else value_mod.false_val;
+        },
         .symbol => |av| if (av == b.symbol) value_mod.true_val else value_mod.false_val,
         .list => |av| if (av == b.list) value_mod.true_val else value_mod.false_val,
         .vector => |av| if (av == b.vector) value_mod.true_val else value_mod.false_val,

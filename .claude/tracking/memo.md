@@ -107,7 +107,7 @@ deftest body 内 (= defn body 内) で使えない構文:
 |------------------------------------|--------------|--------------------------------|
 | map/set リテラル in macro body     | load-file 時 | hash-map/hash-set              |
 | fn-level recur returns nil         | defn+recur   | loop+recur を使用              |
-| vector-list equality broken        | = [1] '(1)   | into [] で変換                 |
+| vector-list equality broken        | = [1] '(1)   | 修正済み (eql で sequential 比較) |
 | map-as-fn 2-arity                  | ({:a 1} k d) | get with default               |
 | symbol-as-fn                       | ('a map)     | get                            |
 | defonce not preventing redef       | defonce      | スキップ                       |
@@ -125,10 +125,16 @@ deftest body 内 (= defn body 内) で使えない構文:
 
 ### 本セッションで実装した機能
 
-- **isa? ベクタ比較**: `(isa? [a b] [c d])` = `(and (isa? a c) (isa? b d))`
-- **isa? ベースのマルチメソッドディスパッチ**: 完全一致なしの場合 isa? で検索
-- **prefer-method**: マルチメソッドの曖昧ディスパッチを優先度テーブルで解決
-- **MultiFn.prefer_table**: MultiFn 構造体に prefer テーブルを追加
+- **keyword 2-arity**: `(keyword "ns" "name")` → `:ns/name`
+- **lazy-seq 等価比較**: `=` で lazy-seq を実体化して比較
+- **vec from lazy-seq**: `(vec (mapcat ...))` が動作
+- **memoize 本実装**: atom + hash-map キャッシュ (マクロ展開)
+- **identical? キーワード**: 名前比較でキーワード同一性判定 (intern 相当)
+- **テスト修正**: keep-indexed / juxt / sort の期待値誤り修正
+
+前セッション:
+- isa? ベクタ比較 / isa? マルチメソッドディスパッチ / prefer-method / MultiFn.prefer_table
+- conj for sets/maps / into for maps / vector-list equality / int-float equality
 
 ### 既知の制限 (Phase 26 から引き継ぎ)
 

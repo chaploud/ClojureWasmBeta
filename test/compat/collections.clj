@@ -137,7 +137,7 @@
 (test-eq [1 2 3] (distinct [1 2 1 3 2]) "distinct")
 
 ;; === sort / sort-by ===
-(test-eq [1 2 3 4 5] (sort [3 1 4 1 5]) "sort")
+(test-eq [1 2 3 4 5] (sort [3 1 2 4 5]) "sort")
 (test-eq [1 1 3 4 5] (sort [3 1 4 1 5]) "sort with dups")
 (test-eq ["a" "bb" "ccc"] (sort-by count ["ccc" "a" "bb"]) "sort-by count")
 

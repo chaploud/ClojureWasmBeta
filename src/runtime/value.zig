@@ -690,10 +690,45 @@ pub const Value = union(enum) {
         };
     }
 
+    /// 順序付きコレクション判定 (list, vector)
+    fn isSequential(v: Value) bool {
+        return v == .list or v == .vector;
+    }
+
+    /// 順序付きコレクションの要素配列を取得
+    fn sequentialItems(v: Value) []const Value {
+        return switch (v) {
+            .list => |l| l.items,
+            .vector => |ve| ve.items,
+            else => &[_]Value{},
+        };
+    }
+
     /// 等価性判定
     pub fn eql(self: Value, other: Value) bool {
         const self_tag = std.meta.activeTag(self);
         const other_tag = std.meta.activeTag(other);
+
+        // Clojure 互換: list と vector は順序付きコレクションとして等価比較
+        if (isSequential(self) and isSequential(other)) {
+            const a_items = sequentialItems(self);
+            const b_items = sequentialItems(other);
+            if (a_items.len != b_items.len) return false;
+            for (a_items, b_items) |ai, bi| {
+                if (!ai.eql(bi)) return false;
+            }
+            return true;
+        }
+
+        // int と float の比較 (1 == 1.0)
+        if ((self_tag == .int and other_tag == .float) or
+            (self_tag == .float and other_tag == .int))
+        {
+            const a_f: f64 = if (self == .int) @floatFromInt(self.int) else self.float;
+            const b_f: f64 = if (other == .int) @floatFromInt(other.int) else other.float;
+            return a_f == b_f;
+        }
+
         if (self_tag != other_tag) return false;
 
         return switch (self) {
@@ -705,22 +740,7 @@ pub const Value = union(enum) {
             .string => |a| a.eql(other.string.*),
             .keyword => |a| a.eql(other.keyword.*),
             .symbol => |a| a.eql(other.symbol.*),
-            .list => |a| blk: {
-                const b = other.list;
-                if (a.items.len != b.items.len) break :blk false;
-                for (a.items, b.items) |ai, bi| {
-                    if (!ai.eql(bi)) break :blk false;
-                }
-                break :blk true;
-            },
-            .vector => |a| blk: {
-                const b = other.vector;
-                if (a.items.len != b.items.len) break :blk false;
-                for (a.items, b.items) |ai, bi| {
-                    if (!ai.eql(bi)) break :blk false;
-                }
-                break :blk true;
-            },
+            .list, .vector => unreachable, // isSequential で処理済み
             .map => |a| blk: {
                 const b = other.map;
                 if (a.count() != b.count()) break :blk false;

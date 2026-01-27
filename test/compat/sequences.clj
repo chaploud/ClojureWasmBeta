@@ -63,7 +63,7 @@
 
 ;; === keep / keep-indexed ===
 (test-eq '(2 4) (keep #(when (even? %) %) [1 2 3 4 5]) "keep")
-(test-eq '(0 2 4) (keep-indexed #(when (even? %1) %2) [:a :b :c :d :e]) "keep-indexed")
+(test-eq '(:a :c :e) (keep-indexed #(when (even? %1) %2) [:a :b :c :d :e]) "keep-indexed")
 
 ;; === map-indexed ===
 (test-eq '([0 :a] [1 :b] [2 :c]) (map-indexed vector [:a :b :c]) "map-indexed")

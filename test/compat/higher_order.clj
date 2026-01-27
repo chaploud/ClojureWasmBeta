@@ -17,7 +17,7 @@
 ;; === juxt ===
 (test-eq [1 3] ((juxt first last) [1 2 3]) "juxt first/last")
 (test-eq [true false] ((juxt even? odd?) 2) "juxt even/odd")
-(test-eq [3 6] ((juxt inc #(* 2 %)) 2) "juxt inc/*2")
+(test-eq [3 4] ((juxt inc #(* 2 %)) 2) "juxt inc/*2")
 
 ;; === complement ===
 (let [not-even? (complement even?)]
