@@ -15,6 +15,8 @@ const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
 const var_mod = @import("../runtime/var.zig");
 const Var = var_mod.Var;
+const namespace_mod = @import("../runtime/namespace.zig");
+const Namespace = namespace_mod.Namespace;
 const Reader = @import("../reader/reader.zig").Reader;
 const Analyzer = @import("../analyzer/analyze.zig").Analyzer;
 const tree_walk = @import("../runtime/evaluator.zig");
@@ -37,6 +39,61 @@ pub threadlocal var force_lazy_seq_fn: ?ForceFn = null;
 pub threadlocal var call_fn: ?CallFn = null;
 /// 現在の Env（find-var, intern 等で使用）
 pub threadlocal var current_env: ?*Env = null;
+
+/// ロード済みライブラリ管理
+const LoadedLibsSet = std.StringHashMapUnmanaged(void);
+var loaded_libs: LoadedLibsSet = .empty;
+/// ロード済みライブラリ用アロケータ（persistent メモリ）
+var loaded_libs_allocator: ?std.mem.Allocator = null;
+
+/// ロード済みライブラリの初期化
+pub fn initLoadedLibs(allocator: std.mem.Allocator) void {
+    loaded_libs_allocator = allocator;
+}
+
+/// クラスパスルート（ファイルロード時の基準ディレクトリ）
+var classpath_roots: [4]?[]const u8 = .{ null, null, null, null };
+var classpath_count: usize = 0;
+
+/// クラスパスルートを追加
+pub fn addClasspathRoot(path: []const u8) void {
+    if (classpath_count < classpath_roots.len) {
+        classpath_roots[classpath_count] = path;
+        classpath_count += 1;
+    }
+}
+
+/// NS名からファイルパスに変換 (例: "my.lib.core" → "my/lib/core.clj")
+fn nsNameToPath(allocator: std.mem.Allocator, ns_name: []const u8) ![]const u8 {
+    // ドットをスラッシュに、ハイフンをアンダースコアに変換
+    var path = try allocator.alloc(u8, ns_name.len + 4); // +4 for ".clj"
+    var pi: usize = 0;
+    for (ns_name) |c| {
+        path[pi] = switch (c) {
+            '.' => '/',
+            '-' => '_',
+            else => c,
+        };
+        pi += 1;
+    }
+    @memcpy(path[pi..][0..4], ".clj");
+    return path[0 .. pi + 4];
+}
+
+/// ファイルをロードして評価する
+fn loadFileContent(allocator: std.mem.Allocator, content: []const u8) anyerror!Value {
+    const env = current_env orelse return error.TypeError;
+    var reader = Reader.init(allocator, content);
+    const forms = reader.readAll() catch return error.EvalError;
+    var result: Value = value_mod.nil;
+    for (forms) |form| {
+        var analyzer = Analyzer.init(allocator, env);
+        const node = analyzer.analyze(form) catch return error.EvalError;
+        var ctx = Context.init(allocator, env);
+        result = tree_walk.run(node, &ctx) catch return error.EvalError;
+    }
+    return result;
+}
 
 /// LazySeq を実体化する（force）
 /// サンク関数を呼び出し、結果を cached realized に格納して返す
@@ -8048,14 +8105,33 @@ pub fn flushFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
 // 名前空間操作（簡易実装）
 // ============================================================
 
+// === 名前空間ヘルパー ===
+
+/// 引数から名前空間名を取得（シンボルまたは文字列）
+fn nsArgName(arg: Value) ?[]const u8 {
+    return switch (arg) {
+        .symbol => |s| s.name,
+        .string => |s| s.data,
+        else => null,
+    };
+}
+
+/// 引数から Namespace オブジェクトを取得
+/// シンボル/文字列 → findNs
+fn resolveNsArg(arg: Value) ?*Namespace {
+    const env = current_env orelse return null;
+    const name = nsArgName(arg) orelse return null;
+    return env.findNs(name);
+}
+
 /// find-ns : 名前空間を検索
 pub fn findNsFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1) return error.ArityError;
-    if (args[0] != .symbol) return error.TypeError;
     const env = current_env orelse return error.TypeError;
-    const name = args[0].symbol.name;
+    const name = nsArgName(args[0]) orelse return error.TypeError;
     if (env.findNs(name)) |_| {
-        return args[0]; // 名前空間が存在すればシンボルを返す
+        // シンボルとして返す（Clojure は NS オブジェクトを返すが、ここではシンボルで代用）
+        return args[0];
     }
     return value_mod.nil;
 }
@@ -8063,53 +8139,230 @@ pub fn findNsFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// create-ns : 名前空間を作成
 pub fn createNsFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1) return error.ArityError;
-    if (args[0] != .symbol) return error.TypeError;
     const env = current_env orelse return error.TypeError;
-    _ = env.findOrCreateNs(args[0].symbol.name) catch return error.EvalError;
+    const name = nsArgName(args[0]) orelse return error.TypeError;
+    _ = env.findOrCreateNs(name) catch return error.EvalError;
     return args[0];
 }
 
-/// all-ns : すべての名前空間を返す（簡易: 空リスト）
+/// all-ns : すべての名前空間をリストで返す
 pub fn allNsFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
-    // 簡易実装: 空リスト（名前空間イテレーション未実装）
-    const items = try allocator.alloc(Value, 0);
+    const env = current_env orelse return error.TypeError;
+    // 名前空間数をカウント
+    var ns_count: usize = 0;
+    {
+        var counting_iter = env.getAllNamespaces();
+        while (counting_iter.next()) |_| {
+            ns_count += 1;
+        }
+    }
+    const items = try allocator.alloc(Value, ns_count);
+    var build_iter = env.getAllNamespaces();
+    var i: usize = 0;
+    while (build_iter.next()) |entry| {
+        const sym = try allocator.create(value_mod.Symbol);
+        sym.* = .{ .name = entry.key_ptr.*, .namespace = null };
+        items[i] = Value{ .symbol = sym };
+        i += 1;
+    }
     const lst = try allocator.create(value_mod.PersistentList);
     lst.* = .{ .items = items };
     return Value{ .list = lst };
 }
 
-/// ns-name : 名前空間の名前を返す（簡易: 引数をそのまま返す）
-pub fn nsNameFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+/// ns-name : 名前空間の名前をシンボルで返す
+pub fn nsNameFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1) return error.ArityError;
+    const ns = resolveNsArg(args[0]);
+    if (ns) |n| {
+        const sym = try allocator.create(value_mod.Symbol);
+        sym.* = .{ .name = n.name, .namespace = null };
+        return Value{ .symbol = sym };
+    }
+    // 引数がシンボルならそのまま返す（Clojure互換: NS自体をシンボルで代用）
     return args[0];
 }
 
-/// ns-publics / ns-interns / ns-map / ns-refers / ns-imports / ns-aliases: スタブ（空マップ）
-pub fn nsMapStubFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+/// ns-publics : NS 内で定義された全 Var のマップ {sym var} を返す
+pub fn nsPublicsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1) return error.ArityError;
+    const ns = resolveNsArg(args[0]) orelse return emptyMap(allocator);
+    return buildVarMap(allocator, ns.getAllVars(), ns.name);
+}
+
+/// ns-interns : NS 内で intern された全 Var のマップ（ns-publics と同じ）
+pub fn nsInternsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const ns = resolveNsArg(args[0]) orelse return emptyMap(allocator);
+    return buildVarMap(allocator, ns.getAllVars(), ns.name);
+}
+
+/// ns-map : NS 内の全マッピング（interns + refers）を返す
+pub fn nsMapFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const ns = resolveNsArg(args[0]) orelse return emptyMap(allocator);
+    // interns + refers の合計数をカウント
+    var total_count: usize = 0;
+    {
+        var var_iter = ns.getAllVars();
+        while (var_iter.next()) |_| total_count += 1;
+    }
+    {
+        var ref_iter = ns.getAllRefers();
+        while (ref_iter.next()) |_| total_count += 1;
+    }
+    const entries = try allocator.alloc(Value, total_count * 2);
+    var idx: usize = 0;
+    // interns
+    {
+        var var_iter = ns.getAllVars();
+        while (var_iter.next()) |entry| {
+            const sym = try allocator.create(value_mod.Symbol);
+            sym.* = .{ .name = entry.key_ptr.*, .namespace = null };
+            entries[idx] = Value{ .symbol = sym };
+            entries[idx + 1] = entry.value_ptr.*.deref();
+            idx += 2;
+        }
+    }
+    // refers
+    {
+        var ref_iter = ns.getAllRefers();
+        while (ref_iter.next()) |entry| {
+            const sym = try allocator.create(value_mod.Symbol);
+            sym.* = .{ .name = entry.key_ptr.*, .namespace = null };
+            entries[idx] = Value{ .symbol = sym };
+            entries[idx + 1] = entry.value_ptr.*.deref();
+            idx += 2;
+        }
+    }
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries[0..idx] };
+    return Value{ .map = m };
+}
+
+/// ns-refers : NS の refer された Var のマップ
+pub fn nsRefersFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const ns = resolveNsArg(args[0]) orelse return emptyMap(allocator);
+    return buildVarMap(allocator, ns.getAllRefers(), null);
+}
+
+/// ns-imports : インポートされた型のマップ（Zig実装では空マップ）
+pub fn nsImportsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return emptyMap(allocator);
+}
+
+/// ns-aliases : NS のエイリアスマップ {alias-sym ns-sym}
+pub fn nsAliasesFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const ns = resolveNsArg(args[0]) orelse return emptyMap(allocator);
+    var alias_count: usize = 0;
+    {
+        var counting_iter = ns.getAllAliases();
+        while (counting_iter.next()) |_| alias_count += 1;
+    }
+    const entries = try allocator.alloc(Value, alias_count * 2);
+    var build_iter = ns.getAllAliases();
+    var idx: usize = 0;
+    while (build_iter.next()) |entry| {
+        const alias_sym = try allocator.create(value_mod.Symbol);
+        alias_sym.* = .{ .name = entry.key_ptr.*, .namespace = null };
+        entries[idx] = Value{ .symbol = alias_sym };
+        const ns_sym = try allocator.create(value_mod.Symbol);
+        ns_sym.* = .{ .name = entry.value_ptr.*.name, .namespace = null };
+        entries[idx + 1] = Value{ .symbol = ns_sym };
+        idx += 2;
+    }
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries[0..idx] };
+    return Value{ .map = m };
+}
+
+/// ns-resolve : 名前空間内でシンボルを解決
+pub fn nsResolveFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    // 第1引数で NS を解決し、その NS 内でシンボルを検索
+    const ns = resolveNsArg(args[0]);
+    if (ns) |n| {
+        if (args[1] == .symbol) {
+            if (n.resolve(args[1].symbol.name)) |v| {
+                // Var の値を返す
+                return v.deref();
+            }
+            // clojure.core のフォールバック
+            const env = current_env orelse return value_mod.nil;
+            if (env.findNs("clojure.core")) |core| {
+                if (core.resolve(args[1].symbol.name)) |v| {
+                    return v.deref();
+                }
+            }
+        }
+    }
+    // フォールバック: resolveFn に委譲
+    return resolveFn(allocator, args[1..2]);
+}
+
+/// ns-unmap : NS からシンボルを除去
+pub fn nsUnmapFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const ns = resolveNsArg(args[0]) orelse return value_mod.nil;
+    const sym_name = nsArgName(args[1]) orelse return error.TypeError;
+    ns.unmap(sym_name);
+    return value_mod.nil;
+}
+
+/// ns-unalias : NS からエイリアスを除去
+pub fn nsUnaliasFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const ns = resolveNsArg(args[0]) orelse return value_mod.nil;
+    const alias_name = nsArgName(args[1]) orelse return error.TypeError;
+    ns.removeAlias(alias_name);
+    return value_mod.nil;
+}
+
+/// remove-ns : 名前空間を環境から削除
+pub fn removeNsFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const env = current_env orelse return value_mod.nil;
+    const name = nsArgName(args[0]) orelse return error.TypeError;
+    // clojure.core は削除不可
+    if (std.mem.eql(u8, name, "clojure.core")) return value_mod.nil;
+    _ = env.removeNs(name);
+    return value_mod.nil;
+}
+
+// === NS ヘルパー関数 ===
+
+/// 空マップを返す
+fn emptyMap(allocator: std.mem.Allocator) anyerror!Value {
     const entries = try allocator.alloc(Value, 0);
     const m = try allocator.create(value_mod.PersistentMap);
     m.* = .{ .entries = entries };
     return Value{ .map = m };
 }
 
-/// ns-resolve : 名前空間内でシンボルを解決（簡易: resolve に委譲）
-pub fn nsResolveFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len < 2) return error.ArityError;
-    // 第1引数は名前空間（無視）、第2引数はシンボル
-    return resolveFn(allocator, args[1..2]);
-}
-
-/// ns-unmap / ns-unalias : スタブ（nil を返す）
-pub fn nsUnmapStubFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len < 2) return error.ArityError;
-    return value_mod.nil;
-}
-
-/// remove-ns : 名前空間を削除（スタブ、nil を返す）
-pub fn removeNsFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len != 1) return error.ArityError;
-    return value_mod.nil;
+/// VarMap イテレータから {sym var-value} マップを構築
+fn buildVarMap(allocator: std.mem.Allocator, iter_init: namespace_mod.VarMap.Iterator, _: ?[]const u8) anyerror!Value {
+    // カウント（イテレータはコピーで受け取るのでリセット不要）
+    var ns_count: usize = 0;
+    {
+        var counting_iter = iter_init;
+        while (counting_iter.next()) |_| ns_count += 1;
+    }
+    const entries = try allocator.alloc(Value, ns_count * 2);
+    var build_iter = iter_init;
+    var idx: usize = 0;
+    while (build_iter.next()) |entry| {
+        const sym = try allocator.create(value_mod.Symbol);
+        sym.* = .{ .name = entry.key_ptr.*, .namespace = null };
+        entries[idx] = Value{ .symbol = sym };
+        entries[idx + 1] = entry.value_ptr.*.deref();
+        idx += 2;
+    }
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries[0..idx] };
+    return Value{ .map = m };
 }
 
 // ============================================================
@@ -8145,11 +8398,24 @@ pub fn readerConditionalFn(_: std.mem.Allocator, args: []const Value) anyerror!V
     return args[0];
 }
 
-/// loaded-libs : ロード済みライブラリ（空セットを返す）
+/// loaded-libs : ロード済みライブラリのセットを返す
 pub fn loadedLibsFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
-    const items = try allocator.alloc(Value, 0);
+    var lib_count: usize = 0;
+    {
+        var lib_iter = loaded_libs.iterator();
+        while (lib_iter.next()) |_| lib_count += 1;
+    }
+    const items = try allocator.alloc(Value, lib_count);
+    var lib_iter = loaded_libs.iterator();
+    var i: usize = 0;
+    while (lib_iter.next()) |entry| {
+        const sym = try allocator.create(value_mod.Symbol);
+        sym.* = .{ .name = entry.key_ptr.*, .namespace = null };
+        items[i] = Value{ .symbol = sym };
+        i += 1;
+    }
     const s = try allocator.create(value_mod.PersistentSet);
-    s.* = .{ .items = items };
+    s.* = .{ .items = items[0..i] };
     return Value{ .set = s };
 }
 
@@ -8182,10 +8448,19 @@ pub fn loadReaderFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
     return value_mod.nil;
 }
 
-/// load-file / load : ファイルからロード（スタブ）
-pub fn loadFileFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+/// load-file : ファイルを読み込んで評価
+pub fn loadFileFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len < 1) return error.ArityError;
-    return value_mod.nil;
+    const path = switch (args[0]) {
+        .string => |s| s.data,
+        .symbol => |s| s.name,
+        else => return error.TypeError,
+    };
+    // ファイルを読み込む
+    const file = std.fs.cwd().openFile(path, .{}) catch return value_mod.nil;
+    defer file.close();
+    const content = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return value_mod.nil;
+    return loadFileContent(allocator, content);
 }
 
 // ============================================================
@@ -8341,42 +8616,292 @@ pub fn requiringResolveFn(_: std.mem.Allocator, args: []const Value) anyerror!Va
 
 // --- NS 関数 stubs ---
 
-/// refer — スタブ（名前空間の参照を追加）
-pub fn referFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+/// refer — 他の名前空間の Var を現在の NS に参照追加
+/// (refer 'ns-name) — 全 Var を refer
+/// (refer 'ns-name :only '[sym1 sym2]) — 指定 Var のみ refer
+/// (refer 'ns-name :exclude '[sym1 sym2]) — 指定 Var を除外して refer
+/// (refer 'ns-name :rename '{old-name new-name}) — リネームして refer
+pub fn referFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    const env = current_env orelse return error.TypeError;
+    const source_name = nsArgName(args[0]) orelse return error.TypeError;
+    const source_ns = env.findNs(source_name) orelse return value_mod.nil;
+    const current_ns = env.getCurrentNs() orelse return error.TypeError;
+
+    // オプション解析: :only, :exclude, :rename
+    var only_list: ?[]const Value = null;
+    var exclude_list: ?[]const Value = null;
+    var rename_map: ?[]const Value = null;
+    var i: usize = 1;
+    while (i + 1 < args.len) : (i += 2) {
+        if (args[i] == .keyword) {
+            if (std.mem.eql(u8, args[i].keyword.name, "only")) {
+                if (args[i + 1] == .vector) {
+                    only_list = args[i + 1].vector.items;
+                }
+            } else if (std.mem.eql(u8, args[i].keyword.name, "exclude")) {
+                if (args[i + 1] == .vector) {
+                    exclude_list = args[i + 1].vector.items;
+                }
+            } else if (std.mem.eql(u8, args[i].keyword.name, "rename")) {
+                if (args[i + 1] == .map) {
+                    rename_map = args[i + 1].map.entries;
+                }
+            }
+        }
+    }
+
+    // source_ns の全 Var をイテレートして refer
+    var var_iter = source_ns.getAllVars();
+    while (var_iter.next()) |entry| {
+        const sym_name = entry.key_ptr.*;
+        // :only フィルタ
+        if (only_list) |only| {
+            if (!containsSymName(only, sym_name)) continue;
+        }
+        // :exclude フィルタ
+        if (exclude_list) |exclude| {
+            if (containsSymName(exclude, sym_name)) continue;
+        }
+        // :rename 処理
+        const refer_name = if (rename_map) |rmap| blk: {
+            break :blk findRename(rmap, sym_name) orelse sym_name;
+        } else sym_name;
+        current_ns.refer(refer_name, entry.value_ptr.*) catch {};
+    }
     return value_mod.nil;
 }
 
-/// require — スタブ
-pub fn requireFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+/// require — 名前空間をロードして設定
+/// (require 'ns-name)
+/// (require '[ns-name :as alias])
+/// (require '[ns-name :refer [sym1 sym2]])
+/// (require '[ns-name :refer :all])
+pub fn requireFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    const env = current_env orelse return error.TypeError;
+    const current_ns = env.getCurrentNs() orelse return error.TypeError;
+
+    // :reload フラグチェック
+    var force_reload = false;
+    for (args) |arg| {
+        if (arg == .keyword) {
+            if (std.mem.eql(u8, arg.keyword.name, "reload") or
+                std.mem.eql(u8, arg.keyword.name, "reload-all"))
+            {
+                force_reload = true;
+            }
+        }
+    }
+
+    // 各引数を処理
+    for (args) |arg| {
+        switch (arg) {
+            .symbol => |s| {
+                // (require 'ns-name)
+                requireNsLoad(allocator, s.name, force_reload) catch {};
+            },
+            .vector => |v| {
+                // (require '[ns-name :as alias :refer [...]])
+                if (v.items.len < 1) continue;
+                const ns_sym_name = nsArgName(v.items[0]) orelse continue;
+                requireNsLoad(allocator, ns_sym_name, force_reload) catch {};
+                const target_ns = env.findOrCreateNs(ns_sym_name) catch continue;
+
+                // オプション解析
+                var vi: usize = 1;
+                while (vi + 1 < v.items.len) : (vi += 2) {
+                    if (v.items[vi] == .keyword) {
+                        const kw_name = v.items[vi].keyword.name;
+                        if (std.mem.eql(u8, kw_name, "as")) {
+                            // :as alias
+                            const alias_name = nsArgName(v.items[vi + 1]) orelse continue;
+                            current_ns.setAlias(alias_name, target_ns) catch {};
+                        } else if (std.mem.eql(u8, kw_name, "refer")) {
+                            // :refer [sym1 sym2] or :refer :all
+                            if (v.items[vi + 1] == .vector) {
+                                for (v.items[vi + 1].vector.items) |ref_sym| {
+                                    const ref_name = nsArgName(ref_sym) orelse continue;
+                                    if (target_ns.resolve(ref_name)) |var_ref| {
+                                        current_ns.refer(ref_name, var_ref) catch {};
+                                    }
+                                }
+                            } else if (v.items[vi + 1] == .keyword) {
+                                if (std.mem.eql(u8, v.items[vi + 1].keyword.name, "all")) {
+                                    var all_iter = target_ns.getAllVars();
+                                    while (all_iter.next()) |entry| {
+                                        current_ns.refer(entry.key_ptr.*, entry.value_ptr.*) catch {};
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            .keyword => {}, // :reload 等は上で処理済み
+            else => {},
+        }
+    }
     return value_mod.nil;
 }
 
-/// use — スタブ
-pub fn useFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+/// NS名のファイルをロードする（ロード済みならスキップ）
+fn requireNsLoad(allocator: std.mem.Allocator, ns_name: []const u8, force_reload: bool) !void {
+    // clojure.core は常にロード済み
+    if (std.mem.eql(u8, ns_name, "clojure.core")) return;
+
+    // ロード済みチェック
+    if (!force_reload and loaded_libs.contains(ns_name)) return;
+
+    // NS名 → ファイルパス変換
+    const rel_path = try nsNameToPath(allocator, ns_name);
+
+    // クラスパスルートからファイルを探索
+    var loaded = false;
+    var ri: usize = 0;
+    while (ri < classpath_count) : (ri += 1) {
+        if (classpath_roots[ri]) |root| {
+            const full_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ root, rel_path });
+            if (tryLoadFile(allocator, full_path)) {
+                loaded = true;
+                break;
+            }
+        }
+    }
+
+    // ルートなしで相対パスを試す
+    if (!loaded) {
+        _ = tryLoadFile(allocator, rel_path);
+    }
+
+    // ロード済みとして登録（ファイルが見つからなくても NS は作成済みなので登録）
+    const alloc = loaded_libs_allocator orelse allocator;
+    const key = try alloc.dupe(u8, ns_name);
+    loaded_libs.put(alloc, key, {}) catch {};
+}
+
+/// ファイルを読み込んで評価（失敗時は false）
+fn tryLoadFile(allocator: std.mem.Allocator, path: []const u8) bool {
+    const file = std.fs.cwd().openFile(path, .{}) catch return false;
+    defer file.close();
+    const content = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return false;
+    // 現在の NS を退避（ファイル内で ns が変更される可能性がある）
+    const env = current_env orelse return false;
+    const saved_ns = env.getCurrentNs();
+    _ = loadFileContent(allocator, content) catch {
+        // エラー時は NS を復元
+        if (saved_ns) |ns| env.setCurrentNs(ns);
+        return false;
+    };
+    // NS を復元（require 元の NS に戻す）
+    if (saved_ns) |ns| env.setCurrentNs(ns);
+    return true;
+}
+
+/// use — require + refer :all 相当
+/// (use 'ns-name)
+/// (use '[ns-name :only [sym1 sym2]])
+pub fn useFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    const env = current_env orelse return error.TypeError;
+    const current_ns = env.getCurrentNs() orelse return error.TypeError;
+
+    for (args) |arg| {
+        switch (arg) {
+            .symbol => |s| {
+                // (use 'ns-name) — NS をロード + 全 Var を refer
+                requireNsLoad(allocator, s.name, false) catch {};
+                const target_ns = env.findOrCreateNs(s.name) catch continue;
+                var all_iter = target_ns.getAllVars();
+                while (all_iter.next()) |entry| {
+                    current_ns.refer(entry.key_ptr.*, entry.value_ptr.*) catch {};
+                }
+            },
+            .vector => |v| {
+                // (use '[ns-name :only [...]])
+                if (v.items.len < 1) continue;
+                const ns_sym_name = nsArgName(v.items[0]) orelse continue;
+                requireNsLoad(allocator, ns_sym_name, false) catch {};
+                const target_ns = env.findOrCreateNs(ns_sym_name) catch continue;
+
+                // :only フィルタ解析
+                var only_list: ?[]const Value = null;
+                var vi: usize = 1;
+                while (vi + 1 < v.items.len) : (vi += 2) {
+                    if (v.items[vi] == .keyword) {
+                        if (std.mem.eql(u8, v.items[vi].keyword.name, "only")) {
+                            if (v.items[vi + 1] == .vector) {
+                                only_list = v.items[vi + 1].vector.items;
+                            }
+                        }
+                    }
+                }
+
+                var all_iter = target_ns.getAllVars();
+                while (all_iter.next()) |entry| {
+                    if (only_list) |only| {
+                        if (!containsSymName(only, entry.key_ptr.*)) continue;
+                    }
+                    current_ns.refer(entry.key_ptr.*, entry.value_ptr.*) catch {};
+                }
+            },
+            else => {},
+        }
+    }
     return value_mod.nil;
 }
 
-/// alias — スタブ
-pub fn aliasFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+/// alias — 名前空間エイリアスを設定
+/// (alias alias-sym ns-sym)
+pub fn aliasFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const env = current_env orelse return error.TypeError;
+    const current_ns = env.getCurrentNs() orelse return error.TypeError;
+    const alias_name = nsArgName(args[0]) orelse return error.TypeError;
+    const target_name = nsArgName(args[1]) orelse return error.TypeError;
+    const target_ns = env.findNs(target_name) orelse return error.TypeError;
+    current_ns.setAlias(alias_name, target_ns) catch return error.EvalError;
     return value_mod.nil;
 }
 
-/// in-ns — 名前空間を切り替え（簡易版: NS を作成して返す）
+/// in-ns — 名前空間を切り替え
+/// (in-ns 'ns-name) — NS を作成/取得して current_ns を設定
 pub fn inNsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1) return error.ArityError;
-    // シンボル名を取得
-    const ns_name = switch (args[0]) {
-        .symbol => |s| s.name,
-        .string => |s| s.data,
-        else => return error.TypeError,
-    };
-    // NS を作成/取得
+    const ns_name = nsArgName(args[0]) orelse return error.TypeError;
     const env = current_env orelse return error.TypeError;
-    _ = try env.findOrCreateNs(ns_name);
+    const ns = env.findOrCreateNs(ns_name) catch return error.EvalError;
+    // 現在の NS を切り替え
+    env.setCurrentNs(ns);
     // シンボルとして返す
     const sym = try allocator.create(value_mod.Symbol);
     sym.* = .{ .name = ns_name, .namespace = null };
     return Value{ .symbol = sym };
+}
+
+// === refer/use ヘルパー ===
+
+/// シンボル名がリストに含まれるか
+fn containsSymName(items: []const Value, name: []const u8) bool {
+    for (items) |item| {
+        if (nsArgName(item)) |n| {
+            if (std.mem.eql(u8, n, name)) return true;
+        }
+    }
+    return false;
+}
+
+/// rename マップから対応する新名前を取得
+fn findRename(entries: []const Value, name: []const u8) ?[]const u8 {
+    var ri: usize = 0;
+    while (ri + 1 < entries.len) : (ri += 2) {
+        if (nsArgName(entries[ri])) |key| {
+            if (std.mem.eql(u8, key, name)) {
+                return nsArgName(entries[ri + 1]);
+            }
+        }
+    }
+    return null;
 }
 
 // --- Chunk stubs ---
@@ -9109,15 +9634,15 @@ const builtins = [_]BuiltinDef{
     .{ .name = "create-ns", .func = createNsFn },
     .{ .name = "all-ns", .func = allNsFn },
     .{ .name = "ns-name", .func = nsNameFn },
-    .{ .name = "ns-publics", .func = nsMapStubFn },
-    .{ .name = "ns-interns", .func = nsMapStubFn },
-    .{ .name = "ns-map", .func = nsMapStubFn },
-    .{ .name = "ns-refers", .func = nsMapStubFn },
-    .{ .name = "ns-imports", .func = nsMapStubFn },
-    .{ .name = "ns-aliases", .func = nsMapStubFn },
+    .{ .name = "ns-publics", .func = nsPublicsFn },
+    .{ .name = "ns-interns", .func = nsInternsFn },
+    .{ .name = "ns-map", .func = nsMapFn },
+    .{ .name = "ns-refers", .func = nsRefersFn },
+    .{ .name = "ns-imports", .func = nsImportsFn },
+    .{ .name = "ns-aliases", .func = nsAliasesFn },
     .{ .name = "ns-resolve", .func = nsResolveFn },
-    .{ .name = "ns-unmap", .func = nsUnmapStubFn },
-    .{ .name = "ns-unalias", .func = nsUnmapStubFn },
+    .{ .name = "ns-unmap", .func = nsUnmapFn },
+    .{ .name = "ns-unalias", .func = nsUnaliasFn },
     .{ .name = "remove-ns", .func = removeNsFn },
     .{ .name = "read", .func = readFn },
     .{ .name = "read+string", .func = readPlusStringFn },

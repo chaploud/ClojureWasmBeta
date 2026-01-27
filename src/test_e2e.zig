@@ -2866,3 +2866,196 @@ test "Phase 23: thread-bound?" {
     // binding 外では false
     try expectBoolBoth(allocator, &env, "(thread-bound? (var *x*))", false);
 }
+
+// Phase 24: 名前空間（本格実装）
+// 注: 名前空間テストは evalExpr (TreeWalk のみ) を使用
+//     NS 切り替えが式境界で反映されるため、各式を逐次評価する必要がある
+
+test "Phase 24: all-ns returns namespaces" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 初期状態: clojure.core と user
+    const result = try evalExpr(allocator, &env, "(count (all-ns))");
+    try std.testing.expectEqual(Value{ .int = 2 }, result);
+}
+
+test "Phase 24: find-ns / create-ns" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 存在しない NS → nil
+    const r1 = try evalExpr(allocator, &env, "(find-ns 'nonexistent)");
+    try std.testing.expectEqual(Value.nil, r1);
+
+    // create-ns → find-ns で見つかる
+    _ = try evalExpr(allocator, &env, "(create-ns 'my.test)");
+    const r2 = try evalExpr(allocator, &env, "(find-ns 'my.test)");
+    try std.testing.expect(r2 == .symbol);
+
+    // all-ns が 3 に増える
+    const r3 = try evalExpr(allocator, &env, "(count (all-ns))");
+    try std.testing.expectEqual(Value{ .int = 3 }, r3);
+}
+
+test "Phase 24: ns-name" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    const result = try evalExpr(allocator, &env, "(ns-name 'user)");
+    switch (result) {
+        .symbol => |s| try std.testing.expectEqualStrings("user", s.name),
+        else => return error.UnexpectedValue,
+    }
+}
+
+test "Phase 24: ns-publics" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // user NS に定義してから ns-publics で確認
+    _ = try evalExpr(allocator, &env, "(def my-val 42)");
+    const result = try evalExpr(allocator, &env, "(get (ns-publics 'user) 'my-val)");
+    try std.testing.expectEqual(Value{ .int = 42 }, result);
+}
+
+test "Phase 24: in-ns + ns-publics cross-ns" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 別 NS に切り替えて def
+    _ = try evalExpr(allocator, &env, "(in-ns 'lib.a)");
+    _ = try evalExpr(allocator, &env, "(def helper 99)");
+    _ = try evalExpr(allocator, &env, "(in-ns 'user)");
+
+    // lib.a の publics に helper がある
+    const result = try evalExpr(allocator, &env, "(get (ns-publics 'lib.a) 'helper)");
+    try std.testing.expectEqual(Value{ .int = 99 }, result);
+}
+
+test "Phase 24: refer" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // lib.b に定義
+    _ = try evalExpr(allocator, &env, "(in-ns 'lib.b)");
+    _ = try evalExpr(allocator, &env, "(def x 10)");
+    _ = try evalExpr(allocator, &env, "(def y 20)");
+    _ = try evalExpr(allocator, &env, "(in-ns 'user)");
+
+    // refer で lib.b の全 Var を参照
+    _ = try evalExpr(allocator, &env, "(refer 'lib.b)");
+    const r1 = try evalExpr(allocator, &env, "x");
+    try std.testing.expectEqual(Value{ .int = 10 }, r1);
+    const r2 = try evalExpr(allocator, &env, "y");
+    try std.testing.expectEqual(Value{ .int = 20 }, r2);
+}
+
+test "Phase 24: alias + qualified access" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // lib.c に定義
+    _ = try evalExpr(allocator, &env, "(in-ns 'lib.c)");
+    _ = try evalExpr(allocator, &env, "(def val1 100)");
+    _ = try evalExpr(allocator, &env, "(in-ns 'user)");
+
+    // alias 設定
+    _ = try evalExpr(allocator, &env, "(alias 'c 'lib.c)");
+
+    // エイリアス経由のアクセス
+    const result = try evalExpr(allocator, &env, "c/val1");
+    try std.testing.expectEqual(Value{ .int = 100 }, result);
+
+    // ns-aliases に 1 エントリ
+    const count_result = try evalExpr(allocator, &env, "(count (ns-aliases 'user))");
+    try std.testing.expectEqual(Value{ .int = 1 }, count_result);
+}
+
+test "Phase 24: require with :as and :refer" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // lib.d に定義
+    _ = try evalExpr(allocator, &env, "(in-ns 'lib.d)");
+    _ = try evalExpr(allocator, &env, "(def a 1)");
+    _ = try evalExpr(allocator, &env, "(def b 2)");
+    _ = try evalExpr(allocator, &env, "(in-ns 'user)");
+
+    // require with :as and :refer
+    _ = try evalExpr(allocator, &env, "(require '[lib.d :as d :refer [a]])");
+
+    // :refer で直接アクセス
+    const r1 = try evalExpr(allocator, &env, "a");
+    try std.testing.expectEqual(Value{ .int = 1 }, r1);
+
+    // :as エイリアスでアクセス
+    const r2 = try evalExpr(allocator, &env, "d/b");
+    try std.testing.expectEqual(Value{ .int = 2 }, r2);
+}
+
+test "Phase 24: remove-ns" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    _ = try evalExpr(allocator, &env, "(create-ns 'to-remove)");
+    const r1 = try evalExpr(allocator, &env, "(find-ns 'to-remove)");
+    try std.testing.expect(r1 != .nil);
+
+    _ = try evalExpr(allocator, &env, "(remove-ns 'to-remove)");
+    const r2 = try evalExpr(allocator, &env, "(find-ns 'to-remove)");
+    try std.testing.expectEqual(Value.nil, r2);
+}
+
+test "Phase 24: ns-unmap" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    _ = try evalExpr(allocator, &env, "(def to-unmap 42)");
+    const r1 = try evalExpr(allocator, &env, "(get (ns-publics 'user) 'to-unmap)");
+    try std.testing.expectEqual(Value{ .int = 42 }, r1);
+
+    _ = try evalExpr(allocator, &env, "(ns-unmap 'user 'to-unmap)");
+    const r2 = try evalExpr(allocator, &env, "(get (ns-publics 'user) 'to-unmap)");
+    try std.testing.expectEqual(Value.nil, r2);
+}

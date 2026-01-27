@@ -4311,21 +4311,134 @@ pub const Analyzer = struct {
         if (items.len < 2) {
             return err.parseError(.invalid_arity, "ns requires a name", .{});
         }
+        const allocator = self.allocator;
+
+        // (quote name)
+        const quote_name = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        quote_name[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
+        quote_name[1] = items[1];
+        const quoted_name = Form{ .list = quote_name };
+
         // (in-ns 'name)
-        const forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
-        forms[0] = Form{ .symbol = form_mod.Symbol.init("in-ns") };
-        // quote name
-        const quote_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
-        quote_forms[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
-        quote_forms[1] = items[1];
-        forms[1] = Form{ .list = quote_forms };
-        // nil（残りの clauses は無視）
-        forms[2] = Form.nil;
-        // (do (in-ns 'name) nil) → 簡略化して (in-ns 'name) だけ
-        const in_ns_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        const in_ns_forms = allocator.alloc(Form, 2) catch return error.OutOfMemory;
         in_ns_forms[0] = Form{ .symbol = form_mod.Symbol.init("in-ns") };
-        in_ns_forms[1] = forms[1];
-        return Form{ .list = in_ns_forms };
+        in_ns_forms[1] = quoted_name;
+        const in_ns_call = Form{ .list = in_ns_forms };
+
+        // ns clauses を解析して展開フォームを構築
+        // 最大: in-ns + clauses数 + refer-clojure.core + do
+        var clause_forms = std.ArrayList(Form).initCapacity(allocator, items.len + 2) catch return error.OutOfMemory;
+        clause_forms.append(allocator, Form{ .symbol = form_mod.Symbol.init("do") }) catch return error.OutOfMemory;
+        clause_forms.append(allocator, in_ns_call) catch return error.OutOfMemory;
+
+        // :refer-clojure のフラグ（指定されなければデフォルトで (refer 'clojure.core)）
+        var has_refer_clojure = false;
+
+        // clauses を解析（items[2..] がクローズ）
+        for (items[2..]) |clause| {
+            if (clause != .list) continue;
+            const clause_list = clause.list;
+            if (clause_list.len < 1) continue;
+
+            // 先頭のキーワードを判定
+            const head = clause_list[0];
+            if (head != .keyword) continue;
+
+            if (std.mem.eql(u8, head.keyword.name, "require")) {
+                // (:require [ns :as a] [ns :refer [x y]] ns-name ...)
+                for (clause_list[1..]) |req_arg| {
+                    const require_call = self.buildNsRequireForm(req_arg) catch continue;
+                    clause_forms.append(allocator, require_call) catch return error.OutOfMemory;
+                }
+            } else if (std.mem.eql(u8, head.keyword.name, "use")) {
+                // (:use ns-name [ns-name :only [...]])
+                for (clause_list[1..]) |use_arg| {
+                    const use_call = self.buildNsUseForm(use_arg) catch continue;
+                    clause_forms.append(allocator, use_call) catch return error.OutOfMemory;
+                }
+            } else if (std.mem.eql(u8, head.keyword.name, "refer-clojure")) {
+                // (:refer-clojure :exclude [...] :only [...] :rename {...})
+                has_refer_clojure = true;
+                const refer_call = self.buildReferClojureForm(clause_list[1..]) catch continue;
+                clause_forms.append(allocator, refer_call) catch return error.OutOfMemory;
+            }
+            // :import, :gen-class 等は無視
+        }
+
+        // デフォルトの clojure.core refer（:refer-clojure 未指定時）
+        if (!has_refer_clojure) {
+            const refer_forms = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            refer_forms[0] = Form{ .symbol = form_mod.Symbol.init("refer") };
+            const quote_core = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            quote_core[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
+            quote_core[1] = Form{ .symbol = form_mod.Symbol.init("clojure.core") };
+            refer_forms[1] = Form{ .list = quote_core };
+            clause_forms.append(allocator, Form{ .list = refer_forms }) catch return error.OutOfMemory;
+        }
+
+        return Form{ .list = clause_forms.items };
+    }
+
+    /// (:require [ns :as a :refer [x y]]) の各引数を (require '[ns :as a :refer [x y]]) に展開
+    fn buildNsRequireForm(self: *Analyzer, arg: Form) err.Error!Form {
+        const allocator = self.allocator;
+        const require_forms = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        require_forms[0] = Form{ .symbol = form_mod.Symbol.init("require") };
+        // 引数を quote
+        const quote_arg = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        quote_arg[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
+        quote_arg[1] = arg;
+        require_forms[1] = Form{ .list = quote_arg };
+        return Form{ .list = require_forms };
+    }
+
+    /// (:use ns-name) の引数を (use 'ns-name) に展開
+    fn buildNsUseForm(self: *Analyzer, arg: Form) err.Error!Form {
+        const allocator = self.allocator;
+        const use_forms = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        use_forms[0] = Form{ .symbol = form_mod.Symbol.init("use") };
+        const quote_arg = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        quote_arg[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
+        quote_arg[1] = arg;
+        use_forms[1] = Form{ .list = quote_arg };
+        return Form{ .list = use_forms };
+    }
+
+    /// (:refer-clojure :exclude [...] :only [...] :rename {...}) を
+    /// (refer 'clojure.core :exclude '[...] :only '[...] :rename '{...}) に展開
+    fn buildReferClojureForm(self: *Analyzer, opts: []const Form) err.Error!Form {
+        const allocator = self.allocator;
+        // (refer 'clojure.core opts...)
+        const capacity = 2 + opts.len;
+        const refer_forms = allocator.alloc(Form, capacity) catch return error.OutOfMemory;
+        refer_forms[0] = Form{ .symbol = form_mod.Symbol.init("refer") };
+        const quote_core = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        quote_core[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
+        quote_core[1] = Form{ .symbol = form_mod.Symbol.init("clojure.core") };
+        refer_forms[1] = Form{ .list = quote_core };
+        // 残りのオプション（:exclude, :only, :rename + 値）をそのまま追加
+        // ただし値は quote する必要がある
+        var i: usize = 0;
+        var out_idx: usize = 2;
+        while (i < opts.len) {
+            if (opts[i] == .keyword) {
+                refer_forms[out_idx] = opts[i]; // キーワードはそのまま
+                out_idx += 1;
+                i += 1;
+                if (i < opts.len) {
+                    // 値を quote
+                    const quote_val = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+                    quote_val[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
+                    quote_val[1] = opts[i];
+                    refer_forms[out_idx] = Form{ .list = quote_val };
+                    out_idx += 1;
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        }
+        return Form{ .list = refer_forms[0..out_idx] };
     }
 
     /// (var x) → (resolve 'x) スタブ

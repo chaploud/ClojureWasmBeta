@@ -28,7 +28,7 @@ const NsNameContext = struct {
 };
 
 /// 名前空間名 → *Namespace のマップ
-const NsMap = std.HashMapUnmanaged([]const u8, *Namespace, NsNameContext, 80);
+pub const NsMap = std.HashMapUnmanaged([]const u8, *Namespace, NsNameContext, 80);
 
 /// Env: グローバル環境
 /// 全ての Namespace と設定を管理
@@ -138,6 +138,22 @@ pub const Env = struct {
         // user を作成し、現在の NS に設定
         const user = try self.findOrCreateNs("user");
         self.setCurrentNs(user);
+    }
+
+    /// 名前空間を削除
+    pub fn removeNs(self: *Env, name: []const u8) bool {
+        if (self.namespaces.fetchRemove(name)) |kv| {
+            var ns = kv.value;
+            ns.deinit();
+            self.allocator.destroy(ns);
+            return true;
+        }
+        return false;
+    }
+
+    /// 全名前空間のイテレータ
+    pub fn getAllNamespaces(self: *const Env) NsMap.Iterator {
+        return self.namespaces.iterator();
     }
 };
 

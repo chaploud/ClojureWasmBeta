@@ -256,6 +256,21 @@
 - **--compare MISMATCH**: Promise/Atom 等の参照型は TreeWalk と VM で別オブジェクトになるため
   `deliver` の返値で MISMATCH（表示は同じ）。既知の制限。
 
+## 名前空間（Phase 24 で本格化）
+
+- **NS 情報関数**: `all-ns`, `ns-name`, `ns-publics`, `ns-interns`, `ns-map`, `ns-refers`, `ns-aliases` が実データを返す
+- **refer/alias**: `:only`, `:exclude`, `:rename` フィルタリング対応
+- **(ns ...) マクロ**: `(do (in-ns 'name) clauses... (refer 'clojure.core))` に展開
+  - `:require`, `:use`, `:refer-clojure` クローズに対応
+- **ファイルロード**: `load-file` は指定パスのファイルを読み込んで全式を評価
+  - `require` は NS名のドットを `/` に、ハイフンを `_` に変換して `.clj` を検索
+  - `loaded_libs` (StringHashMap) でロード済み管理、`:reload` で強制再ロード
+  - `tryLoadFile` はロード前の current_ns を退避し、ロード後に復元
+  - `addClasspathRoot` でファイル検索ルートを追加可能
+- **NS 切り替えの制限**: `in-ns` は Runtime で実行されるため、`do` ブロック内で
+  `in-ns` → `def` しても Analyzer は先に全式を解析する（トップレベル式境界でのみ有効）
+- **ns-imports**: JVM 型なし。常に空マップを返す
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

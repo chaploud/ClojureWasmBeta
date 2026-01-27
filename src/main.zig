@@ -115,6 +115,7 @@ pub fn main() !void {
     defer env.deinit();
     try env.setupBasic();
     try core.registerCore(&env);
+    core.initLoadedLibs(allocs.persistent());
 
     // 各式を評価
     var vm_snapshot: ?engine_mod.VarSnapshot = null;

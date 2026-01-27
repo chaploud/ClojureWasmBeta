@@ -26,10 +26,10 @@ const SymbolNameContext = struct {
 };
 
 /// Symbol名 → *Var のマップ
-const VarMap = std.HashMapUnmanaged([]const u8, *Var, SymbolNameContext, 80);
+pub const VarMap = std.HashMapUnmanaged([]const u8, *Var, SymbolNameContext, 80);
 
 /// Symbol名 → *Namespace のマップ
-const NsAliasMap = std.HashMapUnmanaged([]const u8, *Namespace, SymbolNameContext, 80);
+pub const NsAliasMap = std.HashMapUnmanaged([]const u8, *Namespace, SymbolNameContext, 80);
 
 /// Namespace: 名前空間
 pub const Namespace = struct {
@@ -132,6 +132,26 @@ pub const Namespace = struct {
     /// この NS で定義された全ての Var を取得
     pub fn getAllVars(self: *const Namespace) VarMap.Iterator {
         return self.mappings.iterator();
+    }
+
+    /// refer された全ての Var を取得
+    pub fn getAllRefers(self: *const Namespace) VarMap.Iterator {
+        return self.refers.iterator();
+    }
+
+    /// 全エイリアスを取得
+    pub fn getAllAliases(self: *const Namespace) NsAliasMap.Iterator {
+        return self.aliases.iterator();
+    }
+
+    /// シンボルのマッピングを削除（unmap）
+    pub fn unmap(self: *Namespace, sym_name: []const u8) void {
+        _ = self.mappings.remove(sym_name);
+    }
+
+    /// エイリアスを削除（unalias）
+    pub fn removeAlias(self: *Namespace, alias_name: []const u8) void {
+        _ = self.aliases.remove(alias_name);
     }
 };
 
