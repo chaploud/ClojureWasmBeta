@@ -1702,6 +1702,8 @@ pub const Analyzer = struct {
             return try self.expandJuxt(items);
         } else if (std.mem.eql(u8, name, "memoize")) {
             return try self.expandMemoize(items);
+        } else if (std.mem.eql(u8, name, "delay")) {
+            return try self.expandDelay(items);
         }
         return null;
     }
@@ -3923,6 +3925,27 @@ pub const Analyzer = struct {
     ///           (swap! cache assoc key ret)
     ///           ret)))))
     /// 簡略実装: eager キャッシュ（atom + hash-map）
+    /// (delay expr) → (__delay-create (fn [] expr))
+    fn expandDelay(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 2) {
+            return err.parseError(.invalid_arity, "delay requires exactly one expression", .{});
+        }
+
+        // (fn [] expr)
+        const fn_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        fn_forms[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        const empty_vec = self.allocator.alloc(Form, 0) catch return error.OutOfMemory;
+        fn_forms[1] = Form{ .vector = empty_vec };
+        fn_forms[2] = items[1];
+
+        // (__delay-create (fn [] expr))
+        const delay_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        delay_forms[0] = Form{ .symbol = form_mod.Symbol.init("__delay-create") };
+        delay_forms[1] = Form{ .list = fn_forms };
+
+        return Form{ .list = delay_forms };
+    }
+
     fn expandMemoize(_: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
             return err.parseError(.invalid_arity, "memoize requires exactly one argument", .{});
@@ -4031,7 +4054,7 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .vector = forms };
             },
-            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq, .delay_val, .volatile_val, .reduced_val => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

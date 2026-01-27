@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 12 完了 — 次は Phase 13 (DESIGN: delay/force, volatile, transient)**
+**Phase 13 完了 — 次は Phase 14 (DESIGN: reduced/transduce 基盤)**
 
 ### 完了フェーズ
 
@@ -42,10 +42,11 @@
 | 9.2   | iterate/repeat/cycle/range()/mapcat — 遅延ジェネレータ・lazy mapcat     |
 | 11    | PURE述語(23)+コレクション/ユーティリティ(17)+ビット演算等(17) = +57関数 |
 | 12    | PURE残り: 述語(15)+型キャスト(6)+算術(5)+出力(4)+ハッシュ(4)+MM拡張(6)+HOF(6)+他(7) = +53関数 |
+| 13    | DESIGN: delay/force(3)+volatile(4)+reduced(4) = 新型3種+11関数、deref拡張              |
 
 ### 実装状況
 
-342 done / 170 skip / 190 todo
+349 done / 170 skip / 183 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -89,15 +90,17 @@ Phase 12: PURE 残り — シーケンス・HOF・ユーティリティ（~55 �
   └ 残り述語: bytes?, class?, decimal?, ratio?, rational?, record? 等
   └ find-keyword, parse-uuid, random-uuid, char, byte, short, long, float, num
 
-Phase 13: DESIGN — delay/force, volatile, transient
-  └ delay/delay?/force: サンクラッパー（LazySeq より単純）
+Phase 13: DESIGN — delay/force, volatile, reduced ✅
+  └ delay/delay?/force: サンクラッパー（マクロ展開 + builtin）
   └ volatile!/volatile?/vreset!/vswap!: ミュータブルボックス
-  └ transient/persistent!/conj!/assoc!/dissoc!/disj!/pop!: 一時的ミュータブルコレクション
-
-Phase 14: DESIGN — reduced/transduce 基盤
   └ reduced/reduced?/unreduced/ensure-reduced: Reduced ラッパー型
+  └ deref 拡張（volatile, delay 対応）
+  └ 新型3種: Delay, Volatile, Reduced を value.zig に追加
+
+Phase 14: DESIGN — transduce 基盤・transient
   └ completing, transduce, cat, eduction, halt-when
   └ iteration（遅延ステートフルイテレータ）
+  └ transient/persistent!/conj!/assoc!/dissoc!/disj!/pop!: 一時的ミュータブルコレクション
 
 Phase 15: DESIGN — Atom 拡張・Var 操作・メタデータ
   └ add-watch, remove-watch, get-validator, set-validator!

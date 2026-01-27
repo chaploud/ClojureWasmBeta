@@ -176,6 +176,19 @@
 - 述語の多くは常に false を返す stub（bytes?, class?, decimal?, ratio?, record? 等）
   - 将来の型実装に合わせて有効化
 
+## Phase 13: Delay / Volatile / Reduced
+
+- **新型3種を value.zig に追加**: Delay, Volatile, Reduced 構造体 + Value union タグ
+- **delay マクロ**: `(delay expr)` → `(__delay-create (fn [] expr))` に展開（analyze.zig）
+  - `__delay-create` builtin が fn_val を受けて Delay 構造体を生成
+- **force**: delay_val なら fn_val を call_fn threadlocal で呼び出し、結果をキャッシュ
+  - 非 delay 値は素通し（Clojure 互換）
+- **deref 拡張**: atom に加えて volatile_val, delay_val にも対応
+  - delay_val の deref は force と同等
+- **vswap!**: call_fn threadlocal を使って `(f @vol args...)` を実行し volatile を更新
+- **ensure-reduced**: 既に reduced_val ならそのまま、それ以外は reduced で包む
+- switch exhaustiveness: value.zig (typeKeyword, deepClone, format), core.zig (typeFn), main.zig (printValue), analyze.zig (valueToForm) を全て更新
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

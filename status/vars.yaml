@@ -273,8 +273,9 @@ vars:
       impl_type: none
     delay:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
+      layer: DESIGN
     doseq:
       type: macro
       status: done
@@ -426,8 +427,9 @@ vars:
       impl_type: none
     vswap!:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: DESIGN
     when:
       type: macro
       status: done
@@ -1089,7 +1091,7 @@ vars:
       type: function
       status: done
       impl_type: builtin
-      layer: pure
+      layer: DESIGN
     deliver:
       type: function
       status: todo
@@ -1204,8 +1206,9 @@ vars:
       impl_type: none
     ensure-reduced:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: DESIGN
     enumeration-seq:
       type: function
       status: skip
@@ -1361,8 +1364,9 @@ vars:
       impl_type: macro
     force:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: DESIGN
     format:
       type: function
       status: done
@@ -2258,13 +2262,14 @@ vars:
       host: host
     reduced:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: DESIGN
     reduced?:
       type: function
       status: done
       impl_type: builtin
-      layer: pure
+      layer: DESIGN
     reductions:
       type: function
       status: done
@@ -2845,8 +2850,9 @@ vars:
       impl_type: none
     unreduced:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: DESIGN
     unsigned-bit-shift-right:
       type: function
       status: done
@@ -2946,16 +2952,17 @@ vars:
       type: function
       status: done
       impl_type: builtin
-      layer: pure
+      layer: DESIGN
     volatile?:
       type: function
       status: done
       impl_type: builtin
-      layer: pure
+      layer: DESIGN
     vreset!:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: DESIGN
     with-bindings*:
       type: function
       status: todo

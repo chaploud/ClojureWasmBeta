@@ -1483,6 +1483,27 @@ fn printValue(writer: anytype, val: Value) !void {
                 try writer.writeAll("#<lazy-seq>");
             }
         },
+        .delay_val => |d| {
+            if (d.realized) {
+                try writer.writeAll("#<delay ");
+                if (d.cached) |cached| {
+                    try printValue(writer, cached);
+                }
+                try writer.writeByte('>');
+            } else {
+                try writer.writeAll("#<delay :pending>");
+            }
+        },
+        .volatile_val => |v| {
+            try writer.writeAll("#<volatile ");
+            try printValue(writer, v.value);
+            try writer.writeByte('>');
+        },
+        .reduced_val => |r| {
+            try writer.writeAll("#<reduced ");
+            try printValue(writer, r.value);
+            try writer.writeByte('>');
+        },
     }
 }
 
@@ -2334,10 +2355,16 @@ pub fn atomFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
 /// deref: Atom の現在値を返す
 /// (deref atom) → val
 pub fn derefFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
     if (args.len != 1) return error.ArityError;
     return switch (args[0]) {
         .atom => |a| a.value,
+        .volatile_val => |v| v.value,
+        .delay_val => |d| {
+            if (d.realized) {
+                return d.cached orelse Value.nil;
+            }
+            return forceFn(allocator, args);
+        },
         else => error.TypeError,
     };
 }
@@ -2896,6 +2923,9 @@ pub fn typeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
         .var_val => "var",
         .atom => "atom",
         .lazy_seq => "lazy-seq",
+        .delay_val => "delay",
+        .volatile_val => "volatile",
+        .reduced_val => "reduced",
     };
 
     const str = try allocator.create(value_mod.String);
@@ -5052,26 +5082,7 @@ pub fn isReaderConditional(allocator: std.mem.Allocator, args: []const Value) an
     return value_mod.false_val;
 }
 
-/// delay? : delay オブジェクトかどうか（Phase 13 で実装、現在は false）
-pub fn isDelay(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
-    if (args.len != 1) return error.ArityError;
-    return value_mod.false_val;
-}
-
-/// volatile? : volatile オブジェクトかどうか（Phase 13 で実装、現在は false）
-pub fn isVolatile(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
-    if (args.len != 1) return error.ArityError;
-    return value_mod.false_val;
-}
-
-/// reduced? : Reduced ラッパーかどうか（Phase 14 で実装、現在は false）
-pub fn isReduced(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
-    if (args.len != 1) return error.ArityError;
-    return value_mod.false_val;
-}
+// delay?, volatile?, reduced? は Phase 13 で本実装（core.zig 末尾の Phase 13 セクション）
 
 /// instance? : 型チェック（内部タグ検査で簡略実装）
 pub fn instanceCheck(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
@@ -5789,6 +5800,133 @@ fn isFnValue(v: Value) bool {
 }
 
 // ============================================================
+// Phase 13: delay/volatile/reduced
+// ============================================================
+
+/// __delay-create : Delay オブジェクトを作成（内部用）
+/// (delay expr) マクロから呼ばれる: (__delay-create (fn [] expr))
+pub fn delayCreate(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    // 引数は (fn [] expr) 形式の関数
+    if (!isFnValue(args[0])) return error.TypeError;
+    const d = try allocator.create(value_mod.Delay);
+    d.* = value_mod.Delay.init(args[0]);
+    return Value{ .delay_val = d };
+}
+
+/// force : delay の値を取得（未評価なら評価してキャッシュ）
+pub fn forceFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .delay_val => |d| {
+            if (d.realized) {
+                return d.cached orelse value_mod.nil;
+            }
+            // 関数を呼び出して結果をキャッシュ
+            const call = call_fn orelse return error.TypeError;
+            const result = try call(d.fn_val.?, &[_]Value{}, allocator);
+            d.cached = result;
+            d.fn_val = null;
+            d.realized = true;
+            return result;
+        },
+        else => args[0], // delay でない値はそのまま返す
+    };
+}
+
+/// delay? : Delay オブジェクトかどうか
+pub fn isDelayFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .delay_val) value_mod.true_val else value_mod.false_val;
+}
+
+/// volatile! : Volatile ボックスを作成
+pub fn volatileBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const v = try allocator.create(value_mod.Volatile);
+    v.* = value_mod.Volatile.init(args[0]);
+    return Value{ .volatile_val = v };
+}
+
+/// volatile? : Volatile かどうか
+pub fn isVolatileFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .volatile_val) value_mod.true_val else value_mod.false_val;
+}
+
+/// vreset! : Volatile の値をリセット
+pub fn vresetBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const v = switch (args[0]) {
+        .volatile_val => |vol| vol,
+        else => return error.TypeError,
+    };
+    v.value = args[1];
+    return args[1];
+}
+
+/// vswap! : Volatile の値を関数で更新 (vswap! vol f & args)
+pub fn vswapBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const v = switch (args[0]) {
+        .volatile_val => |vol| vol,
+        else => return error.TypeError,
+    };
+    const call = call_fn orelse return error.TypeError;
+    // (f current-val & extra-args)
+    var call_args = std.ArrayList(Value).empty;
+    defer call_args.deinit(allocator);
+    try call_args.append(allocator, v.value);
+    for (args[2..]) |extra| {
+        try call_args.append(allocator, extra);
+    }
+    const new_val = try call(args[1], call_args.items, allocator);
+    v.value = new_val;
+    return new_val;
+}
+
+/// reduced : 値を Reduced でラップ（reduce の早期終了用）
+pub fn reducedFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const r = try allocator.create(value_mod.Reduced);
+    r.* = value_mod.Reduced.init(args[0]);
+    return Value{ .reduced_val = r };
+}
+
+/// reduced? : Reduced かどうか
+pub fn isReducedFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return if (args[0] == .reduced_val) value_mod.true_val else value_mod.false_val;
+}
+
+/// unreduced : Reduced の内部値を取得（Reduced でなければそのまま）
+pub fn unreducedFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .reduced_val => |r| r.value,
+        else => args[0],
+    };
+}
+
+/// ensure-reduced : Reduced でなければ Reduced でラップ
+pub fn ensureReducedFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .reduced_val => args[0], // 既に Reduced
+        else => {
+            const r = try allocator.create(value_mod.Reduced);
+            r.* = value_mod.Reduced.init(args[0]);
+            return Value{ .reduced_val = r };
+        },
+    };
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -6053,9 +6191,9 @@ const builtins = [_]BuiltinDef{
     .{ .name = "uuid?", .func = isUuid },
     .{ .name = "tagged-literal?", .func = isTaggedLiteral },
     .{ .name = "reader-conditional?", .func = isReaderConditional },
-    .{ .name = "delay?", .func = isDelay },
-    .{ .name = "volatile?", .func = isVolatile },
-    .{ .name = "reduced?", .func = isReduced },
+    .{ .name = "delay?", .func = isDelayFn },
+    .{ .name = "volatile?", .func = isVolatileFn },
+    .{ .name = "reduced?", .func = isReducedFn },
     .{ .name = "instance?", .func = instanceCheck },
     // Phase 12: 型キャスト
     .{ .name = "char", .func = charFn },
@@ -6099,6 +6237,15 @@ const builtins = [_]BuiltinDef{
     .{ .name = "trampoline", .func = trampolineFn },
     .{ .name = "tree-seq", .func = treeSeqFn },
     .{ .name = "partition-by", .func = partitionByFn },
+    // Phase 13: delay/volatile/reduced
+    .{ .name = "__delay-create", .func = delayCreate },
+    .{ .name = "force", .func = forceFn },
+    .{ .name = "volatile!", .func = volatileBang },
+    .{ .name = "vreset!", .func = vresetBang },
+    .{ .name = "vswap!", .func = vswapBang },
+    .{ .name = "reduced", .func = reducedFn },
+    .{ .name = "unreduced", .func = unreducedFn },
+    .{ .name = "ensure-reduced", .func = ensureReducedFn },
 };
 
 /// clojure.core の組み込み関数を Env に登録

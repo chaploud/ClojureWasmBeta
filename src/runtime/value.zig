@@ -411,6 +411,36 @@ pub const Atom = struct {
     }
 };
 
+/// Delay（遅延評価サンク）
+/// delay はボディ関数を保持し、初回 force 時に評価してキャッシュする
+pub const Delay = struct {
+    fn_val: ?Value, // 評価関数（(fn [] body) 形式）— 評価済みなら null
+    cached: ?Value, // キャッシュされた結果
+    realized: bool, // 評価済みフラグ
+
+    pub fn init(fn_val: Value) Delay {
+        return .{ .fn_val = fn_val, .cached = null, .realized = false };
+    }
+};
+
+/// Volatile（ミュータブルボックス — 同期なし）
+pub const Volatile = struct {
+    value: Value,
+
+    pub fn init(val: Value) Volatile {
+        return .{ .value = val };
+    }
+};
+
+/// Reduced（reduce 早期終了ラッパー）
+pub const Reduced = struct {
+    value: Value,
+
+    pub fn init(val: Value) Reduced {
+        return .{ .value = val };
+    }
+};
+
 // === 関数プロトタイプ（コンパイル済み）===
 // 循環依存を避けるため、ここで前方宣言
 // 実際の定義は compiler/bytecode.zig
@@ -537,6 +567,11 @@ pub const Value = union(enum) {
     var_val: *anyopaque, // *Var（循環依存を避けるため anyopaque）
     atom: *Atom, // Atom（ミュータブルな参照）
 
+    // === Phase 13: delay/volatile/reduced ===
+    delay_val: *Delay, // 遅延評価サンク
+    volatile_val: *Volatile, // ミュータブルボックス
+    reduced_val: *Reduced, // reduce 早期終了ラッパー
+
     // === ヘルパー関数 ===
 
     /// nil かどうか
@@ -620,6 +655,9 @@ pub const Value = union(enum) {
             .fn_proto => |a| a == other.fn_proto, // 参照等価
             .var_val => |a| a == other.var_val, // 参照等価
             .atom => |a| a == other.atom, // 参照等価
+            .delay_val => |a| a == other.delay_val, // 参照等価
+            .volatile_val => |a| a == other.volatile_val, // 参照等価
+            .reduced_val => |a| a.value.eql(other.reduced_val.value), // 内部値で比較
         };
     }
 
@@ -648,6 +686,9 @@ pub const Value = union(enum) {
             .fn_proto => "fn-proto",
             .var_val => "var",
             .atom => "atom",
+            .delay_val => "delay",
+            .volatile_val => "volatile",
+            .reduced_val => "reduced",
         };
     }
 
@@ -674,6 +715,9 @@ pub const Value = union(enum) {
             .fn_proto => "fn-proto",
             .var_val => "var",
             .atom => "atom",
+            .delay_val => "delay",
+            .volatile_val => "volatile",
+            .reduced_val => "reduced",
         };
     }
 
@@ -799,6 +843,27 @@ pub const Value = union(enum) {
                 try a.value.format("", .{}, writer);
                 try writer.writeByte('>');
             },
+            .delay_val => |d| {
+                if (d.realized) {
+                    try writer.writeAll("#<delay ");
+                    if (d.cached) |cached| {
+                        try cached.format("", .{}, writer);
+                    }
+                    try writer.writeByte('>');
+                } else {
+                    try writer.writeAll("#<delay :pending>");
+                }
+            },
+            .volatile_val => |v| {
+                try writer.writeAll("#<volatile ");
+                try v.value.format("", .{}, writer);
+                try writer.writeByte('>');
+            },
+            .reduced_val => |r| {
+                try writer.writeAll("#<reduced ");
+                try r.value.format("", .{}, writer);
+                try writer.writeByte('>');
+            },
         }
     }
 
@@ -894,6 +959,26 @@ pub const Value = union(enum) {
             .multi_fn, .protocol, .protocol_fn => self,
             // 他のランタイムオブジェクトはそのまま（persistent で作成済み）
             .fn_val, .partial_fn, .comp_fn, .fn_proto, .var_val => self,
+            // Phase 13: delay/volatile/reduced
+            .delay_val => |d| blk: {
+                const new_d = try allocator.create(Delay);
+                new_d.* = .{
+                    .fn_val = d.fn_val,
+                    .cached = if (d.cached) |c| try c.deepClone(allocator) else null,
+                    .realized = d.realized,
+                };
+                break :blk .{ .delay_val = new_d };
+            },
+            .volatile_val => |v| blk: {
+                const new_v = try allocator.create(Volatile);
+                new_v.* = .{ .value = try v.value.deepClone(allocator) };
+                break :blk .{ .volatile_val = new_v };
+            },
+            .reduced_val => |r| blk: {
+                const new_r = try allocator.create(Reduced);
+                new_r.* = .{ .value = try r.value.deepClone(allocator) };
+                break :blk .{ .reduced_val = new_r };
+            },
         };
     }
 

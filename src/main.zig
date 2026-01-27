@@ -327,6 +327,27 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
                 try writer.writeAll("#<lazy-seq>");
             }
         },
+        .delay_val => |d| {
+            if (d.realized) {
+                try writer.writeAll("#<delay ");
+                if (d.cached) |cached| {
+                    try printValue(writer, cached);
+                }
+                try writer.writeByte('>');
+            } else {
+                try writer.writeAll("#<delay :pending>");
+            }
+        },
+        .volatile_val => |v| {
+            try writer.writeAll("#<volatile ");
+            try printValue(writer, v.value);
+            try writer.writeByte('>');
+        },
+        .reduced_val => |r| {
+            try writer.writeAll("#<reduced ");
+            try printValue(writer, r.value);
+            try writer.writeByte('>');
+        },
     }
 }
 
