@@ -3059,3 +3059,134 @@ test "Phase 24: ns-unmap" {
     const r2 = try evalExpr(allocator, &env, "(get (ns-publics 'user) 'to-unmap)");
     try std.testing.expectEqual(Value.nil, r2);
 }
+
+// ============================================================
+// Phase 26: Reader Conditionals + 外部ライブラリ統合テスト
+// ============================================================
+
+test "Phase 26: reader conditional #?(:clj ...)" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // :clj が最初
+    try expectIntBoth(allocator, &env, "#?(:clj 1 :cljs 2)", 1);
+
+    // :clj が後ろ
+    try expectIntBoth(allocator, &env, "#?(:cljs 2 :clj 1)", 1);
+
+    // :clj なし → nil
+    try expectNilBoth(allocator, &env, "#?(:cljs 2)");
+
+    // :default のみ
+    try expectIntBoth(allocator, &env, "#?(:default 42)", 42);
+
+    // :cljs + :default → :default
+    try expectIntBoth(allocator, &env, "#?(:cljs 1 :default 99)", 99);
+
+    // :clj + :default → :clj 優先
+    try expectIntBoth(allocator, &env, "#?(:clj 10 :default 99)", 10);
+}
+
+test "Phase 26: reader conditional in expression context" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 式の中で使用
+    try expectIntBoth(allocator, &env, "(+ 1 #?(:clj 2 :cljs 3))", 3);
+
+    // ベクタ内
+    try expectIntBoth(allocator, &env, "(count [1 #?(:clj 2 :cljs 3) 4])", 3);
+
+    // 文字列値
+    try expectStrBoth(allocator, &env,
+        "#?(:clj \"hello\" :cljs \"world\")", "hello");
+}
+
+test "Phase 26: named fn self-reference (recursive)" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // 名前付き fn の自己再帰
+    try expectIntBoth(allocator, &env,
+        "((fn fact [n] (if (<= n 1) 1 (* n (fact (dec n))))) 5)", 120);
+
+    // クロージャ + 名前付き fn
+    try expectIntBoth(allocator, &env,
+        "(let [base 10] ((fn add-base [x] (if (zero? x) base (+ 1 (add-base (dec x))))) 3))", 13);
+}
+
+test "Phase 26: fn literal #(...)" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // %1 (= %) 単一引数
+    try expectIntBoth(allocator, &env, "(#(+ % 1) 10)", 11);
+
+    // %1 明示
+    try expectIntBoth(allocator, &env, "(#(+ %1 1) 10)", 11);
+
+    // 複数引数 %1 %2
+    try expectIntBoth(allocator, &env, "(#(+ %1 %2) 3 4)", 7);
+
+    // map + fn literal
+    try expectIntBoth(allocator, &env, "(first (map #(* % 2) [5 6 7]))", 10);
+}
+
+test "Phase 26: reduce with reduced early termination" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // reduced で早期終了 (TreeWalk のみ — VM は reduced 未対応)
+    try expectInt(allocator, &env,
+        "(reduce (fn [acc x] (if (> x 3) (reduced acc) (+ acc x))) 0 [1 2 3 4 5])", 6);
+
+    // reduce-kv で reduced (ベクタは順序保証)
+    try expectInt(allocator, &env,
+        "(reduce-kv (fn [acc k v] (if (>= k 2) (reduced acc) (+ acc v))) 0 [10 20 30 40])", 30);
+}
+
+test "Phase 26: symbol with quote character" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // ' を含むシンボル (swap!' 等)
+    _ = try evalExpr(allocator, &env, "(def x' 42)");
+    try expectIntBoth(allocator, &env, "x'", 42);
+}
+
+test "Phase 26: instance? special form" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // Boolean 型チェック
+    try expectBoolBoth(allocator, &env, "(instance? Boolean true)", true);
+    try expectBoolBoth(allocator, &env, "(instance? Boolean 42)", false);
+}

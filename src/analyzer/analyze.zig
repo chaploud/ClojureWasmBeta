@@ -132,6 +132,11 @@ pub const Analyzer = struct {
             if (self.findLocal(sym.name)) |local| {
                 return self.makeLocalRef(local.name, local.idx);
             }
+
+            // Java 互換シンボル（静的フィールド）
+            if (self.resolveJavaSymbol(sym.name)) |val| {
+                return self.makeConstant(val);
+            }
         }
 
         // Var を検索
@@ -142,6 +147,15 @@ pub const Analyzer = struct {
 
         if (self.env.resolve(runtime_sym)) |v| {
             return self.makeVarRef(v);
+        }
+
+        // 名前空間付きシンボルの場合、Java 互換シンボル (ns/name 形式) を試す
+        if (sym.namespace) |ns| {
+            // "clojure.lang.PersistentQueue/EMPTY" 等のフルパス
+            const full_name = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ ns, sym.name }) catch return error.OutOfMemory;
+            if (self.resolveJavaSymbol(full_name)) |val| {
+                return self.makeConstant(val);
+            }
         }
 
         // 未定義シンボル
@@ -222,10 +236,17 @@ pub const Analyzer = struct {
                 return self.analyzeLazySeq(items);
             } else if (std.mem.eql(u8, sym_name, "var")) {
                 return self.analyzeVarSpecial(items);
+            } else if (std.mem.eql(u8, sym_name, "instance?")) {
+                return self.analyzeInstanceCheck(items);
             }
 
             // 組み込みマクロ展開（Form→Form 変換して再解析）
             if (try self.expandBuiltinMacro(sym_name, items)) |expanded| {
+                return self.analyze(expanded);
+            }
+
+            // Java 互換シンボル変換
+            if (self.tryJavaInterop(sym_name, items)) |expanded| {
                 return self.analyze(expanded);
             }
         }
@@ -892,11 +913,21 @@ pub const Analyzer = struct {
             return err.parseError(.invalid_arity, "fn requires parameter vector", .{});
         }
 
+        // 名前付き fn の場合、自己参照できるようにローカルに追加
+        const fn_name_locals_start = self.locals.items.len;
+        if (name) |fn_name| {
+            const fn_local_idx: u32 = @intCast(self.locals.items.len);
+            self.locals.append(self.allocator, .{ .name = fn_name, .idx = fn_local_idx }) catch return error.OutOfMemory;
+        }
+
         // 単一アリティ: [params] body...
         if (items[idx] == .vector) {
             const arity = try self.analyzeFnArity(items[idx].vector, items[idx + 1 ..]);
             const arities = self.allocator.alloc(node_mod.FnArity, 1) catch return error.OutOfMemory;
             arities[0] = arity;
+
+            // 名前付き fn のローカルを除去
+            self.locals.shrinkRetainingCapacity(fn_name_locals_start);
 
             const fn_data = self.allocator.create(node_mod.FnNode) catch return error.OutOfMemory;
             fn_data.* = .{
@@ -930,6 +961,9 @@ pub const Analyzer = struct {
 
             idx += 1;
         }
+
+        // 名前付き fn のローカルを除去
+        self.locals.shrinkRetainingCapacity(fn_name_locals_start);
 
         if (arities_list.items.len == 0) {
             return err.parseError(.invalid_arity, "fn requires at least one arity", .{});
@@ -1896,7 +1930,8 @@ pub const Analyzer = struct {
     }
 
     /// (if-let [x expr] then else?)
-    /// → (let [x expr] (if x then else))
+    /// → (let [temp__ expr] (if temp__ (let [x temp__] then) else))
+    /// 分配束縛対応: パターンがシンボルでない場合は temp 変数を導入
     fn expandIfLet(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3 or items.len > 4) {
             return err.parseError(.invalid_arity, "if-let requires 2-3 arguments", .{});
@@ -1908,26 +1943,59 @@ pub const Analyzer = struct {
         }
 
         const bindings = binding_vec.vector;
+        const pattern = bindings[0];
+        const expr = bindings[1];
         const then_form = items[2];
         const else_form: Form = if (items.len > 3) items[3] else Form.nil;
 
-        // (if x then else)
-        const if_forms = self.allocator.alloc(Form, 4) catch return error.OutOfMemory;
-        if_forms[0] = Form{ .symbol = form_mod.Symbol.init("if") };
-        if_forms[1] = bindings[0]; // x
-        if_forms[2] = then_form;
-        if_forms[3] = else_form;
-        const if_form = Form{ .list = if_forms };
+        if (pattern == .symbol) {
+            // 単純なシンボル: (let [x expr] (if x then else))
+            const if_forms = self.allocator.alloc(Form, 4) catch return error.OutOfMemory;
+            if_forms[0] = Form{ .symbol = form_mod.Symbol.init("if") };
+            if_forms[1] = pattern;
+            if_forms[2] = then_form;
+            if_forms[3] = else_form;
+            const if_form = Form{ .list = if_forms };
 
-        // (let [x expr] (if x then else))
-        const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
-        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
-        let_forms[1] = binding_vec;
-        let_forms[2] = if_form;
-        return Form{ .list = let_forms };
+            const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+            let_forms[1] = binding_vec;
+            let_forms[2] = if_form;
+            return Form{ .list = let_forms };
+        } else {
+            // 分配束縛: (let [temp__ expr] (if temp__ (let [pattern temp__] then) else))
+            const temp_sym = Form{ .symbol = form_mod.Symbol.init("__if_let_temp__") };
+
+            // 内側の let: (let [pattern temp__] then)
+            const inner_bindings = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            inner_bindings[0] = pattern;
+            inner_bindings[1] = temp_sym;
+            const inner_let = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            inner_let[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+            inner_let[1] = Form{ .vector = inner_bindings };
+            inner_let[2] = then_form;
+
+            // if: (if temp__ inner-let else)
+            const if_forms = self.allocator.alloc(Form, 4) catch return error.OutOfMemory;
+            if_forms[0] = Form{ .symbol = form_mod.Symbol.init("if") };
+            if_forms[1] = temp_sym;
+            if_forms[2] = Form{ .list = inner_let };
+            if_forms[3] = else_form;
+
+            // 外側の let: (let [temp__ expr] if-form)
+            const outer_bindings = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            outer_bindings[0] = temp_sym;
+            outer_bindings[1] = expr;
+            const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+            let_forms[1] = Form{ .vector = outer_bindings };
+            let_forms[2] = Form{ .list = if_forms };
+            return Form{ .list = let_forms };
+        }
     }
 
     /// (when-let [x expr] body...) → (let [x expr] (when x body...))
+    /// 分配束縛対応: パターンがシンボルでない場合は temp 変数を導入
     fn expandWhenLet(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
             return err.parseError(.invalid_arity, "when-let requires at least a binding and body", .{});
@@ -1939,21 +2007,52 @@ pub const Analyzer = struct {
         }
 
         const bindings = binding_vec.vector;
+        const pattern = bindings[0];
+        const expr = bindings[1];
         const body = items[2..];
 
-        // (when x body...)
-        const when_forms = self.allocator.alloc(Form, 2 + body.len) catch return error.OutOfMemory;
-        when_forms[0] = Form{ .symbol = form_mod.Symbol.init("when") };
-        when_forms[1] = bindings[0]; // x
-        @memcpy(when_forms[2..], body);
-        const when_form = Form{ .list = when_forms };
+        if (pattern == .symbol) {
+            // 単純なシンボル: (let [x expr] (when x body...))
+            const when_forms = self.allocator.alloc(Form, 2 + body.len) catch return error.OutOfMemory;
+            when_forms[0] = Form{ .symbol = form_mod.Symbol.init("when") };
+            when_forms[1] = pattern;
+            @memcpy(when_forms[2..], body);
+            const when_form = Form{ .list = when_forms };
 
-        // (let [x expr] (when x body...))
-        const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
-        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
-        let_forms[1] = binding_vec;
-        let_forms[2] = when_form;
-        return Form{ .list = let_forms };
+            const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+            let_forms[1] = binding_vec;
+            let_forms[2] = when_form;
+            return Form{ .list = let_forms };
+        } else {
+            // 分配束縛: (let [temp__ expr] (when temp__ (let [pattern temp__] body...)))
+            const temp_sym = Form{ .symbol = form_mod.Symbol.init("__when_let_temp__") };
+
+            // 内側の let + body: (let [pattern temp__] body...)
+            const inner_bindings = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            inner_bindings[0] = pattern;
+            inner_bindings[1] = temp_sym;
+            const inner_let = self.allocator.alloc(Form, 2 + body.len) catch return error.OutOfMemory;
+            inner_let[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+            inner_let[1] = Form{ .vector = inner_bindings };
+            @memcpy(inner_let[2..], body);
+
+            // (when temp__ inner-let)
+            const when_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            when_forms[0] = Form{ .symbol = form_mod.Symbol.init("when") };
+            when_forms[1] = temp_sym;
+            when_forms[2] = Form{ .list = inner_let };
+
+            // 外側の let: (let [temp__ expr] when-form)
+            const outer_bindings = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            outer_bindings[0] = temp_sym;
+            outer_bindings[1] = expr;
+            const let_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+            let_forms[1] = Form{ .vector = outer_bindings };
+            let_forms[2] = Form{ .list = when_forms };
+            return Form{ .list = let_forms };
+        }
     }
 
     /// (and) → true
@@ -2123,10 +2222,13 @@ pub const Analyzer = struct {
             else => return err.parseError(.invalid_token, "defn name must be a symbol", .{}),
         };
 
-        // docstring をスキップ（items[2] が文字列なら無視）
+        // docstring + メタデータマップをスキップ
         var body_start: usize = 2;
         if (body_start < items.len and items[body_start] == .string) {
             body_start += 1; // docstring をスキップ
+        }
+        if (body_start < items.len and items[body_start] == .map) {
+            body_start += 1; // メタデータマップをスキップ
         }
 
         if (body_start >= items.len) {
@@ -2757,6 +2859,69 @@ pub const Analyzer = struct {
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = .{ .lazy_seq_node = data };
         return node;
+    }
+
+    // === Java 互換シンボル解決 ===
+
+    /// Java 静的フィールド/定数をシンボルレベルで解決
+    /// clojure.lang.PersistentQueue/EMPTY → 空リスト
+    /// Boolean/TRUE → true, Boolean/FALSE → false
+    fn resolveJavaSymbol(_: *Analyzer, name: []const u8) ?Value {
+        if (std.mem.eql(u8, name, "clojure.lang.PersistentQueue/EMPTY")) {
+            // PersistentQueue 未実装のため空リストで代用
+            return value_mod.nil;
+        } else if (std.mem.eql(u8, name, "Boolean/TRUE") or std.mem.eql(u8, name, "java.lang.Boolean/TRUE")) {
+            return value_mod.true_val;
+        } else if (std.mem.eql(u8, name, "Boolean/FALSE") or std.mem.eql(u8, name, "java.lang.Boolean/FALSE")) {
+            return value_mod.false_val;
+        }
+        return null;
+    }
+
+    // === Java 互換シンボル変換 ===
+
+    /// Java 互換の呼び出しを Clojure 関数呼び出しに変換
+    /// (.getMessage e) → (ex-message e)
+    /// (java.util.UUID/randomUUID) → (random-uuid)
+    /// (java.util.UUID/fromString s) → (parse-uuid s)
+    /// (clojure.lang.MapEntry. k v) → (vector k v) — 2要素ベクタとして
+    fn tryJavaInterop(self: *Analyzer, sym_name: []const u8, items: []const Form) ?Form {
+        _ = self;
+
+        // ドットメソッド呼び出し: (.method obj args...)
+        if (sym_name.len > 1 and sym_name[0] == '.') {
+            const method = sym_name[1..];
+            if (std.mem.eql(u8, method, "getMessage")) {
+                // (.getMessage e) → (ex-message e)
+                return Form{ .list = replaceHead(items, "ex-message") orelse return null };
+            } else if (std.mem.eql(u8, method, "getCause")) {
+                // (.getCause e) → (ex-cause e)
+                return Form{ .list = replaceHead(items, "ex-cause") orelse return null };
+            }
+        }
+
+        // Java static メソッド/フィールド: Class/method
+        if (std.mem.eql(u8, sym_name, "java.util.UUID/randomUUID")) {
+            return Form{ .list = replaceHead(items, "random-uuid") orelse return null };
+        } else if (std.mem.eql(u8, sym_name, "java.util.UUID/fromString")) {
+            return Form{ .list = replaceHead(items, "parse-uuid") orelse return null };
+        }
+
+        // コンストラクタ: Class. args
+        if (std.mem.eql(u8, sym_name, "clojure.lang.MapEntry.")) {
+            // (clojure.lang.MapEntry. k v) → (vector k v)
+            return Form{ .list = replaceHead(items, "vector") orelse return null };
+        }
+
+        return null;
+    }
+
+    /// items の先頭シンボルを new_name に置き換えたコピーを返す
+    fn replaceHead(items: []const Form, new_name: []const u8) ?[]const Form {
+        // constCast で先頭だけ差し替え (scratch allocator 上のデータ)
+        const mutable = @constCast(items);
+        mutable[0] = Form{ .symbol = form_mod.Symbol.init(new_name) };
+        return mutable;
     }
 
     // === マクロ展開 ===
@@ -4480,6 +4645,35 @@ pub const Analyzer = struct {
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = node_mod.constantNode(Value{ .var_val = @ptrCast(v) });
         return node;
+    }
+
+    /// (instance? ClassName expr) — クラス名をシンボル定数として渡す
+    fn analyzeInstanceCheck(self: *Analyzer, items: []const Form) err.Error!*Node {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "instance? requires 2 arguments", .{});
+        }
+        // 第1引数: クラス名をシンボル定数として扱う（解決しない）
+        const class_name = switch (items[1]) {
+            .symbol => |s| blk: {
+                // 名前空間付きの場合は結合した名前を使う
+                const name = if (s.namespace) |ns|
+                    std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns, s.name }) catch return error.OutOfMemory
+                else
+                    s.name;
+                const sym_val = self.allocator.create(value_mod.Symbol) catch return error.OutOfMemory;
+                sym_val.* = .{ .name = name, .namespace = null };
+                break :blk try self.makeConstant(.{ .symbol = sym_val });
+            },
+            else => return err.parseError(.invalid_binding, "instance? first argument must be a class name", .{}),
+        };
+        // 第2引数: 通常の式として解析
+        const expr_node = try self.analyze(items[2]);
+
+        // instance? 組み込み関数を解決して呼び出し
+        var args = self.allocator.alloc(*Node, 2) catch return error.OutOfMemory;
+        args[0] = class_name;
+        args[1] = expr_node;
+        return self.makeBuiltinCall("instance?", args);
     }
 
     /// (defrecord Name [fields] & body) → (do (defn ->Name [fields] (hash-map ...)) nil) スタブ

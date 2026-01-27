@@ -101,6 +101,8 @@ pub const Reader = struct {
             .fn_lit => self.readFnLit(),
             .var_quote => self.readWrapped("var"),
             .symbolic => self.readSymbolic(),
+            .reader_cond => self.readReaderCond(),
+            .reader_cond_splicing => return err.parseError(.invalid_token, "Reader conditional splicing #?@ is not supported", .{}),
 
             // メタデータ ^
             .meta, .meta_deprecated => try self.readMeta(),
@@ -424,17 +426,129 @@ pub const Reader = struct {
 
     /// #() 無名関数リテラル
     fn readFnLit(self: *Reader) err.Error!Form {
-        // #(body) → (fn* [args...] body) への変換は Analyzer で行う
-        // Reader では #(...) を特別な形式で保存
+        // #(body) → (fn* [%1 %2 ...] body)
         const body = try self.readDelimited(.rparen);
 
-        // (fn* [] body) 形式で返す（引数解析は後で）
+        // body 内の %, %1, %2, ..., %& をスキャンしてパラメータを決定
+        var max_param: usize = 0;
+        var has_rest = false;
+        for (body) |form| {
+            self.scanFnLitParams(form, &max_param, &has_rest);
+        }
+
+        // パラメータベクター構築
+        const param_count = max_param + (if (has_rest) @as(usize, 2) else 0); // +2 for "& %rest"
+        const params = try self.allocator.alloc(Form, param_count);
+        for (0..max_param) |i| {
+            // %1, %2, ... のシンボル名を生成
+            var buf: [8]u8 = undefined;
+            const name = std.fmt.bufPrint(&buf, "%{d}", .{i + 1}) catch unreachable;
+            const duped = try self.allocator.dupe(u8, name);
+            params[i] = Form{ .symbol = Symbol.init(duped) };
+        }
+        if (has_rest) {
+            params[max_param] = Form{ .symbol = Symbol.init("&") };
+            params[max_param + 1] = Form{ .symbol = Symbol.init("%&") };
+        }
+
+        // body 内の % を %1 に正規化
+        const normalized_body = try self.allocator.alloc(Form, body.len);
+        for (body, 0..) |form, i| {
+            normalized_body[i] = try self.normalizeFnLitPercent(form);
+        }
+
+        // (fn* [params...] (body-items...))
+        // #(+ % 1) → (fn* [%1] (+ %1 1))
+        // body 全体を1つのリストにラップ（Clojure と同じ挙動）
+        const body_list = Form{ .list = normalized_body };
+
         const items = try self.allocator.alloc(Form, 3);
         items[0] = Form{ .symbol = Symbol.init("fn*") };
-        items[1] = Form{ .vector = &[_]Form{} }; // 仮の空引数（TODO: %1, %2 解析）
-        items[2] = if (body.len == 1) body[0] else Form{ .list = body };
+        items[1] = Form{ .vector = params };
+        items[2] = body_list;
 
         return Form{ .list = items };
+    }
+
+    /// body 内の % を %1 に正規化（再帰的）
+    fn normalizeFnLitPercent(self: *Reader, form: Form) !Form {
+        switch (form) {
+            .symbol => |s| {
+                if (s.namespace == null and std.mem.eql(u8, s.name, "%")) {
+                    return Form{ .symbol = Symbol.init("%1") };
+                }
+                return form;
+            },
+            .list => |items| {
+                const new_items = try self.allocator.alloc(Form, items.len);
+                for (items, 0..) |item, i| {
+                    new_items[i] = try self.normalizeFnLitPercent(item);
+                }
+                return Form{ .list = new_items };
+            },
+            .vector => |items| {
+                const new_items = try self.allocator.alloc(Form, items.len);
+                for (items, 0..) |item, i| {
+                    new_items[i] = try self.normalizeFnLitPercent(item);
+                }
+                return Form{ .vector = new_items };
+            },
+            .map => |items| {
+                const new_items = try self.allocator.alloc(Form, items.len);
+                for (items, 0..) |item, i| {
+                    new_items[i] = try self.normalizeFnLitPercent(item);
+                }
+                return Form{ .map = new_items };
+            },
+            .set => |items| {
+                const new_items = try self.allocator.alloc(Form, items.len);
+                for (items, 0..) |item, i| {
+                    new_items[i] = try self.normalizeFnLitPercent(item);
+                }
+                return Form{ .set = new_items };
+            },
+            else => return form,
+        }
+    }
+
+    /// #() 内の %, %1, %2, %& をスキャン
+    fn scanFnLitParams(self: *Reader, form: Form, max_param: *usize, has_rest: *bool) void {
+        switch (form) {
+            .symbol => |s| {
+                if (s.namespace != null) return;
+                const name = s.name;
+                if (std.mem.eql(u8, name, "%") or std.mem.eql(u8, name, "%1")) {
+                    if (max_param.* < 1) max_param.* = 1;
+                } else if (std.mem.eql(u8, name, "%&")) {
+                    has_rest.* = true;
+                } else if (name.len >= 2 and name[0] == '%') {
+                    // %2, %3, ... をパース
+                    const num = std.fmt.parseInt(usize, name[1..], 10) catch return;
+                    if (num > max_param.*) max_param.* = num;
+                }
+            },
+            .list => |items| {
+                for (items) |item| {
+                    self.scanFnLitParams(item, max_param, has_rest);
+                }
+            },
+            .vector => |items| {
+                for (items) |item| {
+                    self.scanFnLitParams(item, max_param, has_rest);
+                }
+            },
+            .map => |items| {
+                for (items) |item| {
+                    self.scanFnLitParams(item, max_param, has_rest);
+                }
+            },
+            .set => |items| {
+                for (items) |item| {
+                    self.scanFnLitParams(item, max_param, has_rest);
+                }
+            },
+            else => {},
+        }
     }
 
     /// ^ (メタデータ)
@@ -502,6 +616,54 @@ pub const Reader = struct {
         }
 
         return err.parseError(.invalid_token, "Unknown symbolic value", self.tokenLocation(next));
+    }
+
+    /// #? (reader conditional)
+    /// #?(:clj expr :cljs expr :default expr) → :clj 分岐を返す
+    fn readReaderCond(self: *Reader) err.Error!Form {
+        const open = self.nextToken();
+        if (open.kind != .lparen) {
+            return err.parseError(.invalid_token, "Expected ( after #?", self.tokenLocation(open));
+        }
+
+        // キーワード + フォームのペアを読む
+        var clj_form: ?Form = null;
+        var default_form: ?Form = null;
+
+        while (true) {
+            const kw_token = self.nextToken();
+            if (kw_token.kind == .rparen) break;
+            if (kw_token.kind == .eof) {
+                return err.parseError(.unexpected_eof, "EOF in reader conditional", .{});
+            }
+
+            // キーワードを取得
+            const kw_form = try self.readForm(kw_token);
+            const kw_name = switch (kw_form) {
+                .keyword => |kw| kw.name,
+                else => return err.parseError(.invalid_token, "Expected keyword in reader conditional", .{}),
+            };
+
+            // 値フォームを読む
+            const val_token = self.nextToken();
+            if (val_token.kind == .eof) {
+                return err.parseError(.unexpected_eof, "EOF in reader conditional", .{});
+            }
+            const val_form = try self.readForm(val_token);
+
+            // :clj 分岐を記録
+            if (std.mem.eql(u8, kw_name, "clj")) {
+                clj_form = val_form;
+            } else if (std.mem.eql(u8, kw_name, "default")) {
+                default_form = val_form;
+            }
+            // :cljs 等は無視（読むが捨てる）
+        }
+
+        // :clj → :default → nil の優先度で返す
+        if (clj_form) |form| return form;
+        if (default_form) |form| return form;
+        return .nil;
     }
 
     // === トークン操作 ===

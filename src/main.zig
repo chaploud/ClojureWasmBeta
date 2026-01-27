@@ -81,6 +81,28 @@ pub fn main() !void {
                 stderr.flush() catch {};
                 std.process.exit(1);
             }
+        } else if (std.mem.startsWith(u8, args[i], "--classpath=")) {
+            const cp_str = args[i]["--classpath=".len..];
+            // : で分割してクラスパスルートに追加
+            var iter = std.mem.splitScalar(u8, cp_str, ':');
+            while (iter.next()) |path| {
+                if (path.len > 0) {
+                    core.addClasspathRoot(path);
+                }
+            }
+        } else if (std.mem.startsWith(u8, args[i], "-cp")) {
+            // -cp path1:path2 形式
+            if (std.mem.eql(u8, args[i], "-cp")) {
+                i += 1;
+                if (i < args.len) {
+                    var iter = std.mem.splitScalar(u8, args[i], ':');
+                    while (iter.next()) |path| {
+                        if (path.len > 0) {
+                            core.addClasspathRoot(path);
+                        }
+                    }
+                }
+            }
         } else if (std.mem.eql(u8, args[i], "--compare")) {
             compare_mode = true;
         } else if (std.mem.eql(u8, args[i], "-h") or std.mem.eql(u8, args[i], "--help")) {
@@ -574,6 +596,8 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\
         \\Options:
         \\  -e <expr>              Evaluate the expression
+        \\  --classpath=<paths>    Add classpath roots (colon-separated)
+        \\  -cp <paths>            Add classpath roots (colon-separated)
         \\  --backend=<backend>    Select backend: tree_walk (default), vm
         \\  --compare              Run both backends and compare results
         \\  -h, --help             Show this help message
@@ -582,6 +606,7 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\Examples:
         \\  clj-wasm -e "(+ 1 2 3)"
         \\  clj-wasm -e "(def x 10)" -e "(+ x 5)"
+        \\  clj-wasm --classpath=src:test/libs -e "(require 'my.lib)"
         \\  clj-wasm --backend=vm -e "(+ 1 2)"
         \\  clj-wasm --compare -e "(if true 1 2)"
         \\

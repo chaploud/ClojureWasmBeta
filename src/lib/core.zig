@@ -52,7 +52,7 @@ pub fn initLoadedLibs(allocator: std.mem.Allocator) void {
 }
 
 /// クラスパスルート（ファイルロード時の基準ディレクトリ）
-var classpath_roots: [4]?[]const u8 = .{ null, null, null, null };
+var classpath_roots: [16]?[]const u8 = .{null} ** 16;
 var classpath_count: usize = 0;
 
 /// クラスパスルートを追加
@@ -63,10 +63,10 @@ pub fn addClasspathRoot(path: []const u8) void {
     }
 }
 
-/// NS名からファイルパスに変換 (例: "my.lib.core" → "my/lib/core.clj")
-fn nsNameToPath(allocator: std.mem.Allocator, ns_name: []const u8) ![]const u8 {
+/// NS名からファイルパスに変換 (例: "my.lib.core" + ".clj" → "my/lib/core.clj")
+fn nsNameToPath(allocator: std.mem.Allocator, ns_name: []const u8, ext: []const u8) ![]const u8 {
     // ドットをスラッシュに、ハイフンをアンダースコアに変換
-    var path = try allocator.alloc(u8, ns_name.len + 4); // +4 for ".clj"
+    var path = try allocator.alloc(u8, ns_name.len + ext.len);
     var pi: usize = 0;
     for (ns_name) |c| {
         path[pi] = switch (c) {
@@ -76,23 +76,44 @@ fn nsNameToPath(allocator: std.mem.Allocator, ns_name: []const u8) ![]const u8 {
         };
         pi += 1;
     }
-    @memcpy(path[pi..][0..4], ".clj");
-    return path[0 .. pi + 4];
+    @memcpy(path[pi..][0..ext.len], ext);
+    return path[0 .. pi + ext.len];
 }
 
 /// ファイルをロードして評価する
 fn loadFileContent(allocator: std.mem.Allocator, content: []const u8) anyerror!Value {
     const env = current_env orelse return error.TypeError;
     var reader = Reader.init(allocator, content);
-    const forms = reader.readAll() catch return error.EvalError;
+    const forms = reader.readAll() catch |e| {
+        // 現在のリーダー位置を取得
+        const pos = reader.tokenizer.pos;
+        const line = reader.tokenizer.line;
+        debugLog("[reader-error] line {d} pos {d}: {any}", .{ line, pos, e });
+        return error.EvalError;
+    };
     var result: Value = value_mod.nil;
-    for (forms) |form| {
+    for (forms, 0..) |form, fi| {
         var analyzer = Analyzer.init(allocator, env);
-        const node = analyzer.analyze(form) catch return error.EvalError;
+        const node = analyzer.analyze(form) catch |e| {
+            debugLog("[analyze-error] form #{d}: {any}", .{ fi, e });
+            return error.EvalError;
+        };
         var ctx = Context.init(allocator, env);
-        result = tree_walk.run(node, &ctx) catch return error.EvalError;
+        result = tree_walk.run(node, &ctx) catch |e| {
+            debugLog("[eval-error] form #{d}: {any}", .{ fi, e });
+            return error.EvalError;
+        };
     }
     return result;
+}
+
+/// デバッグログ出力（stderr）
+fn debugLog(comptime fmt: []const u8, args: anytype) void {
+    var buf: [512]u8 = undefined;
+    var writer = std.fs.File.stderr().writer(&buf);
+    const stderr = &writer.interface;
+    stderr.print(fmt ++ "\n", args) catch {};
+    stderr.flush() catch {};
 }
 
 /// LazySeq を実体化する（force）
@@ -4430,12 +4451,14 @@ pub fn reduceKv(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
             while (i < m.entries.len) : (i += 2) {
                 const call_args = [_]Value{ acc, m.entries[i], m.entries[i + 1] };
                 acc = try call(f, &call_args, allocator);
+                if (acc == .reduced_val) return acc.reduced_val.value;
             }
         },
         .vector => |v| {
             for (v.items, 0..) |item, i| {
                 const call_args = [_]Value{ acc, value_mod.intVal(@intCast(i)), item };
                 acc = try call(f, &call_args, allocator);
+                if (acc == .reduced_val) return acc.reduced_val.value;
             }
         },
         .nil => {},
@@ -5374,25 +5397,81 @@ pub fn isReaderConditional(allocator: std.mem.Allocator, args: []const Value) an
 pub fn instanceCheck(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     if (args.len != 2) return error.ArityError;
-    // (instance? type-kw val) — type-kw はキーワードで型名を指定
+    // (instance? type-name val) — type-name はキーワード/文字列/シンボルで型名を指定
     const type_name = switch (args[0]) {
         .keyword => |kw| kw.name,
         .string => |s| s.data,
+        .symbol => |s| s.name,
         else => return value_mod.false_val,
     };
     const val = args[1];
-    const is_match = if (std.mem.eql(u8, type_name, "Integer") or std.mem.eql(u8, type_name, "Long"))
-        val == .int
-    else if (std.mem.eql(u8, type_name, "Double") or std.mem.eql(u8, type_name, "Float"))
+    const is_match =
+        if (std.mem.eql(u8, type_name, "Integer") or
+        std.mem.eql(u8, type_name, "Long") or
+        std.mem.eql(u8, type_name, "java.lang.Long") or
+        std.mem.eql(u8, type_name, "java.lang.Integer") or
+        std.mem.eql(u8, type_name, "Number") or
+        std.mem.eql(u8, type_name, "java.lang.Number"))
+        val == .int or val == .float
+    else if (std.mem.eql(u8, type_name, "Double") or
+        std.mem.eql(u8, type_name, "Float") or
+        std.mem.eql(u8, type_name, "java.lang.Double") or
+        std.mem.eql(u8, type_name, "java.lang.Float"))
         val == .float
-    else if (std.mem.eql(u8, type_name, "String"))
+    else if (std.mem.eql(u8, type_name, "String") or
+        std.mem.eql(u8, type_name, "java.lang.String") or
+        std.mem.eql(u8, type_name, "CharSequence") or
+        std.mem.eql(u8, type_name, "java.lang.CharSequence"))
         val == .string
-    else if (std.mem.eql(u8, type_name, "Boolean"))
+    else if (std.mem.eql(u8, type_name, "Boolean") or
+        std.mem.eql(u8, type_name, "java.lang.Boolean"))
         val == .bool_val
-    else if (std.mem.eql(u8, type_name, "Keyword"))
+    else if (std.mem.eql(u8, type_name, "Keyword") or
+        std.mem.eql(u8, type_name, "clojure.lang.Keyword"))
         val == .keyword
-    else if (std.mem.eql(u8, type_name, "Symbol"))
+    else if (std.mem.eql(u8, type_name, "Symbol") or
+        std.mem.eql(u8, type_name, "clojure.lang.Symbol"))
         val == .symbol
+    else if (std.mem.eql(u8, type_name, "clojure.lang.IEditableCollection"))
+        val == .vector or val == .map or val == .set
+    else if (std.mem.eql(u8, type_name, "Throwable") or
+        std.mem.eql(u8, type_name, "java.lang.Throwable") or
+        std.mem.eql(u8, type_name, "Exception") or
+        std.mem.eql(u8, type_name, "java.lang.Exception"))
+        // エラーは ex-info マップとして表現される（特別なタグなし）
+        false
+    else if (std.mem.eql(u8, type_name, "java.util.UUID"))
+        // UUID はシンボルに false (未実装なら)
+        false
+    else if (std.mem.eql(u8, type_name, "java.util.regex.Pattern") or
+        std.mem.eql(u8, type_name, "Pattern"))
+        val == .regex
+    else if (std.mem.eql(u8, type_name, "clojure.lang.PersistentVector") or
+        std.mem.eql(u8, type_name, "clojure.lang.IPersistentVector"))
+        val == .vector
+    else if (std.mem.eql(u8, type_name, "clojure.lang.PersistentHashMap") or
+        std.mem.eql(u8, type_name, "clojure.lang.IPersistentMap") or
+        std.mem.eql(u8, type_name, "clojure.lang.PersistentArrayMap"))
+        val == .map
+    else if (std.mem.eql(u8, type_name, "clojure.lang.PersistentHashSet") or
+        std.mem.eql(u8, type_name, "clojure.lang.IPersistentSet"))
+        val == .set
+    else if (std.mem.eql(u8, type_name, "clojure.lang.PersistentList") or
+        std.mem.eql(u8, type_name, "clojure.lang.IPersistentList") or
+        std.mem.eql(u8, type_name, "clojure.lang.ISeq"))
+        val == .list or val == .lazy_seq
+    else if (std.mem.eql(u8, type_name, "clojure.lang.IFn"))
+        val == .fn_val or val == .partial_fn or val == .comp_fn or val == .multi_fn or val == .keyword or val == .map or val == .set or val == .vector
+    else if (std.mem.eql(u8, type_name, "clojure.lang.Atom") or
+        std.mem.eql(u8, type_name, "clojure.lang.IAtom"))
+        val == .atom
+    else if (std.mem.eql(u8, type_name, "clojure.lang.Var"))
+        val == .var_val
+    else if (std.mem.eql(u8, type_name, "clojure.lang.PersistentQueue"))
+        false // 未実装型
+    else if (std.mem.eql(u8, type_name, "Character") or
+        std.mem.eql(u8, type_name, "java.lang.Character"))
+        val == .char_val
     else
         false;
     return if (is_match) value_mod.true_val else value_mod.false_val;
@@ -8753,25 +8832,33 @@ fn requireNsLoad(allocator: std.mem.Allocator, ns_name: []const u8, force_reload
     // ロード済みチェック
     if (!force_reload and loaded_libs.contains(ns_name)) return;
 
-    // NS名 → ファイルパス変換
-    const rel_path = try nsNameToPath(allocator, ns_name);
+    // NS名 → ファイルパス変換 (.clj と .cljc の両方)
+    const rel_path_clj = try nsNameToPath(allocator, ns_name, ".clj");
+    const rel_path_cljc = try nsNameToPath(allocator, ns_name, ".cljc");
 
-    // クラスパスルートからファイルを探索
+    // クラスパスルートからファイルを探索 (.clj → .cljc フォールバック)
     var loaded = false;
     var ri: usize = 0;
     while (ri < classpath_count) : (ri += 1) {
         if (classpath_roots[ri]) |root| {
-            const full_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ root, rel_path });
-            if (tryLoadFile(allocator, full_path)) {
+            const full_path_clj = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ root, rel_path_clj });
+            if (tryLoadFile(allocator, full_path_clj)) {
+                loaded = true;
+                break;
+            }
+            const full_path_cljc = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ root, rel_path_cljc });
+            if (tryLoadFile(allocator, full_path_cljc)) {
                 loaded = true;
                 break;
             }
         }
     }
 
-    // ルートなしで相対パスを試す
+    // ルートなしで相対パスを試す (.clj → .cljc)
     if (!loaded) {
-        _ = tryLoadFile(allocator, rel_path);
+        if (!tryLoadFile(allocator, rel_path_clj)) {
+            _ = tryLoadFile(allocator, rel_path_cljc);
+        }
     }
 
     // ロード済みとして登録（ファイルが見つからなくても NS は作成済みなので登録）
@@ -8788,9 +8875,15 @@ fn tryLoadFile(allocator: std.mem.Allocator, path: []const u8) bool {
     // 現在の NS を退避（ファイル内で ns が変更される可能性がある）
     const env = current_env orelse return false;
     const saved_ns = env.getCurrentNs();
-    _ = loadFileContent(allocator, content) catch {
+    _ = loadFileContent(allocator, content) catch |e| {
         // エラー時は NS を復元
         if (saved_ns) |ns| env.setCurrentNs(ns);
+        // デバッグ: エラーを stderr に出力
+        var buf: [256]u8 = undefined;
+        var stderr_writer = std.fs.File.stderr().writer(&buf);
+        const stderr = &stderr_writer.interface;
+        stderr.print("[load-error] {s}: {any}\n", .{ path, e }) catch {};
+        stderr.flush() catch {};
         return false;
     };
     // NS を復元（require 元の NS に戻す）

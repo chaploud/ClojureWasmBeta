@@ -178,7 +178,15 @@ fn runFn(node: *const node_mod.FnNode, ctx: *Context) EvalError!Value {
     }
 
     // クロージャ環境をキャプチャ
-    const closure_bindings = if (ctx.bindings.len > 0)
+    // 名前付き fn の場合、自己参照用のスロットを1つ追加
+    const is_named = node.name != null;
+    const closure_bindings = if (is_named) blk: {
+        // 自己参照用に1スロット追加
+        const binds = ctx.allocator.alloc(Value, ctx.bindings.len + 1) catch return error.OutOfMemory;
+        @memcpy(binds[0..ctx.bindings.len], ctx.bindings);
+        binds[ctx.bindings.len] = value_mod.nil; // 後で自己参照をセット
+        break :blk binds;
+    } else if (ctx.bindings.len > 0)
         ctx.allocator.dupe(Value, ctx.bindings) catch return error.OutOfMemory
     else
         null;
@@ -187,7 +195,16 @@ fn runFn(node: *const node_mod.FnNode, ctx: *Context) EvalError!Value {
     const fn_obj = ctx.allocator.create(value_mod.Fn) catch return error.OutOfMemory;
     fn_obj.* = value_mod.Fn.initUser(node.name, runtime_arities, closure_bindings);
 
-    return Value{ .fn_val = fn_obj };
+    const fn_val = Value{ .fn_val = fn_obj };
+
+    // 名前付き fn: 自己参照をクロージャ環境に設定
+    if (is_named) {
+        if (closure_bindings) |binds| {
+            @constCast(binds)[ctx.bindings.len] = fn_val;
+        }
+    }
+
+    return fn_val;
 }
 
 /// letfn 評価（相互再帰ローカル関数）
@@ -844,6 +861,10 @@ fn runReduce(node: *const node_mod.ReduceNode, ctx: *Context) EvalError!Value {
         args[0] = acc;
         args[1] = item;
         acc = try callWithArgs(fn_val, args, ctx);
+        // reduced による早期終了
+        if (acc == .reduced_val) {
+            return acc.reduced_val.value;
+        }
     }
 
     return acc;

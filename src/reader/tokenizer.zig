@@ -54,6 +54,7 @@ pub const TokenKind = enum(u8) {
     regex_start, // #"
     symbolic, // ##
     reader_cond, // #?
+    reader_cond_splicing, // #?@
     ns_map, // #:
     meta_deprecated, // #^ (非推奨)
     unreadable, // #< (常にエラー)
@@ -343,6 +344,11 @@ pub const Tokenizer = struct {
             },
             '?' => blk: {
                 self.advance();
+                // #?@ (splicing reader conditional)
+                if (!self.isEof() and self.peek() == '@') {
+                    self.advance();
+                    break :blk .reader_cond_splicing;
+                }
                 break :blk .reader_cond;
             },
             ':' => blk: {
@@ -620,7 +626,9 @@ fn isTerminator(c: u8) bool {
 }
 
 fn isSymbolChar(c: u8) bool {
-    return !isWhitespace(c) and !isTerminator(c) and c != '#' and c != '\'' and c != ':';
+    // ' はシンボル内部で有効 (coll', x', swap!'s 等)
+    // ' が先頭の場合は next() で quote トークンとして処理済み
+    return !isWhitespace(c) and !isTerminator(c) and c != '#' and c != ':';
 }
 
 // === テスト ===

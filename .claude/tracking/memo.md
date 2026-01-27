@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 25 完了 — REPL (対話型シェル)**
+**Phase 26 完了 — Reader Conditionals + 外部ライブラリ統合テスト**
 
 ### 完了フェーズ
 
@@ -57,6 +57,7 @@
 | 23    | 動的バインディング（本格実装）                                                                |
 | 24    | 名前空間（本格実装）                                                                          |
 | 25    | REPL (対話型シェル)                                                                           |
+| 26    | Reader Conditionals + 外部ライブラリ統合テスト (medley v1.4.0)                                |
 
 ### 実装状況
 
@@ -66,35 +67,51 @@
 
 ---
 
-## Phase 25 実装詳細
+## Phase 26 実装詳細
 
 ### 機能
 
-- 引数なし起動で REPL モード (`./ClojureWasmBeta`)
-- NS名表示プロンプト (`user=>`, `myns=>`)
-- 複数行入力 (括弧バランスチェック、未閉じなら `user..` プロンプトで継続)
-- 結果履歴 `*1`, `*2`, `*3`, エラー履歴 `*e`
-- Ctrl-D で終了
-- `--backend=vm` / `--compare` も REPL で動作
+- **Reader Conditional `#?`**: `:clj` 分岐を選択、`:default` フォールバック対応
+- **`.cljc` ファイル対応**: `require` で `.clj` → `.cljc` フォールバック検索
+- **`--classpath=path1:path2`**: 複数クラスパスルート指定
+- **`instance?` 特殊形式**: Java 型名をシンボル定数として解決
+- **名前付き fn 自己再帰**: クロージャスロットで自己参照パッチ
+- **`#(...)` fn リテラル**: `%`, `%1`, `%2`, `%&` パラメータスキャン + body ラップ
+- **`reduced` 早期終了**: `reduce` / `reduce-kv` で `reduced` 値をアンラップ
+- **`'` シンボル文字**: `coll'`, `x'` 等のシンボルを許可
+- **Java 互換シンボル**: `clojure.lang.PersistentQueue/EMPTY` 等の名前空間付きシンボル解決
 
 ### 変更ファイル
 
-| ファイル       | 変更内容                                                          |
-|----------------|-------------------------------------------------------------------|
-| `src/main.zig` | runRepl + evalForRepl + isBalanced + REPL起動分岐                 |
+| ファイル                              | 変更内容                                              |
+|---------------------------------------|-------------------------------------------------------|
+| `src/reader/tokenizer.zig`            | `isSymbolChar` で `'` を許可                          |
+| `src/reader/reader.zig`               | `readFnLit` 全面書き直し + `readReaderCond` 追加      |
+| `src/analyzer/analyze.zig`            | `instance?` 特殊形式 + 名前付き fn + Java シンボル    |
+| `src/runtime/evaluator.zig`           | 名前付き fn 自己参照 + `reduced` ハンドリング         |
+| `src/lib/core.zig`                    | `reduceKv` reduced 対応 + `.cljc` + classpath         |
+| `src/main.zig`                        | `--classpath` オプション                              |
+| `src/test_e2e.zig`                    | Phase 26 E2E テスト 7 件追加                          |
+| `test/libs/medley_trimmed/core.cljc`  | medley v1.4.0 トリミング版 (新規)                     |
+| `test/libs/medley/core.cljc`          | medley v1.4.0 フルソース (新規)                       |
+| `test/integration/test_medley.clj`    | medley 統合テスト (新規)                              |
 
-### 設計ポイント
+### medley 統合テスト結果
 
-- **stdin API**: Zig 0.15.2 の `File.reader()` → `interface.takeDelimiter()` を使用
-- **source 寿命**: persistent アロケータで確保 (シンボル名が source 内を指すため解放不可)
-- **scratch リセット**: 式ごとに scratch arena をリセット (Reader/Analyzer の一時データ)
-- **GC**: 式境界で Mark-Sweep GC を実行 (非REPL モードと同じ)
+**medley-trimmed (22関数)**: 全テスト pass
+- Tier 1: abs, find-first, assoc-some, dissoc-in, update-existing
+- Tier 2: map-keys, map-vals, filter-keys, filter-vals
+- Tier 3: boolean?, least, greatest
+
+**フル medley**: form #39 (deref-swap!) で停止 — `compare-and-set!` 未実装
 
 ### 既知の制限
 
-- `*ns*` が REPL 開始時に `clojure.core` を返す (動的Varのルート値が未更新)
-- 文字列表示で `!` がエスケープされる (`"test!"` → `"test\!"`) — Phase 25 以前からの問題
-- VM での `with-redefs` 後のユーザー関数呼び出しが signal 6 でクラッシュ (Phase 23 由来)
+- VM で `reduced` 未対応 (TreeWalk のみ)
+- sets-as-functions 未対応 (`#{:a :b}` を関数として使用不可)
+- フル medley の `compare-and-set!`/`deref-swap!`/`deref-reset!` 未実装
+- 文字列表示で `!` がエスケープされる (Phase 25 以前からの問題)
+- VM での `with-redefs` 後のユーザー関数呼び出しクラッシュ (Phase 23 由来)
 
 ---
 
