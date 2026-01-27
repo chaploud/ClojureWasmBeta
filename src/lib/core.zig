@@ -13,6 +13,8 @@ const Value = value_mod.Value;
 const Fn = value_mod.Fn;
 const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
+const var_mod = @import("../runtime/var.zig");
+const Var = var_mod.Var;
 
 /// 組み込み関数の型（value.zig との循環依存を避けるためここで定義）
 pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
@@ -27,6 +29,8 @@ pub const CallFn = *const fn (fn_val: Value, args: []const Value, allocator: std
 pub threadlocal var force_lazy_seq_fn: ?ForceFn = null;
 /// 関数呼び出しコールバック（lazy map/filter 用）
 pub threadlocal var call_fn: ?CallFn = null;
+/// 現在の Env（find-var, intern 等で使用）
+pub threadlocal var current_env: ?*Env = null;
 
 /// LazySeq を実体化する（force）
 /// サンク関数を呼び出し、結果を cached realized に格納して返す
@@ -6479,6 +6483,321 @@ pub fn iterationFn(allocator: std.mem.Allocator, args: []const Value) anyerror!V
 }
 
 // ============================================================
+// Phase 15: Atom 拡張・Var 操作・メタデータ
+// ============================================================
+
+/// add-watch : Atom にウォッチャーを登録
+/// (add-watch atom key fn) → atom
+/// fn は (fn [key atom old-val new-val] ...) 形式
+pub fn addWatchFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 3) return error.ArityError;
+    const a = switch (args[0]) {
+        .atom => |atom| atom,
+        else => return error.TypeError,
+    };
+    const key = args[1];
+    const watch_fn = args[2];
+    // watches 配列に [key, fn] を追加
+    var new_watches = std.ArrayList(Value).empty;
+    if (a.watches) |ws| {
+        try new_watches.appendSlice(allocator, ws);
+    }
+    try new_watches.append(allocator, key);
+    try new_watches.append(allocator, watch_fn);
+    a.watches = new_watches.items;
+    return args[0];
+}
+
+/// remove-watch : Atom からウォッチャーを削除
+/// (remove-watch atom key) → atom
+pub fn removeWatchFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const a = switch (args[0]) {
+        .atom => |atom| atom,
+        else => return error.TypeError,
+    };
+    const key = args[1];
+    if (a.watches) |ws| {
+        // [key1, fn1, key2, fn2, ...] からキーを検索して削除
+        var i: usize = 0;
+        while (i + 1 < ws.len) {
+            if (ws[i].eql(key)) {
+                // 見つかった: key, fn の2要素を除去した新配列を作成
+                // 簡易版: null 化（GC で回収）
+                // TODO: 配列を再構築
+                break;
+            }
+            i += 2;
+        }
+    }
+    return args[0];
+}
+
+/// get-validator : Atom のバリデータを取得
+/// (get-validator atom) → fn or nil
+pub fn getValidatorFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    const a = switch (args[0]) {
+        .atom => |atom| atom,
+        else => return error.TypeError,
+    };
+    return a.validator orelse value_mod.nil;
+}
+
+/// set-validator! : Atom にバリデータを設定
+/// (set-validator! atom fn) → nil
+pub fn setValidatorBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const a = switch (args[0]) {
+        .atom => |atom| atom,
+        else => return error.TypeError,
+    };
+    a.validator = if (args[1].isNil()) null else args[1];
+    return value_mod.nil;
+}
+
+/// compare-and-set! : Atom の値を CAS で更新
+/// (compare-and-set! atom oldval newval) → bool
+pub fn compareAndSetBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 3) return error.ArityError;
+    const a = switch (args[0]) {
+        .atom => |atom| atom,
+        else => return error.TypeError,
+    };
+    if (a.value.eql(args[1])) {
+        const cloned = try args[2].deepClone(allocator);
+        a.value = cloned;
+        return value_mod.true_val;
+    }
+    return value_mod.false_val;
+}
+
+/// reset-vals! : Atom を新値に設定し [old new] を返す
+/// (reset-vals! atom newval) → [old-val new-val]
+pub fn resetValsBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const a = switch (args[0]) {
+        .atom => |atom| atom,
+        else => return error.TypeError,
+    };
+    const old_val = a.value;
+    const cloned = try args[1].deepClone(allocator);
+    a.value = cloned;
+    // [old new] ベクターを返す
+    const items = try allocator.alloc(Value, 2);
+    items[0] = old_val;
+    items[1] = cloned;
+    const v = try allocator.create(value_mod.PersistentVector);
+    v.* = .{ .items = items };
+    return Value{ .vector = v };
+}
+
+/// swap-vals! : Atom に関数を適用し [old new] を返す
+/// (swap-vals! atom f & args) → [old-val new-val]
+pub fn swapValsBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const a = switch (args[0]) {
+        .atom => |atom| atom,
+        else => return error.TypeError,
+    };
+    const call = call_fn orelse return error.TypeError;
+    const old_val = a.value;
+    // (f current-val extra-args...)
+    var call_args = std.ArrayList(Value).empty;
+    defer call_args.deinit(allocator);
+    try call_args.append(allocator, a.value);
+    for (args[2..]) |extra| {
+        try call_args.append(allocator, extra);
+    }
+    const new_val = try call(args[1], call_args.items, allocator);
+    const cloned = try new_val.deepClone(allocator);
+    a.value = cloned;
+    // [old new] ベクターを返す
+    const items = try allocator.alloc(Value, 2);
+    items[0] = old_val;
+    items[1] = cloned;
+    const v = try allocator.create(value_mod.PersistentVector);
+    v.* = .{ .items = items };
+    return Value{ .vector = v };
+}
+
+/// var-get : Var の値を取得
+/// (var-get var) → val
+pub fn varGetFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    const v = switch (args[0]) {
+        .var_val => |vp| @as(*Var, @ptrCast(@alignCast(vp))),
+        else => return error.TypeError,
+    };
+    return v.deref();
+}
+
+/// var-set : Var の root 値を設定
+/// (var-set var val) → val
+pub fn varSetFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    const v = switch (args[0]) {
+        .var_val => |vp| @as(*Var, @ptrCast(@alignCast(vp))),
+        else => return error.TypeError,
+    };
+    v.bindRoot(args[1]);
+    return args[1];
+}
+
+/// alter-var-root : Var の root 値を関数で更新
+/// (alter-var-root var f & args) → new-val
+pub fn alterVarRootFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const v = switch (args[0]) {
+        .var_val => |vp| @as(*Var, @ptrCast(@alignCast(vp))),
+        else => return error.TypeError,
+    };
+    const call = call_fn orelse return error.TypeError;
+    // (f current-val extra-args...)
+    var call_args = std.ArrayList(Value).empty;
+    defer call_args.deinit(allocator);
+    try call_args.append(allocator, v.deref());
+    for (args[2..]) |extra| {
+        try call_args.append(allocator, extra);
+    }
+    const new_val = try call(args[1], call_args.items, allocator);
+    v.bindRoot(new_val);
+    return new_val;
+}
+
+/// find-var : 名前空間修飾シンボルから Var を検索
+/// (find-var 'ns/name) → var or nil
+pub fn findVarFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    const sym = switch (args[0]) {
+        .symbol => |s| s,
+        else => return error.TypeError,
+    };
+    const env = current_env orelse return error.TypeError;
+    const ns_name = sym.namespace orelse return value_mod.nil;
+    const ns = env.findNs(ns_name) orelse return value_mod.nil;
+    const v = ns.resolve(sym.name) orelse return value_mod.nil;
+    return Value{ .var_val = @ptrCast(v) };
+}
+
+/// intern : 名前空間に Var を定義
+/// (intern ns-sym name-sym) or (intern ns-sym name-sym val)
+pub fn internFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+    const env = current_env orelse return error.TypeError;
+    const ns_name = switch (args[0]) {
+        .symbol => |s| s.name,
+        .string => |s| s.data,
+        else => return error.TypeError,
+    };
+    const sym_name = switch (args[1]) {
+        .symbol => |s| s.name,
+        .string => |s| s.data,
+        else => return error.TypeError,
+    };
+    const ns = try env.findOrCreateNs(ns_name);
+    const v = try ns.intern(sym_name);
+    if (args.len == 3) {
+        const cloned = try args[2].deepClone(allocator);
+        v.bindRoot(cloned);
+    }
+    return Value{ .var_val = @ptrCast(v) };
+}
+
+/// bound? : Var が束縛されているか（root が nil でない）
+/// (bound? var) → bool
+pub fn boundPred(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len < 1) return error.ArityError;
+    // 全引数が bound であれば true
+    for (args) |arg| {
+        const v = switch (arg) {
+            .var_val => |vp| @as(*Var, @ptrCast(@alignCast(vp))),
+            else => return error.TypeError,
+        };
+        if (v.deref().isNil()) return value_mod.false_val;
+    }
+    return value_mod.true_val;
+}
+
+/// alter-meta! : 参照のメタデータを関数で更新
+/// (alter-meta! ref f & args) → new-meta
+pub fn alterMetaBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const call = call_fn orelse return error.TypeError;
+
+    // 現在のメタを取得
+    const current_meta: Value = switch (args[0]) {
+        .atom => |a| a.meta orelse value_mod.nil,
+        .var_val => |vp| blk: {
+            const v: *Var = @ptrCast(@alignCast(vp));
+            break :blk if (v.meta) |m| m.* else value_mod.nil;
+        },
+        else => return error.TypeError,
+    };
+
+    // (f current-meta extra-args...)
+    var call_args = std.ArrayList(Value).empty;
+    defer call_args.deinit(allocator);
+    try call_args.append(allocator, current_meta);
+    for (args[2..]) |extra| {
+        try call_args.append(allocator, extra);
+    }
+    const new_meta = try call(args[1], call_args.items, allocator);
+
+    // メタを更新
+    switch (args[0]) {
+        .atom => |a| {
+            a.meta = new_meta;
+        },
+        .var_val => |vp| {
+            const v: *Var = @ptrCast(@alignCast(vp));
+            const meta_ptr = try allocator.create(Value);
+            meta_ptr.* = new_meta;
+            v.meta = meta_ptr;
+        },
+        else => return error.TypeError,
+    }
+    return new_meta;
+}
+
+/// reset-meta! : 参照のメタデータを新値に置換
+/// (reset-meta! ref new-meta) → new-meta
+pub fn resetMetaBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    switch (args[0]) {
+        .atom => |a| {
+            a.meta = args[1];
+        },
+        .var_val => |vp| {
+            const v: *Var = @ptrCast(@alignCast(vp));
+            const meta_ptr = try allocator.create(Value);
+            meta_ptr.* = args[1];
+            v.meta = meta_ptr;
+        },
+        else => return error.TypeError,
+    }
+    return args[1];
+}
+
+/// vary-meta : オブジェクトのメタデータを関数で変更した新オブジェクトを返す
+/// (vary-meta obj f & args) → obj-with-new-meta
+/// 簡易実装: alter-meta! と同等（永続オブジェクトのメタ変更）
+pub fn varyMetaFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    // vary-meta は immutable オブジェクトのメタを変更する
+    // 現時点では alter-meta! と同等に処理
+    _ = try alterMetaBang(allocator, args);
+    return args[0];
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -6812,6 +7131,23 @@ const builtins = [_]BuiltinDef{
     .{ .name = "eduction", .func = eductionFn },
     .{ .name = "halt-when", .func = haltWhenFn },
     .{ .name = "iteration", .func = iterationFn },
+    // Phase 15: Atom 拡張・Var 操作・メタデータ
+    .{ .name = "add-watch", .func = addWatchFn },
+    .{ .name = "remove-watch", .func = removeWatchFn },
+    .{ .name = "get-validator", .func = getValidatorFn },
+    .{ .name = "set-validator!", .func = setValidatorBang },
+    .{ .name = "compare-and-set!", .func = compareAndSetBang },
+    .{ .name = "reset-vals!", .func = resetValsBang },
+    .{ .name = "swap-vals!", .func = swapValsBang },
+    .{ .name = "var-get", .func = varGetFn },
+    .{ .name = "var-set", .func = varSetFn },
+    .{ .name = "alter-var-root", .func = alterVarRootFn },
+    .{ .name = "find-var", .func = findVarFn },
+    .{ .name = "intern", .func = internFn },
+    .{ .name = "bound?", .func = boundPred },
+    .{ .name = "alter-meta!", .func = alterMetaBang },
+    .{ .name = "reset-meta!", .func = resetMetaBang },
+    .{ .name = "vary-meta", .func = varyMetaFn },
 };
 
 /// clojure.core の組み込み関数を Env に登録

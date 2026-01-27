@@ -405,6 +405,12 @@ pub const ProtocolFn = struct {
 /// Atom（ミュータブルな参照）
 pub const Atom = struct {
     value: Value,
+    /// バリデーション関数（set 前に呼ばれる）
+    validator: ?Value = null,
+    /// ウォッチャー: [key1, fn1, key2, fn2, ...] の配列
+    watches: ?[]const Value = null,
+    /// メタデータ
+    meta: ?Value = null,
 
     pub fn init(val: Value) Atom {
         return .{ .value = val };

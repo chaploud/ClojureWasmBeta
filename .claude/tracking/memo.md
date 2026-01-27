@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 14 完了 — 次は Phase 15 (DESIGN: Atom拡張・Var操作・メタデータ)**
+**Phase 15 完了 — 次は Phase 16 (DESIGN: defrecord・deftype)**
 
 ### 完了フェーズ
 
@@ -44,10 +44,11 @@
 | 12    | PURE残り: 述語(15)+型キャスト(6)+算術(5)+出力(4)+ハッシュ(4)+MM拡張(6)+HOF(6)+他(7) = +53関数 |
 | 13    | DESIGN: delay/force(3)+volatile(4)+reduced(4) = 新型3種+11関数、deref拡張              |
 | 14    | DESIGN: transient(7)+transduce基盤(6) = Transient型+13関数              |
+| 15    | DESIGN: Atom拡張(7)+Var操作(6)+メタデータ(3) = +16関数                  |
 
 ### 実装状況
 
-362 done / 170 skip / 176 todo
+378 done / 170 skip / 166 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -104,11 +105,12 @@ Phase 14: DESIGN — transduce 基盤・transient ✅
   └ transient/persistent!/conj!/assoc!/dissoc!/disj!/pop!: 一時的ミュータブルコレクション
   └ Transient 型を value.zig に追加
 
-Phase 15: DESIGN — Atom 拡張・Var 操作・メタデータ
+Phase 15: DESIGN — Atom 拡張・Var 操作・メタデータ ✅
   └ add-watch, remove-watch, get-validator, set-validator!
   └ compare-and-set!, reset-vals!, swap-vals!
   └ var-get, var-set, alter-var-root, find-var, intern, bound?
   └ alter-meta!, reset-meta!, vary-meta
+  └ Atom に validator/watches/meta フィールド追加、core.zig に current_env threadlocal
 
 Phase 16: DESIGN — defrecord・deftype
   └ プロトコルと組み合わせた名前付きレコード型

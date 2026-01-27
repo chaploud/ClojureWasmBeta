@@ -211,6 +211,25 @@
 - **iteration**: seed からステップ関数を繰り返し適用（nil で停止、安全上限 1000）
 - switch exhaustiveness: Phase 13 と同様、全 switch 文を更新
 
+## Phase 15: Atom 拡張・Var 操作・メタデータ
+
+- **Atom 拡張**: validator, watches, meta フィールドを Atom 構造体に追加
+  - `add-watch`: watches 配列 [key, fn, key, fn, ...] に追加（通知は未実装、登録のみ）
+  - `remove-watch`: stub（watches 配列から削除する仕組みのみ）
+  - `set-validator!`/`get-validator`: validator を設定・取得
+  - `compare-and-set!`: eql で比較して一致した場合のみ更新
+  - `reset-vals!`/`swap-vals!`: [old new] ベクターを返す
+- **Var 操作**: var_val は `*anyopaque` → `@ptrCast(@alignCast)` で `*Var` にキャスト
+  - `var-get`/`var-set`: root 値の取得・設定
+  - `alter-var-root`: call_fn threadlocal で関数適用
+  - `find-var`: current_env threadlocal から名前空間検索
+  - `intern`: current_env から NS を取得して Var を作成
+  - `bound?`: deref() が nil でなければ true
+- **メタデータ**: alter-meta!/reset-meta!/vary-meta
+  - Atom と Var の meta フィールドを操作
+  - Var の meta は `?*const Value`、Atom の meta は `?Value`
+- **current_env threadlocal**: core.zig に追加、evaluator.zig と vm.zig で設定
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

@@ -151,6 +151,7 @@ pub const VM = struct {
         current_vm = self;
         core.force_lazy_seq_fn = &vmForce;
         core.call_fn = &vmCall;
+        core.current_env = self.env;
 
         // この execute が開始した時点の frame_count を記録
         // ret でこのレベルに戻ったら、この execute から return する

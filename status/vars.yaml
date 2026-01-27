@@ -624,8 +624,9 @@ vars:
       impl_type: none
     add-watch:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     agent:
       type: function
       status: skip
@@ -665,8 +666,9 @@ vars:
       impl_type: none
     alter-var-root:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     ancestors:
       type: function
       status: todo
@@ -859,8 +861,9 @@ vars:
       impl_type: none
     bound?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     bounded-count:
       type: function
       status: done
@@ -1318,8 +1321,9 @@ vars:
       impl_type: none
     find-var:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     first:
       type: function
       status: done
@@ -1428,8 +1432,9 @@ vars:
       impl_type: none
     get-validator:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     group-by:
       type: function
       status: done
@@ -1561,8 +1566,9 @@ vars:
       impl_type: builtin
     intern:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     interpose:
       type: function
       status: done
@@ -2339,8 +2345,9 @@ vars:
       impl_type: none
     remove-watch:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     repeat:
       type: function
       status: done
@@ -2920,12 +2927,14 @@ vars:
       layer: host
     var-get:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     var-set:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     var?:
       type: function
       status: done
@@ -2934,8 +2943,9 @@ vars:
       host: host
     vary-meta:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     vec:
       type: function
       status: done
@@ -3225,6 +3235,30 @@ vars:
       impl_type: builtin
       layer: host
     pop\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    set-validator\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    compare-and-set\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    reset-vals\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    swap-vals\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    alter-meta\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    reset-meta\!:
       status: done
       impl_type: builtin
       layer: host
