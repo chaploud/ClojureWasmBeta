@@ -20,6 +20,16 @@ pub fn invoke(
     if (wm.closed) return error.WasmModuleClosed;
 
     const instance: *zware.Instance = @ptrCast(@alignCast(wm.instance));
+    const module: *zware.Module = @ptrCast(@alignCast(wm.module_ptr));
+
+    // 関数の戻り値数を事前に取得
+    const funcidx = module.getExport(.Func, func_name) catch {
+        return error.WasmInvokeError;
+    };
+    const function = instance.getFunc(funcidx) catch {
+        return error.WasmInvokeError;
+    };
+    const result_count = function.results.len;
 
     // 引数を u64 配列に変換
     const in_vals = try allocator.alloc(u64, args.len);
@@ -30,13 +40,17 @@ pub fn invoke(
         };
     }
 
-    // 結果バッファ（最大1つ — MVP では単一戻り値のみ）
+    // 結果バッファ
     var out_vals: [1]u64 = .{0};
+    const out_slice = out_vals[0..result_count];
 
     // 呼び出し
-    instance.invoke(func_name, in_vals, out_vals[0..], .{}) catch {
+    instance.invoke(func_name, in_vals, out_slice, .{}) catch {
         return error.WasmInvokeError;
     };
+
+    // void 関数 → nil を返す
+    if (result_count == 0) return value_mod.nil;
 
     // 結果を Value に変換（i32 がデフォルト）
     return wasm_types.wasmI32ToValue(out_vals[0]);

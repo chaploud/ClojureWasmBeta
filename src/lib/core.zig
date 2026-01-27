@@ -25,6 +25,7 @@ const regex_mod = @import("../regex/regex.zig");
 const regex_matcher = @import("../regex/matcher.zig");
 const wasm_loader = @import("../wasm/loader.zig");
 const wasm_runtime = @import("../wasm/runtime.zig");
+const wasm_interop = @import("../wasm/interop.zig");
 
 /// 組み込み関数の型（value.zig との循環依存を避けるためここで定義）
 pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
@@ -10111,6 +10112,63 @@ fn isWasmModule(_: std.mem.Allocator, args: []const Value) anyerror!Value {
     };
 }
 
+/// wasm/memory-read: メモリから文字列を読み出す
+/// (wasm/memory-read module offset len) → string
+fn wasmMemoryRead(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 3) return error.ArityError;
+    const wm = switch (args[0]) {
+        .wasm_module => |m| m,
+        else => return error.TypeError,
+    };
+    const offset: u32 = switch (args[1]) {
+        .int => |n| if (n >= 0) @intCast(n) else return error.TypeError,
+        else => return error.TypeError,
+    };
+    const len: u32 = switch (args[2]) {
+        .int => |n| if (n >= 0) @intCast(n) else return error.TypeError,
+        else => return error.TypeError,
+    };
+    return wasm_interop.readString(wm, offset, len, allocator) catch {
+        return error.WasmMemoryError;
+    };
+}
+
+/// wasm/memory-write: メモリに文字列/バイト列を書き込む
+/// (wasm/memory-write module offset data) → nil
+fn wasmMemoryWrite(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 3) return error.ArityError;
+    const wm = switch (args[0]) {
+        .wasm_module => |m| m,
+        else => return error.TypeError,
+    };
+    const offset: u32 = switch (args[1]) {
+        .int => |n| if (n >= 0) @intCast(n) else return error.TypeError,
+        else => return error.TypeError,
+    };
+    const data: []const u8 = switch (args[2]) {
+        .string => |s| s.data,
+        else => return error.TypeError,
+    };
+    wasm_interop.writeBytes(wm, offset, data) catch {
+        return error.WasmMemoryError;
+    };
+    return value_mod.nil;
+}
+
+/// wasm/memory-size: メモリサイズ (バイト数) を返す
+/// (wasm/memory-size module) → int
+fn wasmMemorySize(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const wm = switch (args[0]) {
+        .wasm_module => |m| m,
+        else => return error.TypeError,
+    };
+    const size_bytes = wasm_interop.memorySizeBytes(wm) catch {
+        return error.WasmMemoryError;
+    };
+    return Value{ .int = @intCast(size_bytes) };
+}
+
 // ============================================================
 // Env への登録
 // ============================================================
@@ -10603,10 +10661,15 @@ const builtins = [_]BuiltinDef{
 
 /// wasm 名前空間に登録する関数
 const wasm_builtins = [_]BuiltinDef{
+    // Phase La
     .{ .name = "load-module", .func = wasmLoadModule },
     .{ .name = "invoke", .func = wasmInvoke },
     .{ .name = "exports", .func = wasmExports },
     .{ .name = "module?", .func = isWasmModule },
+    // Phase Lb
+    .{ .name = "memory-read", .func = wasmMemoryRead },
+    .{ .name = "memory-write", .func = wasmMemoryWrite },
+    .{ .name = "memory-size", .func = wasmMemorySize },
 };
 
 /// clojure.core の組み込み関数を Env に登録
