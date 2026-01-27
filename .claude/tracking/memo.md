@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 18b 完了 — 次は SUBSYSTEM フェーズ群**
+**Phase 19a 完了 — 次は追加 DESIGN/PURE バッチ**
 
 ### 完了フェーズ
 
@@ -48,10 +48,11 @@
 | 17    | DESIGN: 階層システム(7) = make-hierarchy/derive/underive/isa?等         |
 | 18    | DESIGN: promise/deliver + ユーティリティ(10) = Promise型+UUID+他       |
 | 18b   | DESIGN: partitionv/splitv-at/tap/parse-uuid 等(9) = 追加ユーティリティ |
+| 19a   | DESIGN: class/struct/accessor/xml-seq等(9) = struct操作+ユーティリティ |
 
 ### 実装状況
 
-410 done / 170 skip / 134 todo
+419 done / 169 skip / 126 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 

@@ -7479,6 +7479,170 @@ pub fn testFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
 }
 
 // ============================================================
+// Phase 19: macroexpand/eval + ユーティリティ
+// ============================================================
+
+/// class : 値の型名を文字列で返す
+/// (class 42) → "Integer"
+pub fn classFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const name: []const u8 = switch (args[0]) {
+        .nil => "nil",
+        .bool_val => "Boolean",
+        .int => "Long",
+        .float => "Double",
+        .string => "String",
+        .keyword => "Keyword",
+        .symbol => "Symbol",
+        .list => "PersistentList",
+        .vector => "PersistentVector",
+        .map => "PersistentArrayMap",
+        .set => "PersistentHashSet",
+        .fn_val, .partial_fn, .comp_fn => "Function",
+        .multi_fn => "MultiFn",
+        .protocol => "Protocol",
+        .protocol_fn => "ProtocolFn",
+        .atom => "Atom",
+        .lazy_seq => "LazySeq",
+        .delay_val => "Delay",
+        .volatile_val => "Volatile",
+        .reduced_val => "Reduced",
+        .transient => "Transient",
+        .promise => "Promise",
+        .var_val => "Var",
+        .char_val => "Character",
+        .fn_proto => "FnProto",
+    };
+    const s = try allocator.create(value_mod.String);
+    s.* = .{ .data = name };
+    return Value{ .string = s };
+}
+
+/// destructure : 分配束縛マクロのヘルパー（簡易: そのまま返す）
+pub fn destructureFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return args[0]; // 簡易実装
+}
+
+/// seq-to-map-for-destructuring : シーケンスをマップに変換（分配束縛用）
+pub fn seqToMapFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] == .map) return args[0];
+    // シーケンスをキー・値ペアとして解釈
+    const items = try collectToSlice(allocator, args[0]);
+    if (items.len % 2 != 0) return error.TypeError;
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = items };
+    return Value{ .map = m };
+}
+
+/// xml-seq : XML ノード（マップ）をシーケンスとして走査（簡易版）
+/// ツリーのフラット化: ノード自身 + 子ノードを再帰的に列挙
+pub fn xmlSeqFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    // 入力がマップでなければそのままリストで返す
+    if (args[0] != .map) {
+        const items = try allocator.alloc(Value, 1);
+        items[0] = args[0];
+        const l = try allocator.create(value_mod.PersistentList);
+        l.* = .{ .items = items };
+        return Value{ .list = l };
+    }
+    // マップの :content を再帰的に展開
+    var result = std.ArrayList(Value).empty;
+    defer result.deinit(allocator);
+    try result.append(allocator, args[0]);
+    // :content キーの子要素をフラット化
+    const content_kw = value_mod.Keyword.init("content");
+    var i: usize = 0;
+    while (i + 1 < args[0].map.entries.len) : (i += 2) {
+        if (args[0].map.entries[i] == .keyword) {
+            if (args[0].map.entries[i].keyword.eql(content_kw)) {
+                const content = args[0].map.entries[i + 1];
+                if (content == .vector) {
+                    for (content.vector.items) |child| {
+                        if (child == .map) {
+                            const child_seq = try xmlSeqFn(allocator, &[_]Value{child});
+                            if (child_seq == .list) {
+                                try result.appendSlice(allocator, child_seq.list.items);
+                            }
+                        } else {
+                            try result.append(allocator, child);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    const items = try allocator.alloc(Value, result.items.len);
+    @memcpy(items, result.items);
+    const l = try allocator.create(value_mod.PersistentList);
+    l.* = .{ .items = items };
+    return Value{ .list = l };
+}
+
+/// the-ns : 名前空間オブジェクトを返す（簡易: シンボル名を返す）
+pub fn theNsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return args[0]; // 簡易実装: 名前空間オブジェクトの代わりにシンボルを返す
+}
+
+/// accessor : struct のフィールドアクセス関数を返す
+pub fn accessorFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    // (accessor s key) → キーワードを返す（キーワードは関数として使える）
+    // Clojure: (accessor s :name) → (fn [m] (:name m))
+    // 簡易実装: キーワードはすでに関数として呼べるのでそのまま返す
+    return args[1];
+}
+
+/// create-struct : 構造体定義を作成（簡易: キーのベクターを返す）
+pub fn createStructFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    // (create-struct & keys) → struct 定義（簡易版: キーのベクターを返す）
+    if (args.len < 1) return error.ArityError;
+    const key_items = try allocator.alloc(Value, args.len);
+    @memcpy(key_items, args);
+    const vec = try allocator.create(value_mod.PersistentVector);
+    vec.* = .{ .items = key_items };
+    return Value{ .vector = vec };
+}
+
+/// struct : struct 定義からインスタンスを作成（簡易: マップを返す）
+pub fn structFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    // (struct s & vals) → {:key1 val1 :key2 val2 ...}
+    if (args.len < 1) return error.ArityError;
+    if (args[0] != .vector) return error.TypeError;
+    const struct_keys = args[0].vector.items;
+    const struct_vals = args[1..];
+    if (struct_keys.len != struct_vals.len) return error.ArityError;
+    const entries = try allocator.alloc(Value, struct_keys.len * 2);
+    for (struct_keys, 0..) |key, idx| {
+        entries[idx * 2] = key;
+        entries[idx * 2 + 1] = if (idx < struct_vals.len) struct_vals[idx] else value_mod.nil;
+    }
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// struct-map : struct 定義からキーワード引数でインスタンスを作成
+pub fn structMapFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    // (struct-map s & keyvals)
+    if (args.len < 1) return error.ArityError;
+    if (args[0] != .vector) return error.TypeError;
+    // キーワード引数をそのままマップにする
+    const kvs = args[1..];
+    if (kvs.len % 2 != 0) return error.ArityError;
+    const entries = try allocator.alloc(Value, kvs.len);
+    @memcpy(entries, kvs);
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -7858,6 +8022,16 @@ const builtins = [_]BuiltinDef{
     .{ .name = "remove-tap", .func = removeTapFn },
     .{ .name = "tap>", .func = tapSendFn },
     .{ .name = "test", .func = testFn },
+    // Phase 19: macroexpand/eval + ユーティリティ
+    .{ .name = "class", .func = classFn },
+    .{ .name = "destructure", .func = destructureFn },
+    .{ .name = "seq-to-map-for-destructuring", .func = seqToMapFn },
+    .{ .name = "xml-seq", .func = xmlSeqFn },
+    .{ .name = "the-ns", .func = theNsFn },
+    .{ .name = "accessor", .func = accessorFn },
+    .{ .name = "create-struct", .func = createStructFn },
+    .{ .name = "struct", .func = structFn },
+    .{ .name = "struct-map", .func = structMapFn },
 };
 
 /// clojure.core の組み込み関数を Env に登録

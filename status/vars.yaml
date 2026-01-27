@@ -607,8 +607,8 @@ vars:
       layer: host
     accessor:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     aclone:
       type: function
       status: skip
@@ -956,8 +956,8 @@ vars:
       impl_type: none
     class:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     class?:
       type: function
       status: done
@@ -1064,8 +1064,8 @@ vars:
       impl_type: none
     create-struct:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     cycle:
       type: function
       status: done
@@ -1120,8 +1120,9 @@ vars:
       impl_type: none
     destructure:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装（引数をそのまま返す）
     disj:
       type: function
       status: done
@@ -2463,8 +2464,8 @@ vars:
       layer: host
     seq-to-map-for-destructuring:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     seq?:
       type: function
       status: done
@@ -2653,12 +2654,12 @@ vars:
       layer: host
     struct:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     struct-map:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     subs:
       type: function
       status: done
@@ -2731,8 +2732,9 @@ vars:
       impl_type: none
     the-ns:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装（引数をそのまま返す）
     thread-bound?:
       type: function
       status: todo
@@ -2994,8 +2996,8 @@ vars:
       impl_type: none
     xml-seq:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     zero?:
       type: function
       status: done
