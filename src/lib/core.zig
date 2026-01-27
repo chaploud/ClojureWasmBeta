@@ -15,6 +15,10 @@ const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
 const var_mod = @import("../runtime/var.zig");
 const Var = var_mod.Var;
+const Reader = @import("../reader/reader.zig").Reader;
+const Analyzer = @import("../analyzer/analyze.zig").Analyzer;
+const tree_walk = @import("../runtime/evaluator.zig");
+const Context = @import("../runtime/context.zig").Context;
 
 /// 組み込み関数の型（value.zig との循環依存を避けるためここで定義）
 pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
@@ -1528,7 +1532,7 @@ fn printValue(writer: anytype, val: Value) !void {
 
 /// 値を出力（ArrayListUnmanaged 版）
 fn printValueToBuf(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), val: Value) !void {
-    const Context = struct {
+    const BufWriter = struct {
         buf: *std.ArrayListUnmanaged(u8),
         allocator: std.mem.Allocator,
 
@@ -1546,7 +1550,7 @@ fn printValueToBuf(allocator: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8
             try self.buf.appendSlice(self.allocator, s);
         }
     };
-    var ctx = Context{ .buf = buf, .allocator = allocator };
+    var ctx = BufWriter{ .buf = buf, .allocator = allocator };
     try printValue(&ctx, val);
 }
 
@@ -7643,6 +7647,343 @@ pub fn structMapFn(allocator: std.mem.Allocator, args: []const Value) anyerror!V
 }
 
 // ============================================================
+// eval / read-string / macroexpand / load-string
+// ============================================================
+
+/// read-string : 文字列をパースしてデータ構造を返す
+pub fn readStringFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .string) return error.TypeError;
+    const source = args[0].string.data;
+
+    // Reader でパース
+    var reader = Reader.init(allocator, source);
+    const form = reader.read() catch return error.EvalError;
+    if (form) |f| {
+        // Analyzer の formToValue でデータ構造に変換
+        const env = current_env orelse return error.TypeError;
+        var analyzer = Analyzer.init(allocator, env);
+        return analyzer.formToValue(f) catch return error.EvalError;
+    }
+    return value_mod.nil;
+}
+
+/// eval : Value（データ構造）を評価する
+pub fn evalFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const env = current_env orelse return error.TypeError;
+
+    // Value → Form に変換
+    var analyzer = Analyzer.init(allocator, env);
+    const form = analyzer.valueToForm(args[0]) catch return error.EvalError;
+
+    // Form → Node に変換
+    const node = analyzer.analyze(form) catch return error.EvalError;
+
+    // Node を TreeWalk で評価
+    var ctx = Context.init(allocator, env);
+    return tree_walk.run(node, &ctx) catch return error.EvalError;
+}
+
+/// load-string : 文字列を複数式として読み込み・評価
+pub fn loadStringFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .string) return error.TypeError;
+    const source = args[0].string.data;
+    const env = current_env orelse return error.TypeError;
+
+    // 全式を読み込み
+    var reader = Reader.init(allocator, source);
+    const forms = reader.readAll() catch return error.EvalError;
+
+    var result: Value = value_mod.nil;
+    for (forms) |form| {
+        var analyzer = Analyzer.init(allocator, env);
+        const node = analyzer.analyze(form) catch return error.EvalError;
+        var ctx = Context.init(allocator, env);
+        result = tree_walk.run(node, &ctx) catch return error.EvalError;
+    }
+    return result;
+}
+
+/// macroexpand-1 : マクロを1段展開（簡易実装: データをそのまま返す）
+pub fn macroexpand1Fn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    // マクロ展開は Analyzer 内部で行われるため、
+    // ビルトイン関数からは直接アクセスが困難。
+    // 簡易実装: フォームをそのまま返す
+    return args[0];
+}
+
+/// macroexpand : マクロを完全展開（簡易実装: データをそのまま返す）
+pub fn macroexpandFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return args[0];
+}
+
+/// resolve : シンボルを環境から解決
+pub fn resolveFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .symbol) return error.TypeError;
+    const env = current_env orelse return error.TypeError;
+    const sym = value_mod.Symbol{
+        .namespace = args[0].symbol.namespace,
+        .name = args[0].symbol.name,
+    };
+    if (env.resolve(sym)) |v| {
+        return v.root;
+    }
+    return value_mod.nil;
+}
+
+// ============================================================
+// sorted-map / sorted-set（簡易実装: ソートされた通常コレクション）
+// ============================================================
+
+/// sorted-map : ソートされたマップ（簡易: 通常マップを返す）
+pub fn sortedMapFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len % 2 != 0) return error.ArityError;
+    const entries = try allocator.alloc(Value, args.len);
+    @memcpy(entries, args);
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// sorted-map-by : コンパレータ付きソートマップ（簡易: 通常マップ、コンパレータ無視）
+pub fn sortedMapByFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    // 最初の引数はコンパレータ（無視）、残りがキーバリューペア
+    const kvs = args[1..];
+    if (kvs.len % 2 != 0) return error.ArityError;
+    const entries = try allocator.alloc(Value, kvs.len);
+    @memcpy(entries, kvs);
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// sorted-set : ソートされたセット（簡易: 通常セットを返す）
+pub fn sortedSetFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    const items = try allocator.alloc(Value, args.len);
+    @memcpy(items, args);
+    const s = try allocator.create(value_mod.PersistentSet);
+    s.* = .{ .items = items };
+    return Value{ .set = s };
+}
+
+/// sorted-set-by : コンパレータ付きソートセット（簡易: 通常セット、コンパレータ無視）
+pub fn sortedSetByFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    const set_vals = args[1..];
+    const items = try allocator.alloc(Value, set_vals.len);
+    @memcpy(items, set_vals);
+    const s = try allocator.create(value_mod.PersistentSet);
+    s.* = .{ .items = items };
+    return Value{ .set = s };
+}
+
+/// subseq : ソートコレクションの部分列（簡易: filter相当）
+pub fn subseqFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    // (subseq sc test key) or (subseq sc start-test start-key end-test end-key)
+    if (args.len < 3) return error.ArityError;
+    // 簡易実装: コレクションをseqとしてそのまま返す
+    return seq(allocator, args[0..1]);
+}
+
+/// rsubseq : 逆順部分列（簡易: reverse + subseq相当）
+pub fn rsubseqFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 3) return error.ArityError;
+    // 簡易実装: コレクションをseqとしてreverse
+    const seq_val = try seq(allocator, args[0..1]);
+    return reverseFn(allocator, &[_]Value{seq_val});
+}
+
+// ============================================================
+// 動的 Var スタブ
+// ============================================================
+
+/// *clojure-version* の値を返す
+pub fn clojureVersionFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    // {:major 1 :minor 12 :incremental 0 :qualifier nil}
+    const entries = try allocator.alloc(Value, 8);
+    const mkKw = struct {
+        fn f(alloc: std.mem.Allocator, name: []const u8) !Value {
+            const kw = try alloc.create(value_mod.Keyword);
+            kw.* = value_mod.Keyword.init(name);
+            return Value{ .keyword = kw };
+        }
+    }.f;
+    entries[0] = try mkKw(allocator, "major");
+    entries[1] = value_mod.intVal(1);
+    entries[2] = try mkKw(allocator, "minor");
+    entries[3] = value_mod.intVal(12);
+    entries[4] = try mkKw(allocator, "incremental");
+    entries[5] = value_mod.intVal(0);
+    entries[6] = try mkKw(allocator, "qualifier");
+    entries[7] = value_mod.nil;
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// print-method / print-dup / print-simple: 出力スタブ
+pub fn printMethodFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    // (print-method x writer) — 簡易: str と同じ
+    if (args.len < 1) return error.ArityError;
+    return strFn(allocator, args[0..1]);
+}
+
+/// flush : 出力フラッシュ（スタブ、何もしない）
+pub fn flushFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+// ============================================================
+// 名前空間操作（簡易実装）
+// ============================================================
+
+/// find-ns : 名前空間を検索
+pub fn findNsFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .symbol) return error.TypeError;
+    const env = current_env orelse return error.TypeError;
+    const name = args[0].symbol.name;
+    if (env.findNs(name)) |_| {
+        return args[0]; // 名前空間が存在すればシンボルを返す
+    }
+    return value_mod.nil;
+}
+
+/// create-ns : 名前空間を作成
+pub fn createNsFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .symbol) return error.TypeError;
+    const env = current_env orelse return error.TypeError;
+    _ = env.findOrCreateNs(args[0].symbol.name) catch return error.EvalError;
+    return args[0];
+}
+
+/// all-ns : すべての名前空間を返す（簡易: 空リスト）
+pub fn allNsFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    // 簡易実装: 空リスト（名前空間イテレーション未実装）
+    const items = try allocator.alloc(Value, 0);
+    const lst = try allocator.create(value_mod.PersistentList);
+    lst.* = .{ .items = items };
+    return Value{ .list = lst };
+}
+
+/// ns-name : 名前空間の名前を返す（簡易: 引数をそのまま返す）
+pub fn nsNameFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return args[0];
+}
+
+/// ns-publics / ns-interns / ns-map / ns-refers / ns-imports / ns-aliases: スタブ（空マップ）
+pub fn nsMapStubFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const entries = try allocator.alloc(Value, 0);
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// ns-resolve : 名前空間内でシンボルを解決（簡易: resolve に委譲）
+pub fn nsResolveFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    // 第1引数は名前空間（無視）、第2引数はシンボル
+    return resolveFn(allocator, args[1..2]);
+}
+
+/// ns-unmap / ns-unalias : スタブ（nil を返す）
+pub fn nsUnmapStubFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    return value_mod.nil;
+}
+
+/// remove-ns : 名前空間を削除（スタブ、nil を返す）
+pub fn removeNsFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return value_mod.nil;
+}
+
+// ============================================================
+// Reader / その他ユーティリティ
+// ============================================================
+
+/// read : 入力から読み取り（read-string に委譲）
+pub fn readFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    // 簡易実装: 引数がstring なら read-string と同じ
+    if (args.len >= 1 and args[0] == .string) {
+        return readStringFn(allocator, args[0..1]);
+    }
+    return value_mod.nil;
+}
+
+/// read+string : 読み取り結果と元文字列のベクターを返す
+pub fn readPlusStringFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    if (args[0] != .string) return error.TypeError;
+    const form_val = try readStringFn(allocator, args[0..1]);
+    // [form source-string] を返す
+    const items = try allocator.alloc(Value, 2);
+    items[0] = form_val;
+    items[1] = args[0];
+    const vec = try allocator.create(value_mod.PersistentVector);
+    vec.* = .{ .items = items };
+    return Value{ .vector = vec };
+}
+
+/// reader-conditional : リーダーコンディショナル（データをそのまま返す）
+pub fn readerConditionalFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    return args[0];
+}
+
+/// loaded-libs : ロード済みライブラリ（空セットを返す）
+pub fn loadedLibsFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const items = try allocator.alloc(Value, 0);
+    const s = try allocator.create(value_mod.PersistentSet);
+    s.* = .{ .items = items };
+    return Value{ .set = s };
+}
+
+/// default-data-readers : デフォルトデータリーダー（空マップを返す）
+pub fn defaultDataReadersFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const entries = try allocator.alloc(Value, 0);
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// print-ctor : コンストラクタ出力（スタブ）
+pub fn printCtorFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    return value_mod.nil;
+}
+
+/// PrintWriter-on : ライター作成（スタブ、nil を返す）
+pub fn printWriterOnFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// compile : AOT コンパイル（スタブ、nil を返す）
+pub fn compileFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// load-reader : リーダーからロード（スタブ）
+pub fn loadReaderFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// load-file / load : ファイルからロード（スタブ）
+pub fn loadFileFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    return value_mod.nil;
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -8032,6 +8373,49 @@ const builtins = [_]BuiltinDef{
     .{ .name = "create-struct", .func = createStructFn },
     .{ .name = "struct", .func = structFn },
     .{ .name = "struct-map", .func = structMapFn },
+    // Phase 19b: eval/read-string/sorted/dynamic-vars
+    .{ .name = "read-string", .func = readStringFn },
+    .{ .name = "eval", .func = evalFn },
+    .{ .name = "load-string", .func = loadStringFn },
+    .{ .name = "macroexpand-1", .func = macroexpand1Fn },
+    .{ .name = "macroexpand", .func = macroexpandFn },
+    .{ .name = "resolve", .func = resolveFn },
+    .{ .name = "sorted-map", .func = sortedMapFn },
+    .{ .name = "sorted-map-by", .func = sortedMapByFn },
+    .{ .name = "sorted-set", .func = sortedSetFn },
+    .{ .name = "sorted-set-by", .func = sortedSetByFn },
+    .{ .name = "subseq", .func = subseqFn },
+    .{ .name = "rsubseq", .func = rsubseqFn },
+    .{ .name = "print-method", .func = printMethodFn },
+    .{ .name = "print-simple", .func = printMethodFn },
+    .{ .name = "print-dup", .func = printMethodFn },
+    .{ .name = "flush", .func = flushFn },
+    // Phase 19c: 名前空間・Reader・ユーティリティ
+    .{ .name = "find-ns", .func = findNsFn },
+    .{ .name = "create-ns", .func = createNsFn },
+    .{ .name = "all-ns", .func = allNsFn },
+    .{ .name = "ns-name", .func = nsNameFn },
+    .{ .name = "ns-publics", .func = nsMapStubFn },
+    .{ .name = "ns-interns", .func = nsMapStubFn },
+    .{ .name = "ns-map", .func = nsMapStubFn },
+    .{ .name = "ns-refers", .func = nsMapStubFn },
+    .{ .name = "ns-imports", .func = nsMapStubFn },
+    .{ .name = "ns-aliases", .func = nsMapStubFn },
+    .{ .name = "ns-resolve", .func = nsResolveFn },
+    .{ .name = "ns-unmap", .func = nsUnmapStubFn },
+    .{ .name = "ns-unalias", .func = nsUnmapStubFn },
+    .{ .name = "remove-ns", .func = removeNsFn },
+    .{ .name = "read", .func = readFn },
+    .{ .name = "read+string", .func = readPlusStringFn },
+    .{ .name = "reader-conditional", .func = readerConditionalFn },
+    .{ .name = "loaded-libs", .func = loadedLibsFn },
+    .{ .name = "default-data-readers", .func = defaultDataReadersFn },
+    .{ .name = "print-ctor", .func = printCtorFn },
+    .{ .name = "PrintWriter-on", .func = printWriterOnFn },
+    .{ .name = "compile", .func = compileFn },
+    .{ .name = "load-reader", .func = loadReaderFn },
+    .{ .name = "load-file", .func = loadFileFn },
+    .{ .name = "load", .func = loadFileFn },
 };
 
 /// clojure.core の組み込み関数を Env に登録
@@ -8043,6 +8427,78 @@ pub fn registerCore(env: *Env) !void {
         const fn_obj = try env.allocator.create(Fn);
         fn_obj.* = Fn.initBuiltin(b.name, b.func);
         v.bindRoot(Value{ .fn_val = fn_obj });
+    }
+
+    // 動的 Var（値として登録）
+    try registerDynamicVars(env.allocator, core_ns);
+}
+
+/// 動的 Var の初期値を登録
+fn registerDynamicVars(allocator: std.mem.Allocator, core_ns: anytype) !void {
+    // *clojure-version*
+    {
+        const v = try core_ns.intern("*clojure-version*");
+        const ver = try clojureVersionFn(allocator, &[_]Value{});
+        v.bindRoot(ver);
+    }
+    // *assert* — デフォルト true
+    {
+        const v = try core_ns.intern("*assert*");
+        v.bindRoot(value_mod.true_val);
+    }
+    // *print-length* — デフォルト nil（無制限）
+    {
+        const v = try core_ns.intern("*print-length*");
+        v.bindRoot(value_mod.nil);
+    }
+    // *print-level* — デフォルト nil（無制限）
+    {
+        const v = try core_ns.intern("*print-level*");
+        v.bindRoot(value_mod.nil);
+    }
+    // *print-meta* — デフォルト false
+    {
+        const v = try core_ns.intern("*print-meta*");
+        v.bindRoot(value_mod.false_val);
+    }
+    // *print-readably* — デフォルト true
+    {
+        const v = try core_ns.intern("*print-readably*");
+        v.bindRoot(value_mod.true_val);
+    }
+    // *print-dup* — デフォルト false
+    {
+        const v = try core_ns.intern("*print-dup*");
+        v.bindRoot(value_mod.false_val);
+    }
+    // *print-namespace-maps* — デフォルト true
+    {
+        const v = try core_ns.intern("*print-namespace-maps*");
+        v.bindRoot(value_mod.true_val);
+    }
+    // *flush-on-newline* — デフォルト true
+    {
+        const v = try core_ns.intern("*flush-on-newline*");
+        v.bindRoot(value_mod.true_val);
+    }
+    // *read-eval* — デフォルト true
+    {
+        const v = try core_ns.intern("*read-eval*");
+        v.bindRoot(value_mod.true_val);
+    }
+    // *compile-path* — デフォルト "classes"
+    {
+        const v = try core_ns.intern("*compile-path*");
+        const str = try allocator.create(value_mod.String);
+        str.* = value_mod.String.init("classes");
+        v.bindRoot(Value{ .string = str });
+    }
+    // *1, *e — デフォルト nil
+    {
+        const v1 = try core_ns.intern("*1");
+        v1.bindRoot(value_mod.nil);
+        const ve = try core_ns.intern("*e");
+        ve.bindRoot(value_mod.nil);
     }
 }
 

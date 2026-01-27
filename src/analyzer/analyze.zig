@@ -1704,6 +1704,14 @@ pub const Analyzer = struct {
             return try self.expandMemoize(items);
         } else if (std.mem.eql(u8, name, "delay")) {
             return try self.expandDelay(items);
+        } else if (std.mem.eql(u8, name, "time")) {
+            return try self.expandTime(items);
+        } else if (std.mem.eql(u8, name, "defstruct")) {
+            return try self.expandDefstruct(items);
+        } else if (std.mem.eql(u8, name, "definline")) {
+            return try self.expandDefinline(items);
+        } else if (std.mem.eql(u8, name, "with-out-str")) {
+            return try self.expandWithOutStr(items);
         }
         return null;
     }
@@ -2291,7 +2299,7 @@ pub const Analyzer = struct {
     }
 
     /// Form を Value に変換（quote 用）
-    fn formToValue(self: *Analyzer, form: Form) err.Error!Value {
+    pub fn formToValue(self: *Analyzer, form: Form) err.Error!Value {
         return switch (form) {
             .nil => value_mod.nil,
             .bool_true => value_mod.true_val,
@@ -3955,6 +3963,68 @@ pub const Analyzer = struct {
         return items[1];
     }
 
+    /// (time expr) → (let [start (System/nanoTime)] (let [ret expr] (println "Elapsed time:" ...) ret))
+    /// 簡易実装: 式をそのまま返す（タイミング情報なし）
+    fn expandTime(_: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 2) {
+            return err.parseError(.invalid_arity, "time requires exactly one expression", .{});
+        }
+        // 簡易実装: 式をそのまま評価（タイミング出力は後で）
+        return items[1];
+    }
+
+    /// (defstruct name & keys) → (def name (create-struct keys...))
+    fn expandDefstruct(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "defstruct requires name and at least one key", .{});
+        }
+        // create-struct 呼び出しの Form を構築
+        const cs_forms = self.allocator.alloc(Form, items.len - 1) catch return error.OutOfMemory;
+        cs_forms[0] = Form{ .symbol = form_mod.Symbol.init("create-struct") };
+        for (items[2..], 0..) |item, i| {
+            cs_forms[i + 1] = item;
+        }
+        // (def name (create-struct key1 key2 ...))
+        const def_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        def_forms[0] = Form{ .symbol = form_mod.Symbol.init("def") };
+        def_forms[1] = items[1]; // name
+        def_forms[2] = Form{ .list = cs_forms };
+        return Form{ .list = def_forms };
+    }
+
+    /// (definline name & decl) → (defn name & decl)
+    fn expandDefinline(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "definline requires name, args vector, and body", .{});
+        }
+        // defn に書き換え
+        const defn_forms = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
+        defn_forms[0] = Form{ .symbol = form_mod.Symbol.init("defn") };
+        for (items[1..], 0..) |item, i| {
+            defn_forms[i + 1] = item;
+        }
+        return Form{ .list = defn_forms };
+    }
+
+    /// (with-out-str & body) → (str (do & body))
+    /// 簡易実装: body を do でラップして str に渡す
+    fn expandWithOutStr(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "with-out-str requires at least one expression", .{});
+        }
+        // (do & body)
+        const do_forms = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
+        do_forms[0] = Form{ .symbol = form_mod.Symbol.init("do") };
+        for (items[1..], 0..) |item, i| {
+            do_forms[i + 1] = item;
+        }
+        // (str (do & body))
+        const str_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        str_forms[0] = Form{ .symbol = form_mod.Symbol.init("str") };
+        str_forms[1] = Form{ .list = do_forms };
+        return Form{ .list = str_forms };
+    }
+
     // ── ヘルパー関数 ──
 
     /// (fn-name arg) の形のリストを作成
@@ -4025,7 +4095,7 @@ pub const Analyzer = struct {
     }
 
     /// Value を Form に変換（マクロ展開結果の再解析用）
-    fn valueToForm(self: *Analyzer, val: Value) err.Error!Form {
+    pub fn valueToForm(self: *Analyzer, val: Value) err.Error!Form {
         return switch (val) {
             .nil => Form.nil,
             .bool_val => |b| if (b) Form.bool_true else Form.bool_false,

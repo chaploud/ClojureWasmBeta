@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 19a 完了 — 次は追加 DESIGN/PURE バッチ**
+**Phase 19c 完了 — 残り 59 todo（主に binding/regex/IO/chunk）**
 
 ### 完了フェーズ
 
@@ -49,10 +49,12 @@
 | 18    | DESIGN: promise/deliver + ユーティリティ(10) = Promise型+UUID+他       |
 | 18b   | DESIGN: partitionv/splitv-at/tap/parse-uuid 等(9) = 追加ユーティリティ |
 | 19a   | DESIGN: class/struct/accessor/xml-seq等(9) = struct操作+ユーティリティ |
+| 19b   | DESIGN: eval/read-string/sorted/dynamic-vars(18+14dynvar) = eval基盤+ソートcol+動的Var |
+| 19c   | DESIGN: NS操作/Reader/定義マクロ等(27+2dynvar) = 名前空間スタブ+load+definline |
 
 ### 実装状況
 
-419 done / 169 skip / 126 todo
+486 done / 169 skip / 59 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 

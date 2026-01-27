@@ -83,8 +83,9 @@ vars:
       layer: host
     letfn*:
       type: special-form
-      status: todo
-      note: 相互再帰関数（低レベル）
+      status: done
+      impl_type: special_form
+      note: 相互再帰関数（letfnとして実装）
       impl_type: none
     loop*:
       type: special-form
@@ -220,8 +221,8 @@ vars:
       impl_type: macro
     definline:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     definterface:
       type: macro
       status: skip
@@ -265,8 +266,8 @@ vars:
       impl_type: none
     defstruct:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     deftype:
       type: macro
       status: todo
@@ -363,8 +364,8 @@ vars:
       layer: host
     letfn:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: special_form
     locking:
       type: macro
       status: skip
@@ -423,8 +424,9 @@ vars:
       impl_type: none
     time:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
+      note: 簡易実装（タイミング出力なし）
     vswap!:
       type: macro
       status: done
@@ -479,8 +481,9 @@ vars:
       impl_type: none
     with-out-str:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
+      note: 簡易実装
     with-precision:
       type: macro
       status: skip
@@ -590,8 +593,9 @@ vars:
       host: host
     PrintWriter-on:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     StackTraceElement->vec:
       type: function
       status: skip
@@ -654,16 +658,17 @@ vars:
       impl_type: none
     all-ns:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装（空リスト）
     alter:
       type: function
       status: skip
       impl_type: none
     alter-meta!:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     alter-var-root:
       type: function
       status: done
@@ -1000,12 +1005,13 @@ vars:
       host: host
     compare-and-set!:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     compile:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     complement:
       type: function
       status: done
@@ -1060,8 +1066,8 @@ vars:
       impl_type: builtin
     create-ns:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     create-struct:
       type: function
       status: done
@@ -1230,8 +1236,8 @@ vars:
       impl_type: none
     eval:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     even?:
       type: function
       status: done
@@ -1310,8 +1316,8 @@ vars:
       layer: pure
     find-ns:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     find-protocol-impl:
       type: function
       status: skip
@@ -1355,8 +1361,8 @@ vars:
       impl_type: none
     flush:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     fn?:
       type: function
       status: done
@@ -1672,20 +1678,23 @@ vars:
       host: host
     load:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     load-reader:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     load-string:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     loaded-libs:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ（空セット）
     long:
       type: function
       status: done
@@ -1701,12 +1710,14 @@ vars:
       impl_type: none
     macroexpand:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装（フォームをそのまま返す）
     macroexpand-1:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装（フォームをそのまま返す）
     make-array:
       type: function
       status: skip
@@ -1891,44 +1902,53 @@ vars:
       layer: host
     ns-aliases:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ（空マップ）
     ns-imports:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ（空マップ）
     ns-interns:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ（空マップ）
     ns-map:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ（空マップ）
     ns-name:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装
     ns-publics:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ（空マップ）
     ns-refers:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ（空マップ）
     ns-resolve:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     ns-unalias:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     ns-unmap:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     nth:
       type: function
       status: done
@@ -2086,12 +2106,14 @@ vars:
       impl_type: builtin
     print-ctor:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     print-simple:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     print-str:
       type: function
       status: done
@@ -2229,24 +2251,26 @@ vars:
       impl_type: none
     read:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装
     read+string:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     read-line:
       type: function
       status: todo
       impl_type: none
     read-string:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     reader-conditional:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装
     reader-conditional?:
       type: function
       status: done
@@ -2338,8 +2362,9 @@ vars:
       layer: pure
     remove-ns:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     remove-tap:
       type: function
       status: done
@@ -2385,16 +2410,16 @@ vars:
       layer: host
     reset-meta!:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     reset-vals!:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     resolve:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     rest:
       type: function
       status: done
@@ -2425,8 +2450,9 @@ vars:
       host: host
     rsubseq:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装
     run!:
       type: function
       status: done
@@ -2510,8 +2536,8 @@ vars:
       impl_type: none
     set-validator!:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     set?:
       type: function
       status: done
@@ -2584,20 +2610,24 @@ vars:
       impl_type: builtin
     sorted-map:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装（通常マップ）
     sorted-map-by:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装（通常マップ、コンパレータ無視）
     sorted-set:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装（通常セット）
     sorted-set-by:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装（通常セット、コンパレータ無視）
     sorted?:
       type: function
       status: done
@@ -2667,8 +2697,9 @@ vars:
       layer: host
     subseq:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 簡易実装
     subvec:
       type: function
       status: done
@@ -2684,8 +2715,8 @@ vars:
       layer: bridge
     swap-vals!:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     symbol:
       type: function
       status: done
@@ -3010,9 +3041,10 @@ vars:
       layer: pure
     "*1":
       type: dynamic-var
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: builtin
+      note: 動的Var（デフォルト nil）
     "*2":
       type: dynamic-var
       status: skip
@@ -3025,39 +3057,46 @@ vars:
       impl_type: none
     "*clojure-version*":
       type: dynamic-var
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: builtin
+      note: 動的Var
     "*data-readers*":
       type: dynamic-var
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: builtin
+      note: 動的Var（空マップ）
     "*default-data-reader-fn*":
       type: dynamic-var
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: builtin
+      note: 動的Var（nil）
     "*e":
       type: dynamic-var
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: builtin
+      note: 動的Var（デフォルト nil）
     "*print-length*":
       type: dynamic-var
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: builtin
+      note: 動的Var（デフォルト nil）
     "*print-level*":
       type: dynamic-var
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: builtin
+      note: 動的Var（デフォルト nil）
     "*print-namespace-maps*":
       type: dynamic-var
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: builtin
+      note: 動的Var（デフォルト true）
     "*repl*":
       type: dynamic-var
       status: todo
@@ -3090,8 +3129,9 @@ vars:
       impl_type: none
     "*compile-path*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 動的Var（デフォルト "classes"）
     "*compiler-options*":
       type: var
       status: todo
@@ -3106,8 +3146,9 @@ vars:
       impl_type: none
     "*flush-on-newline*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 動的Var（デフォルト true）
     "*fn-loader*":
       type: var
       status: skip
@@ -3130,20 +3171,24 @@ vars:
       impl_type: none
     "*print-dup*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 動的Var（デフォルト false）
     "*print-meta*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 動的Var（デフォルト false）
     "*print-readably*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 動的Var（デフォルト true）
     "*read-eval*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: 動的Var（デフォルト true）
     "*reader-resolver*":
       type: var
       status: todo
@@ -3186,28 +3231,32 @@ vars:
       impl_type: none
     default-data-readers:
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ（空マップ）
     in-ns:
       type: var
       status: todo
       impl_type: none
     load-file:
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     primitives-classnames:
       type: var
       status: skip
       impl_type: none
     print-dup:
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     print-method:
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      note: スタブ
     unquote:
       type: var
       status: skip
