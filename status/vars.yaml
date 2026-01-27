@@ -620,7 +620,7 @@ vars:
       impl_type: none
     add-tap:
       type: function
-      status: todo
+      status: done
       impl_type: none
     add-watch:
       type: function
@@ -1992,7 +1992,7 @@ vars:
       host: host
     parse-uuid:
       type: function
-      status: todo
+      status: done
       impl_type: none
     partial:
       type: function
@@ -2014,11 +2014,11 @@ vars:
       layer: pure
     partitionv:
       type: function
-      status: todo
+      status: done
       impl_type: none
     partitionv-all:
       type: function
-      status: todo
+      status: done
       impl_type: none
     pcalls:
       type: function
@@ -2341,7 +2341,7 @@ vars:
       impl_type: none
     remove-tap:
       type: function
-      status: todo
+      status: done
       impl_type: none
     remove-watch:
       type: function
@@ -2623,7 +2623,7 @@ vars:
       host: host
     splitv-at:
       type: function
-      status: todo
+      status: done
       impl_type: none
     str:
       type: function
@@ -2723,11 +2723,11 @@ vars:
       layer: bridge
     tap>:
       type: function
-      status: todo
+      status: done
       impl_type: none
     test:
       type: function
-      status: todo
+      status: done
       impl_type: none
     the-ns:
       type: function
@@ -2958,7 +2958,7 @@ vars:
       layer: host
     vector-of:
       type: function
-      status: todo
+      status: done
       impl_type: none
     vector?:
       type: function

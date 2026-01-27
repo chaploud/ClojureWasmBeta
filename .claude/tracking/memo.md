@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 18 完了 — 次は Phase 19+ (SUBSYSTEM)**
+**Phase 18b 完了 — 次は SUBSYSTEM フェーズ群**
 
 ### 完了フェーズ
 
@@ -47,10 +47,11 @@
 | 15    | DESIGN: Atom拡張(7)+Var操作(6)+メタデータ(3) = +16関数                  |
 | 17    | DESIGN: 階層システム(7) = make-hierarchy/derive/underive/isa?等         |
 | 18    | DESIGN: promise/deliver + ユーティリティ(10) = Promise型+UUID+他       |
+| 18b   | DESIGN: partitionv/splitv-at/tap/parse-uuid 等(9) = 追加ユーティリティ |
 
 ### 実装状況
 
-395 done / 170 skip / 149 todo
+404 done / 170 skip / 140 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
