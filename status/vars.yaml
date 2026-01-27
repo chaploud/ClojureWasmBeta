@@ -671,7 +671,7 @@ vars:
       layer: host
     ancestors:
       type: function
-      status: todo
+      status: done
       impl_type: none
     any?:
       type: function
@@ -1112,11 +1112,11 @@ vars:
       layer: host
     derive:
       type: function
-      status: todo
+      status: done
       impl_type: none
     descendants:
       type: function
-      status: todo
+      status: done
       impl_type: none
     destructure:
       type: function
@@ -1592,7 +1592,7 @@ vars:
       host: host
     isa?:
       type: function
-      status: todo
+      status: done
       impl_type: none
     iterate:
       type: function
@@ -1712,7 +1712,7 @@ vars:
       impl_type: none
     make-hierarchy:
       type: function
-      status: todo
+      status: done
       impl_type: none
     map:
       type: function
@@ -1970,7 +1970,7 @@ vars:
       layer: host
     parents:
       type: function
-      status: todo
+      status: done
       impl_type: none
     parse-boolean:
       type: function
@@ -2860,7 +2860,7 @@ vars:
       impl_type: none
     underive:
       type: function
-      status: todo
+      status: done
       impl_type: none
     unreduced:
       type: function

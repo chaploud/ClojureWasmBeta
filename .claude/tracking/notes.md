@@ -230,6 +230,21 @@
   - Var の meta は `?*const Value`、Atom の meta は `?Value`
 - **current_env threadlocal**: core.zig に追加、evaluator.zig と vm.zig で設定
 
+## Phase 17: 階層システム
+
+- **parents ベース動的計算方式**: derive は parents マップのみ更新、ancestors/descendants は parents から再帰計算
+  - `isa?`: `isaTransitive` で parents を再帰走査（depth limit 100）
+  - `ancestors`: `collectAncestors` で parents を再帰収集 → セットで返す
+  - `descendants`: parents マップ全エントリを走査し、`isaTransitive` で各候補をチェック
+- **deepClone 必須**: 引数 (child, parent) はスクラッチアロケータの Keyword ポインタを含むため、
+  persistent アロケータに deepClone してから hierarchy に格納する必要がある
+  - スクラッチメモリは式間で `allocs.resetScratch()` でリセットされる
+  - deepClone なしだと2回目の derive で segfault（解放済み Keyword ポインタへのアクセス）
+- **global_hierarchy**: ファイルレベル `var` で保持。derive/underive で更新
+- **underive**: parents マップから指定 parent を除去するだけ（dissoc or assoc with reduced set）
+- **buildHierarchy**: parents/ancestors/descendants の3つの `*PersistentMap` からマップ構築
+  - ancestors/descendants は動的計算のためダミー空マップで可
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

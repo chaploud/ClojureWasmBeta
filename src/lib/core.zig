@@ -6798,6 +6798,354 @@ pub fn varyMetaFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Va
 }
 
 // ============================================================
+// Phase 17: 階層システム
+// ============================================================
+
+/// グローバル階層（シンプルなマップベース実装）
+/// parents: {child -> #{parent1 parent2 ...}}
+/// ancestors: {child -> #{ancestor1 ancestor2 ...}}
+/// descendants: {parent -> #{descendant1 descendant2 ...}}
+var global_hierarchy: ?Value = null;
+
+/// 空の階層マップを作成
+fn emptyHierarchy(allocator: std.mem.Allocator) !Value {
+    // {:parents {} :descendants {} :ancestors {}}
+    const entries = try allocator.alloc(Value, 6);
+    const kw_parents = try allocator.create(value_mod.Keyword);
+    kw_parents.* = value_mod.Keyword.init("parents");
+    const kw_descendants = try allocator.create(value_mod.Keyword);
+    kw_descendants.* = value_mod.Keyword.init("descendants");
+    const kw_ancestors = try allocator.create(value_mod.Keyword);
+    kw_ancestors.* = value_mod.Keyword.init("ancestors");
+
+    const empty_map = try allocator.create(value_mod.PersistentMap);
+    empty_map.* = .{ .entries = &[_]Value{} };
+    const empty_map_val = Value{ .map = empty_map };
+
+    entries[0] = Value{ .keyword = kw_parents };
+    entries[1] = empty_map_val;
+    entries[2] = Value{ .keyword = kw_descendants };
+    entries[3] = empty_map_val;
+    entries[4] = Value{ .keyword = kw_ancestors };
+    entries[5] = empty_map_val;
+
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// 階層マップから特定のキーのサブマップを取得
+fn getHierarchyMap(h: Value, key_name: []const u8) ?*value_mod.PersistentMap {
+    const m = switch (h) {
+        .map => |map| map,
+        else => return null,
+    };
+    // キーワードで検索
+    var i: usize = 0;
+    while (i + 1 < m.entries.len) : (i += 2) {
+        if (m.entries[i] == .keyword) {
+            if (std.mem.eql(u8, m.entries[i].keyword.name, key_name)) {
+                return switch (m.entries[i + 1]) {
+                    .map => |sub_map| sub_map,
+                    else => null,
+                };
+            }
+        }
+    }
+    return null;
+}
+
+/// make-hierarchy : 空の階層マップを作成
+/// (make-hierarchy) → {:parents {} :descendants {} :ancestors {}}
+pub fn makeHierarchyFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 0) return error.ArityError;
+    return try emptyHierarchy(allocator);
+}
+
+/// derive : 親子関係を登録
+/// (derive child parent) — グローバル階層に登録
+/// (derive h child parent) — ローカル階層に登録
+pub fn deriveFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+
+    var h: Value = undefined;
+    var child: Value = undefined;
+    var parent: Value = undefined;
+    var use_global = false;
+
+    if (args.len == 2) {
+        // グローバル階層
+        if (global_hierarchy == null) {
+            global_hierarchy = try emptyHierarchy(allocator);
+        }
+        h = global_hierarchy.?;
+        // スクラッチメモリの引数を persistent にクローン
+        child = try args[0].deepClone(allocator);
+        parent = try args[1].deepClone(allocator);
+        use_global = true;
+    } else {
+        // ローカル階層
+        h = args[0];
+        child = try args[1].deepClone(allocator);
+        parent = try args[2].deepClone(allocator);
+    }
+
+    // parents マップを更新: child -> #{...parent}
+    const parents_map = getHierarchyMap(h, "parents") orelse return error.TypeError;
+    var new_parent_set_items = std.ArrayList(Value).empty;
+    defer new_parent_set_items.deinit(allocator);
+
+    // 既存の親セットを取得
+    if (parents_map.get(child)) |existing| {
+        switch (existing) {
+            .set => |s| {
+                try new_parent_set_items.appendSlice(allocator, s.items);
+            },
+            else => {},
+        }
+    }
+    // 新しい親を追加（重複チェック）
+    var found = false;
+    for (new_parent_set_items.items) |item| {
+        if (item.eql(parent)) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        try new_parent_set_items.append(allocator, parent);
+    }
+
+    // 新しい parents セット
+    const new_set_items = try allocator.alloc(Value, new_parent_set_items.items.len);
+    @memcpy(new_set_items, new_parent_set_items.items);
+    const new_set = try allocator.create(value_mod.PersistentSet);
+    new_set.* = .{ .items = new_set_items };
+
+    // parents マップを更新
+    const new_parents_val = try parents_map.assoc(allocator, child, Value{ .set = new_set });
+    const new_parents_ptr = try allocator.create(value_mod.PersistentMap);
+    new_parents_ptr.* = new_parents_val;
+
+    // ancestors/descendants は parents から動的計算するためダミー空マップで構築
+    const empty_map = try allocator.create(value_mod.PersistentMap);
+    empty_map.* = .{ .entries = &[_]Value{} };
+    const new_h = try buildHierarchy(allocator, new_parents_ptr, empty_map, empty_map);
+    if (use_global) {
+        global_hierarchy = new_h;
+        return value_mod.nil; // Clojure 互換: derive はグローバルなら nil を返す（alter-var-root 経由）
+    }
+    return new_h;
+}
+
+/// 祖先を再帰的に収集
+fn collectAncestors(allocator: std.mem.Allocator, parents_map: Value, tag: Value, result: *std.ArrayList(Value)) !void {
+    const pm = switch (parents_map) {
+        .map => |m| m,
+        else => return,
+    };
+    if (pm.get(tag)) |parent_set| {
+        if (parent_set == .set) {
+            for (parent_set.set.items) |p| {
+                var dup = false;
+                for (result.items) |r| {
+                    if (r.eql(p)) { dup = true; break; }
+                }
+                if (!dup) {
+                    try result.append(allocator, p);
+                    try collectAncestors(allocator, parents_map, p, result);
+                }
+            }
+        }
+    }
+}
+
+/// 階層マップを構築
+fn buildHierarchy(allocator: std.mem.Allocator, parents: *value_mod.PersistentMap, ancestors: *value_mod.PersistentMap, descendants: *value_mod.PersistentMap) !Value {
+    const entries = try allocator.alloc(Value, 6);
+    const kw_parents = try allocator.create(value_mod.Keyword);
+    kw_parents.* = value_mod.Keyword.init("parents");
+    const kw_descendants = try allocator.create(value_mod.Keyword);
+    kw_descendants.* = value_mod.Keyword.init("descendants");
+    const kw_ancestors = try allocator.create(value_mod.Keyword);
+    kw_ancestors.* = value_mod.Keyword.init("ancestors");
+    entries[0] = Value{ .keyword = kw_parents };
+    entries[1] = Value{ .map = parents };
+    entries[2] = Value{ .keyword = kw_descendants };
+    entries[3] = Value{ .map = descendants };
+    entries[4] = Value{ .keyword = kw_ancestors };
+    entries[5] = Value{ .map = ancestors };
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// underive : 親子関係を削除
+/// (underive child parent) or (underive h child parent)
+pub fn underiveFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+
+    var h: Value = undefined;
+    var child: Value = undefined;
+    var parent: Value = undefined;
+    var use_global = false;
+
+    if (args.len == 2) {
+        if (global_hierarchy == null) return value_mod.nil;
+        h = global_hierarchy.?;
+        child = try args[0].deepClone(allocator);
+        parent = try args[1].deepClone(allocator);
+        use_global = true;
+    } else {
+        h = args[0];
+        child = try args[1].deepClone(allocator);
+        parent = try args[2].deepClone(allocator);
+    }
+
+    // parents マップから child の親セットを取得し、parent を除去
+    const parents_map = getHierarchyMap(h, "parents") orelse return if (use_global) value_mod.nil else h;
+    const existing_set = parents_map.get(child) orelse return if (use_global) value_mod.nil else h;
+    if (existing_set != .set) return if (use_global) value_mod.nil else h;
+
+    // parent を除いた新しいセットを作成
+    var new_items = std.ArrayList(Value).empty;
+    defer new_items.deinit(allocator);
+    for (existing_set.set.items) |item| {
+        if (!item.eql(parent)) {
+            try new_items.append(allocator, item);
+        }
+    }
+
+    // 新しい parents マップを構築
+    var new_parents_map: value_mod.PersistentMap = undefined;
+    if (new_items.items.len == 0) {
+        // 親がなくなった: child エントリを削除
+        new_parents_map = try parents_map.dissoc(allocator, child);
+    } else {
+        const items = try allocator.alloc(Value, new_items.items.len);
+        @memcpy(items, new_items.items);
+        const new_set = try allocator.create(value_mod.PersistentSet);
+        new_set.* = .{ .items = items };
+        new_parents_map = try parents_map.assoc(allocator, child, Value{ .set = new_set });
+    }
+
+    // 階層を再構築（ancestors/descendants は parents から動的計算するので、
+    // parents だけ更新すれば十分）
+    const new_parents_ptr = try allocator.create(value_mod.PersistentMap);
+    new_parents_ptr.* = new_parents_map;
+
+    // 既存の ancestors/descendants マップはダミーで渡す（動的計算するので無視される）
+    const empty_map = try allocator.create(value_mod.PersistentMap);
+    empty_map.* = .{ .entries = &[_]Value{} };
+    const new_h = try buildHierarchy(allocator, new_parents_ptr, empty_map, empty_map);
+
+    if (use_global) {
+        global_hierarchy = new_h;
+        return value_mod.nil;
+    }
+    return new_h;
+}
+
+/// parents : タグの直接の親のセットを返す
+/// (parents tag) or (parents h tag)
+pub fn parentsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len < 1 or args.len > 2) return error.ArityError;
+    const h = if (args.len == 2) args[0] else (global_hierarchy orelse return value_mod.nil);
+    const tag = if (args.len == 2) args[1] else args[0];
+    const parents_map = getHierarchyMap(h, "parents") orelse return value_mod.nil;
+    return parents_map.get(tag) orelse value_mod.nil;
+}
+
+/// ancestors : タグの全祖先のセットを返す（parents から再帰計算）
+/// (ancestors tag) or (ancestors h tag)
+pub fn ancestorsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1 or args.len > 2) return error.ArityError;
+    const h = if (args.len == 2) args[0] else (global_hierarchy orelse return value_mod.nil);
+    const tag = if (args.len == 2) args[1] else args[0];
+    const parents_map = getHierarchyMap(h, "parents") orelse return value_mod.nil;
+
+    // 再帰的に全祖先を収集
+    var result = std.ArrayList(Value).empty;
+    defer result.deinit(allocator);
+    try collectAncestors(allocator, Value{ .map = parents_map }, tag, &result);
+    if (result.items.len == 0) return value_mod.nil;
+
+    const items = try allocator.alloc(Value, result.items.len);
+    @memcpy(items, result.items);
+    const set = try allocator.create(value_mod.PersistentSet);
+    set.* = .{ .items = items };
+    return Value{ .set = set };
+}
+
+/// descendants : タグの全子孫のセットを返す（parents から逆引き計算）
+/// (descendants tag) or (descendants h tag)
+pub fn descendantsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1 or args.len > 2) return error.ArityError;
+    const h = if (args.len == 2) args[0] else (global_hierarchy orelse return value_mod.nil);
+    const tag = if (args.len == 2) args[1] else args[0];
+    const parents_map = getHierarchyMap(h, "parents") orelse return value_mod.nil;
+
+    // parents マップの全エントリを走査して、tag を祖先に持つものを収集
+    var result = std.ArrayList(Value).empty;
+    defer result.deinit(allocator);
+    var i: usize = 0;
+    while (i + 1 < parents_map.entries.len) : (i += 2) {
+        const candidate = parents_map.entries[i];
+        // candidate が tag の子孫かチェック
+        if (isaTransitive(parents_map, candidate, tag, 0)) {
+            var dup = false;
+            for (result.items) |r| {
+                if (r.eql(candidate)) { dup = true; break; }
+            }
+            if (!dup) try result.append(allocator, candidate);
+        }
+    }
+    if (result.items.len == 0) return value_mod.nil;
+
+    const items = try allocator.alloc(Value, result.items.len);
+    @memcpy(items, result.items);
+    const set = try allocator.create(value_mod.PersistentSet);
+    set.* = .{ .items = items };
+    return Value{ .set = set };
+}
+
+/// isa? : child が parent の子孫か（等価も含む）
+/// (isa? child parent) or (isa? h child parent)
+pub fn isaPred(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+    const h = if (args.len == 3) args[0] else global_hierarchy;
+    const child = if (args.len == 3) args[1] else args[0];
+    const parent = if (args.len == 3) args[2] else args[1];
+
+    // 等価チェック
+    if (child.eql(parent)) return value_mod.true_val;
+
+    // 階層チェック: parents を再帰的にたどる（推移的関係）
+    if (h) |hier| {
+        const parents_map = getHierarchyMap(hier, "parents") orelse return value_mod.false_val;
+        if (isaTransitive(parents_map, child, parent, 0)) return value_mod.true_val;
+    }
+    return value_mod.false_val;
+}
+
+/// parents マップを再帰的にたどって isa? を判定
+fn isaTransitive(parents_map: *value_mod.PersistentMap, child: Value, target: Value, depth: usize) bool {
+    if (depth > 100) return false; // 無限ループ防止
+    if (parents_map.get(child)) |parent_set| {
+        if (parent_set == .set) {
+            for (parent_set.set.items) |p| {
+                if (p.eql(target)) return true;
+                // 再帰: p の親もたどる
+                if (isaTransitive(parents_map, p, target, depth + 1)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -7148,6 +7496,14 @@ const builtins = [_]BuiltinDef{
     .{ .name = "alter-meta!", .func = alterMetaBang },
     .{ .name = "reset-meta!", .func = resetMetaBang },
     .{ .name = "vary-meta", .func = varyMetaFn },
+    // Phase 17: 階層システム
+    .{ .name = "make-hierarchy", .func = makeHierarchyFn },
+    .{ .name = "derive", .func = deriveFn },
+    .{ .name = "underive", .func = underiveFn },
+    .{ .name = "parents", .func = parentsFn },
+    .{ .name = "ancestors", .func = ancestorsFn },
+    .{ .name = "descendants", .func = descendantsFn },
+    .{ .name = "isa?", .func = isaPred },
 };
 
 /// clojure.core の組み込み関数を Env に登録

@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 15 完了 — 次は Phase 16 (DESIGN: defrecord・deftype)**
+**Phase 17 完了 — 次は Phase 18 (DESIGN: 動的束縛・sorted コレクション)**
 
 ### 完了フェーズ
 
@@ -45,10 +45,11 @@
 | 13    | DESIGN: delay/force(3)+volatile(4)+reduced(4) = 新型3種+11関数、deref拡張              |
 | 14    | DESIGN: transient(7)+transduce基盤(6) = Transient型+13関数              |
 | 15    | DESIGN: Atom拡張(7)+Var操作(6)+メタデータ(3) = +16関数                  |
+| 17    | DESIGN: 階層システム(7) = make-hierarchy/derive/underive/isa?等         |
 
 ### 実装状況
 
-378 done / 170 skip / 166 todo
+385 done / 170 skip / 159 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -117,9 +118,9 @@ Phase 16: DESIGN — defrecord・deftype
   └ defstruct, create-struct, struct, struct-map, accessor（簡易版）
   └ record?, instance?
 
-Phase 17: DESIGN — 階層システム
+Phase 17: DESIGN — 階層システム ✅
   └ make-hierarchy, derive, underive, ancestors, descendants, parents, isa?
-  └ マルチメソッドの完全なディスパッチ階層
+  └ parents ベースの動的計算方式（ancestors/descendants は parents から再帰計算）
 
 Phase 18: DESIGN — 動的束縛・sorted コレクション
   └ binding, with-bindings, set!, with-local-vars, bound-fn 等（束縛フレームスタック）
