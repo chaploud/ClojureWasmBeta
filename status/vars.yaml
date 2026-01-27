@@ -895,8 +895,9 @@ vars:
       impl_type: none
     cat:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     char:
       type: function
       status: done
@@ -1009,8 +1010,9 @@ vars:
       layer: pure
     completing:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     concat:
       type: function
       status: done
@@ -1187,8 +1189,9 @@ vars:
       layer: bridge
     eduction:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     empty:
       type: function
       status: done
@@ -1433,8 +1436,9 @@ vars:
       impl_type: builtin
     halt-when:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     hash:
       type: function
       status: done
@@ -1591,8 +1595,9 @@ vars:
       layer: host
     iteration:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     iterator-seq:
       type: function
       status: skip
@@ -2740,12 +2745,14 @@ vars:
       layer: pure
     transduce:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     transient:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: host
     tree-seq:
       type: function
       status: done
@@ -3197,6 +3204,30 @@ vars:
       type: var
       status: skip
       impl_type: none
+    persistent\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    conj\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    assoc\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    dissoc\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    disj\!:
+      status: done
+      impl_type: builtin
+      layer: host
+    pop\!:
+      status: done
+      impl_type: builtin
+      layer: host
   clojure_repl:
     dir:
       type: macro

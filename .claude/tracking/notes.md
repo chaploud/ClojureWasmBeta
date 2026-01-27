@@ -189,6 +189,28 @@
 - **ensure-reduced**: 既に reduced_val ならそのまま、それ以外は reduced で包む
 - switch exhaustiveness: value.zig (typeKeyword, deepClone, format), core.zig (typeFn), main.zig (printValue), analyze.zig (valueToForm) を全て更新
 
+## Phase 14: Transient / Transduce
+
+- **Transient 型を value.zig に追加**: ArrayList ベースのミュータブルコレクションラッパー
+  - kind (vector/map/set) + items/entries (ArrayList) + persisted フラグ
+  - persistent! 済みの transient への操作は TypeError
+- **transient 操作**: conj!, assoc!, dissoc!, disj!, pop! はすべてインプレース操作
+  - conj! は vector/map/set それぞれに対応（map は [k v] ベクターを受け取る）
+  - assoc! は map と vector（インデックス指定）の両方に対応
+- **transduce**: xform を f に適用 → reduce ループ → 完了ステップの3段階
+  - 完了ステップ (1-arity) で ArityError が出た場合は acc をそのまま返す
+  - reduced_val チェックで早期終了対応
+- **cat**: PartialFn ベースのトランスデューサ
+  - catFn(rf) → PartialFn(__cat-step, [rf])
+  - catStep(rf, result, input): input がコレクションなら各要素を rf に渡す
+- **halt-when**: 2段 PartialFn チェーン
+  - haltWhenFn(pred) → PartialFn(__halt-when-xform, [pred])
+  - haltWhenXform(pred, rf) → PartialFn(__halt-when-step, [pred, rf])
+  - haltWhenStep(pred, rf, result, input): pred(input) が真なら reduced(result)
+- **eduction**: 即座評価版（xform + conj で reduce して結果リスト化）
+- **iteration**: seed からステップ関数を繰り返し適用（nil で停止、安全上限 1000）
+- switch exhaustiveness: Phase 13 と同様、全 switch 文を更新
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

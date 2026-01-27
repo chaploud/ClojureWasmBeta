@@ -348,6 +348,14 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
             try printValue(writer, r.value);
             try writer.writeByte('>');
         },
+        .transient => |t| {
+            const kind_str: []const u8 = switch (t.kind) {
+                .vector => "vector",
+                .map => "map",
+                .set => "set",
+            };
+            try writer.print("#<transient-{s}>", .{kind_str});
+        },
     }
 }
 

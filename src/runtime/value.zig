@@ -441,6 +441,63 @@ pub const Reduced = struct {
     }
 };
 
+/// Transient（一時的ミュータブルコレクション）
+/// transient で永続コレクションからミュータブルコピーを作成し、
+/// conj!/assoc!/dissoc!/disj!/pop! でインプレース操作、
+/// persistent! で永続コレクションに戻す。
+pub const Transient = struct {
+    /// 元のコレクション種別
+    kind: Kind,
+    /// ミュータブルな要素配列（vector/list/set 用）
+    items: ?std.ArrayList(Value),
+    /// ミュータブルなエントリ配列（map 用: [k1,v1,k2,v2,...]）
+    entries: ?std.ArrayList(Value),
+    /// persistent! 済みかどうか（二重 persistent! を防止）
+    persisted: bool,
+
+    pub const Kind = enum {
+        vector,
+        map,
+        set,
+    };
+
+    /// ベクター/リストから Transient を作成
+    pub fn initVector(allocator: std.mem.Allocator, source_items: []const Value) error{OutOfMemory}!Transient {
+        var list: std.ArrayList(Value) = .empty;
+        try list.appendSlice(allocator, source_items);
+        return .{
+            .kind = .vector,
+            .items = list,
+            .entries = null,
+            .persisted = false,
+        };
+    }
+
+    /// マップから Transient を作成
+    pub fn initMap(allocator: std.mem.Allocator, source_entries: []const Value) error{OutOfMemory}!Transient {
+        var list: std.ArrayList(Value) = .empty;
+        try list.appendSlice(allocator, source_entries);
+        return .{
+            .kind = .map,
+            .items = null,
+            .entries = list,
+            .persisted = false,
+        };
+    }
+
+    /// セットから Transient を作成
+    pub fn initSet(allocator: std.mem.Allocator, source_items: []const Value) error{OutOfMemory}!Transient {
+        var list: std.ArrayList(Value) = .empty;
+        try list.appendSlice(allocator, source_items);
+        return .{
+            .kind = .set,
+            .items = list,
+            .entries = null,
+            .persisted = false,
+        };
+    }
+};
+
 // === 関数プロトタイプ（コンパイル済み）===
 // 循環依存を避けるため、ここで前方宣言
 // 実際の定義は compiler/bytecode.zig
@@ -572,6 +629,9 @@ pub const Value = union(enum) {
     volatile_val: *Volatile, // ミュータブルボックス
     reduced_val: *Reduced, // reduce 早期終了ラッパー
 
+    // === Phase 14: transient ===
+    transient: *Transient, // 一時的ミュータブルコレクション
+
     // === ヘルパー関数 ===
 
     /// nil かどうか
@@ -658,6 +718,7 @@ pub const Value = union(enum) {
             .delay_val => |a| a == other.delay_val, // 参照等価
             .volatile_val => |a| a == other.volatile_val, // 参照等価
             .reduced_val => |a| a.value.eql(other.reduced_val.value), // 内部値で比較
+            .transient => |a| a == other.transient, // 参照等価
         };
     }
 
@@ -689,6 +750,7 @@ pub const Value = union(enum) {
             .delay_val => "delay",
             .volatile_val => "volatile",
             .reduced_val => "reduced",
+            .transient => "transient",
         };
     }
 
@@ -718,6 +780,7 @@ pub const Value = union(enum) {
             .delay_val => "delay",
             .volatile_val => "volatile",
             .reduced_val => "reduced",
+            .transient => "transient",
         };
     }
 
@@ -864,6 +927,14 @@ pub const Value = union(enum) {
                 try r.value.format("", .{}, writer);
                 try writer.writeByte('>');
             },
+            .transient => |t| {
+                const kind_str: []const u8 = switch (t.kind) {
+                    .vector => "vector",
+                    .map => "map",
+                    .set => "set",
+                };
+                try writer.print("#<transient-{s}>", .{kind_str});
+            },
         }
     }
 
@@ -979,6 +1050,8 @@ pub const Value = union(enum) {
                 new_r.* = .{ .value = try r.value.deepClone(allocator) };
                 break :blk .{ .reduced_val = new_r };
             },
+            // Transient は参照をそのまま保持（ミュータブルなので deepClone は意味がない）
+            .transient => self,
         };
     }
 

@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 13 完了 — 次は Phase 14 (DESIGN: reduced/transduce 基盤)**
+**Phase 14 完了 — 次は Phase 15 (DESIGN: Atom拡張・Var操作・メタデータ)**
 
 ### 完了フェーズ
 
@@ -43,10 +43,11 @@
 | 11    | PURE述語(23)+コレクション/ユーティリティ(17)+ビット演算等(17) = +57関数 |
 | 12    | PURE残り: 述語(15)+型キャスト(6)+算術(5)+出力(4)+ハッシュ(4)+MM拡張(6)+HOF(6)+他(7) = +53関数 |
 | 13    | DESIGN: delay/force(3)+volatile(4)+reduced(4) = 新型3種+11関数、deref拡張              |
+| 14    | DESIGN: transient(7)+transduce基盤(6) = Transient型+13関数              |
 
 ### 実装状況
 
-349 done / 170 skip / 183 todo
+362 done / 170 skip / 176 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -97,10 +98,11 @@ Phase 13: DESIGN — delay/force, volatile, reduced ✅
   └ deref 拡張（volatile, delay 対応）
   └ 新型3種: Delay, Volatile, Reduced を value.zig に追加
 
-Phase 14: DESIGN — transduce 基盤・transient
+Phase 14: DESIGN — transduce 基盤・transient ✅
   └ completing, transduce, cat, eduction, halt-when
   └ iteration（遅延ステートフルイテレータ）
   └ transient/persistent!/conj!/assoc!/dissoc!/disj!/pop!: 一時的ミュータブルコレクション
+  └ Transient 型を value.zig に追加
 
 Phase 15: DESIGN — Atom 拡張・Var 操作・メタデータ
   └ add-watch, remove-watch, get-validator, set-validator!
