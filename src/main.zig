@@ -137,6 +137,9 @@ pub fn main() !void {
             };
         }
         stdout.flush() catch {};
+
+        // 式境界で GC（閾値超過時のみ）
+        allocs.collectGarbage(&env, core.getGcGlobals());
     }
 }
 

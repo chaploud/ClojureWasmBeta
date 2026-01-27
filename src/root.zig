@@ -73,6 +73,11 @@ pub const engine = @import("runtime/engine.zig");
 pub const EvalEngine = engine.EvalEngine;
 pub const Backend = engine.Backend;
 
+// === GC ===
+pub const gc = @import("gc/gc.zig");
+pub const gc_allocator = @import("gc/gc_allocator.zig");
+pub const gc_tracing = @import("gc/tracing.zig");
+
 // === 標準ライブラリ ===
 pub const core = @import("lib/core.zig");
 
