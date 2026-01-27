@@ -275,3 +275,17 @@
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある
 - `swap!`, `reset!` 等を含む式は Write ツールでファイル経由で渡すか、`$(cat file)` で回避
+
+## REPL (Phase 25)
+
+- **起動**: 引数なしで `./ClojureWasmBeta` を実行
+- **stdin API**: Zig 0.15.2 では `File.reader().interface.takeDelimiter('\n')` を使用
+  - `readUntilDelimiter` は `DeprecatedReader` のみ。新 API は `Io.Reader.takeDelimiter`
+  - `takeDelimiter` は内部バッファへのスライスを返す (次の read で無効化)
+  - EOF 時は `null` を返す (Ctrl-D 検出に使用)
+- **source 寿命**: persistent アロケータで確保が必須
+  - `namespace.intern()` がシンボル名のスライスを HashMap キーとして保存
+  - source を GPA で確保して free すると、HashMap キーが dangling pointer になる
+  - REPL ではソース文字列を persistent allocator で確保し、GC に管理を委ねる
+- **括弧バランス**: `isBalanced()` で `()[]{}` の対応と文字列リテラル内のエスケープを考慮
+- **結果履歴**: `*1`/`*2`/`*3` は user NS の Var として定義。`*e` はエラー時用 (現在 nil のみ)

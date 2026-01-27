@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 24 完了 — 名前空間（本格実装）**
+**Phase 25 完了 — REPL (対話型シェル)**
 
 ### 完了フェーズ
 
@@ -56,6 +56,7 @@
 | 22    | 正規表現エンジン（フルスクラッチ Zig 実装）                                                   |
 | 23    | 動的バインディング（本格実装）                                                                |
 | 24    | 名前空間（本格実装）                                                                          |
+| 25    | REPL (対話型シェル)                                                                           |
 
 ### 実装状況
 
@@ -65,67 +66,35 @@
 
 ---
 
-## Phase 24 実装詳細
+## Phase 25 実装詳細
 
-### サブフェーズ
+### 機能
 
-| Sub   | 内容                                                                            |
-|-------|---------------------------------------------------------------------------------|
-| 24a   | NS情報関数本格化 (all-ns/ns-name/ns-publics/ns-interns/ns-map/ns-refers 等)    |
-| 24b   | refer/alias/ns-unmap/ns-unalias/remove-ns 本格実装                             |
-| 24c   | (ns ...) マクロ展開 (:require/:use/:refer-clojure 対応)                        |
-| 24d   | require 本格実装 (ファイルロード + :as/:refer/:rename + ロード済み管理)         |
-| 24e   | E2E テスト 10件追加                                                             |
+- 引数なし起動で REPL モード (`./ClojureWasmBeta`)
+- NS名表示プロンプト (`user=>`, `myns=>`)
+- 複数行入力 (括弧バランスチェック、未閉じなら `user..` プロンプトで継続)
+- 結果履歴 `*1`, `*2`, `*3`, エラー履歴 `*e`
+- Ctrl-D で終了
+- `--backend=vm` / `--compare` も REPL で動作
 
 ### 変更ファイル
 
-| ファイル                       | 変更内容                                                            |
-|--------------------------------|---------------------------------------------------------------------|
-| `src/runtime/namespace.zig`    | VarMap/NsAliasMap pub化 + unmap/removeAlias/getAllRefers/getAllAliases |
-| `src/runtime/env.zig`          | NsMap pub化 + removeNs/getAllNamespaces                              |
-| `src/lib/core.zig`             | 17 NS関数を本格実装 + ファイルロード + ロード済み管理               |
-| `src/analyzer/analyze.zig`     | expandNs 本格化 (:require/:use/:refer-clojure 展開)                |
-| `src/main.zig`                 | initLoadedLibs 呼び出し追加                                        |
-| `src/test_e2e.zig`             | Phase 24 E2E テスト 10件追加                                       |
-
-### 本格実装された関数
-
-| 関数           | 実装状態 | 内容                                                    |
-|----------------|----------|---------------------------------------------------------|
-| all-ns         | 本格     | 全NS をシンボルリストで返す                             |
-| ns-name        | 本格     | NS の名前をシンボルで返す                               |
-| ns-publics     | 本格     | NS の全定義 Var を {sym value} マップで返す             |
-| ns-interns     | 本格     | ns-publics と同等                                       |
-| ns-map         | 本格     | interns + refers を統合マップで返す                     |
-| ns-refers      | 本格     | NS の refer された Var マップを返す                     |
-| ns-aliases     | 本格     | NS のエイリアスマップ {alias-sym ns-sym} を返す         |
-| ns-resolve     | 本格     | 指定 NS 内でシンボルを解決                              |
-| ns-unmap       | 本格     | NS からシンボルのマッピングを除去                       |
-| ns-unalias     | 本格     | NS からエイリアスを除去                                 |
-| remove-ns      | 本格     | 環境から NS を削除 (clojure.core は保護)                |
-| refer          | 本格     | 他 NS の Var を refer (:only/:exclude/:rename 対応)     |
-| alias          | 本格     | NS エイリアスを設定                                     |
-| require        | 本格     | NS ロード + :as/:refer/:reload (:refer :all も対応)     |
-| use            | 本格     | require + refer :all 相当 (:only 対応)                  |
-| in-ns          | 本格     | current_ns を実際に切り替え                             |
-| load-file      | 本格     | ファイルを読み込んで全式を評価                          |
-| loaded-libs    | 本格     | ロード済みライブラリのセットを返す                      |
+| ファイル       | 変更内容                                                          |
+|----------------|-------------------------------------------------------------------|
+| `src/main.zig` | runRepl + evalForRepl + isBalanced + REPL起動分岐                 |
 
 ### 設計ポイント
 
-- **NS切り替え**: `in-ns` が `env.setCurrentNs()` を実際に呼ぶ
-- **(ns ...) マクロ**: `(do (in-ns 'name) clauses... (refer 'clojure.core))` に展開
-- **ファイルロード**: NS名のドットを `/` に、ハイフンを `_` に変換して `.clj` を検索
-- **ロード済み管理**: `loaded_libs` (StringHashMap) でロード済みNSを追跡
-- **NS復元**: `tryLoadFile` がロード前のNSを退避し、ロード後に復元
-- **refer フィルタリング**: `:only`, `:exclude`, `:rename` をサポート
+- **stdin API**: Zig 0.15.2 の `File.reader()` → `interface.takeDelimiter()` を使用
+- **source 寿命**: persistent アロケータで確保 (シンボル名が source 内を指すため解放不可)
+- **scratch リセット**: 式ごとに scratch arena をリセット (Reader/Analyzer の一時データ)
+- **GC**: 式境界で Mark-Sweep GC を実行 (非REPL モードと同じ)
 
 ### 既知の制限
 
-- `do` ブロック内で `in-ns` → `def` しても、Analyzer が先に全式を解析するため
-  NS切り替え前の NS に定義される（トップレベル式境界でのみ反映）
+- `*ns*` が REPL 開始時に `clojure.core` を返す (動的Varのルート値が未更新)
+- 文字列表示で `!` がエスケープされる (`"test!"` → `"test\!"`) — Phase 25 以前からの問題
 - VM での `with-redefs` 後のユーザー関数呼び出しが signal 6 でクラッシュ (Phase 23 由来)
-- ファイルロードはクラスパスルート未設定時は相対パスのみ（`addClasspathRoot` でルート追加可能）
 
 ---
 

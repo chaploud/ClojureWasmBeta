@@ -99,9 +99,8 @@ pub fn main() !void {
     }
 
     if (expressions.items.len == 0) {
-        try printHelp(stdout);
-        stdout.flush() catch {};
-        return;
+        // REPL モード
+        return runRepl(gpa_allocator, backend, compare_mode);
     }
 
     // 寿命別アロケータを初期化
@@ -374,6 +373,195 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
         },
         .matcher => try writer.writeAll("#<matcher>"),
     }
+}
+
+/// REPL: 対話型シェル
+fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: bool) !void {
+    // stdout/stderr
+    const stdout_file = std.fs.File.stdout();
+    const stderr_file = std.fs.File.stderr();
+    const stdin_file = std.fs.File.stdin();
+    var stdout_buf: [4096]u8 = undefined;
+    var stderr_buf: [4096]u8 = undefined;
+    var stdout_writer = stdout_file.writer(&stdout_buf);
+    var stderr_writer = stderr_file.writer(&stderr_buf);
+    const stdout = &stdout_writer.interface;
+    const stderr = &stderr_writer.interface;
+
+    // 環境を初期化
+    var allocs = Allocators.init(gpa_allocator);
+    defer allocs.deinit();
+
+    var env = Env.init(allocs.persistent());
+    defer env.deinit();
+    try env.setupBasic();
+    try core.registerCore(&env);
+    core.initLoadedLibs(allocs.persistent());
+
+    // バナー
+    stdout.writeAll("ClojureWasmBeta 0.1.0 — Clojure interpreter in Zig\n") catch {};
+    stdout.writeAll("Type expressions to evaluate. Ctrl-D to exit.\n") catch {};
+    stdout.flush() catch {};
+
+    // *1, *2, *3, *e 用の Var
+    const var1 = env.findOrCreateNs("user") catch unreachable;
+    const v1 = var1.intern("*1") catch unreachable;
+    const v2 = var1.intern("*2") catch unreachable;
+    const v3 = var1.intern("*3") catch unreachable;
+    const ve = var1.intern("*e") catch unreachable;
+    v1.bindRoot(Value.nil);
+    v2.bindRoot(Value.nil);
+    v3.bindRoot(Value.nil);
+    ve.bindRoot(Value.nil);
+
+    // 入力バッファ
+    var input_buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer input_buf.deinit(gpa_allocator);
+
+    var vm_snapshot: ?engine_mod.VarSnapshot = null;
+
+    // stdin リーダー（ループ外で初期化）
+    var stdin_reader_buf: [4096]u8 = undefined;
+    var stdin_reader = stdin_file.reader(&stdin_reader_buf);
+
+    while (true) {
+        // プロンプト
+        const ns_name = if (env.getCurrentNs()) |ns| ns.name else "user";
+        if (input_buf.items.len == 0) {
+            stdout.print("{s}=> ", .{ns_name}) catch {};
+        } else {
+            // 継続入力プロンプト
+            stdout.print("{s}.. ", .{ns_name}) catch {};
+        }
+        stdout.flush() catch {};
+
+        // 1行読み込み
+        const line_opt = stdin_reader.interface.takeDelimiter('\n') catch |err| {
+            switch (err) {
+                error.StreamTooLong => {
+                    stderr.writeAll("Error: input line too long\n") catch {};
+                    stderr.flush() catch {};
+                    input_buf.clearRetainingCapacity();
+                    continue;
+                },
+                error.ReadFailed => return err,
+            }
+        };
+        const line = line_opt orelse {
+            // EOF (Ctrl-D)
+            stdout.writeByte('\n') catch {};
+            stdout.flush() catch {};
+            return;
+        };
+
+        // 空行は無視
+        if (line.len == 0 and input_buf.items.len == 0) continue;
+
+        // 入力バッファに追加
+        if (input_buf.items.len > 0) {
+            try input_buf.append(gpa_allocator, '\n');
+        }
+        try input_buf.appendSlice(gpa_allocator, line);
+
+        // 括弧バランスチェック
+        if (!isBalanced(input_buf.items)) continue;
+
+        // 入力を評価
+        // persistent アロケータを使用（シンボル名が source 内を指すため解放不可）
+        const source = try allocs.persistent().dupe(u8, input_buf.items);
+        input_buf.clearRetainingCapacity();
+
+        // scratch リセット
+        allocs.resetScratch();
+
+        if (compare_mode) {
+            const compare_out = runCompare(&allocs, &env, source, vm_snapshot, stdout, stderr) catch |err| {
+                stderr.print("Error: {any}\n", .{err}) catch {};
+                stderr.flush() catch {};
+                ve.bindRoot(Value.nil); // *e にエラー情報は格納できない（Value 表現なし）
+                continue;
+            };
+            vm_snapshot = compare_out;
+        } else {
+            // 評価
+            const result = evalForRepl(&allocs, &env, source, backend) catch |err| {
+                stderr.print("Error: {any}\n", .{err}) catch {};
+                stderr.flush() catch {};
+                continue;
+            };
+
+            // 結果を出力
+            printValue(stdout, result) catch {};
+            stdout.writeByte('\n') catch {};
+            stdout.flush() catch {};
+
+            // *1, *2, *3 を更新
+            v3.bindRoot(v2.deref());
+            v2.bindRoot(v1.deref());
+            v1.bindRoot(result);
+        }
+
+        stdout.flush() catch {};
+
+        // 式境界で GC
+        allocs.collectGarbage(&env, core.getGcGlobals());
+    }
+}
+
+/// REPL 用: 式を評価して結果を返す（出力しない）
+fn evalForRepl(
+    allocs: *Allocators,
+    env: *Env,
+    source: []const u8,
+    backend: Backend,
+) !Value {
+    var reader = Reader.init(allocs.scratch(), source);
+    const form = try reader.read() orelse return error.EmptyInput;
+    var analyzer = Analyzer.init(allocs.scratch(), env);
+    const node = try analyzer.analyze(form);
+    var eng = EvalEngine.init(allocs.persistent(), env, backend);
+    const raw_result = try eng.run(node);
+    return core.ensureRealized(allocs.persistent(), raw_result) catch raw_result;
+}
+
+/// 括弧のバランスチェック（全ての開き括弧に対応する閉じ括弧があるか）
+fn isBalanced(input: []const u8) bool {
+    var parens: i32 = 0;
+    var brackets: i32 = 0;
+    var braces: i32 = 0;
+    var in_string = false;
+    var escape = false;
+
+    for (input) |c| {
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        if (c == '\\' and in_string) {
+            escape = true;
+            continue;
+        }
+        if (c == '"') {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+
+        // コメント行はスキップ
+        if (c == ';') return parens <= 0 and brackets <= 0 and braces <= 0;
+
+        switch (c) {
+            '(' => parens += 1,
+            ')' => parens -= 1,
+            '[' => brackets += 1,
+            ']' => brackets -= 1,
+            '{' => braces += 1,
+            '}' => braces -= 1,
+            else => {},
+        }
+    }
+
+    return parens <= 0 and brackets <= 0 and braces <= 0;
 }
 
 /// ヘルプを出力
