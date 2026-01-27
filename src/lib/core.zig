@@ -19,6 +19,8 @@ const Reader = @import("../reader/reader.zig").Reader;
 const Analyzer = @import("../analyzer/analyze.zig").Analyzer;
 const tree_walk = @import("../runtime/evaluator.zig");
 const Context = @import("../runtime/context.zig").Context;
+const regex_mod = @import("../regex/regex.zig");
+const regex_matcher = @import("../regex/matcher.zig");
 
 /// 組み込み関数の型（value.zig との循環依存を避けるためここで定義）
 pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
@@ -1527,6 +1529,12 @@ fn printValue(writer: anytype, val: Value) !void {
                 try writer.writeAll("#<promise (pending)>");
             }
         },
+        .regex => |pat| {
+            try writer.writeAll("#\"");
+            try writer.writeAll(pat.source);
+            try writer.writeByte('"');
+        },
+        .matcher => try writer.writeAll("#<matcher>"),
     }
 }
 
@@ -2682,7 +2690,17 @@ pub fn stringReplace(allocator: std.mem.Allocator, args: []const Value) anyerror
         .string => |str| str.data,
         else => return error.TypeError,
     };
-    const match = switch (args[1]) {
+
+    // Pattern の場合: 正規表現置換
+    if (args[1] == .regex) {
+        const replacement = switch (args[2]) {
+            .string => |str| str.data,
+            else => return error.TypeError,
+        };
+        return regexReplaceAll(allocator, s, args[1].regex, replacement);
+    }
+
+    const match_str = switch (args[1]) {
         .string => |str| str.data,
         else => return error.TypeError,
     };
@@ -2691,8 +2709,7 @@ pub fn stringReplace(allocator: std.mem.Allocator, args: []const Value) anyerror
         else => return error.TypeError,
     };
 
-    if (match.len == 0) {
-        // 空文字列マッチはそのまま返す
+    if (match_str.len == 0) {
         const str_obj = try allocator.create(value_mod.String);
         str_obj.* = .{ .data = s };
         return Value{ .string = str_obj };
@@ -2703,13 +2720,156 @@ pub fn stringReplace(allocator: std.mem.Allocator, args: []const Value) anyerror
 
     var i: usize = 0;
     while (i < s.len) {
-        if (i + match.len <= s.len and std.mem.eql(u8, s[i..][0..match.len], match)) {
+        if (i + match_str.len <= s.len and std.mem.eql(u8, s[i..][0..match_str.len], match_str)) {
             try buf.appendSlice(allocator, replacement);
-            i += match.len;
+            i += match_str.len;
         } else {
             try buf.append(allocator, s[i]);
             i += 1;
         }
+    }
+
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = try buf.toOwnedSlice(allocator) };
+    return Value{ .string = str_obj };
+}
+
+/// 正規表現で全置換（内部ヘルパー）
+fn regexReplaceAll(allocator: std.mem.Allocator, input: []const u8, pat: *value_mod.Pattern, replacement: []const u8) anyerror!Value {
+    const compiled: *const regex_mod.CompiledRegex = @ptrCast(@alignCast(pat.compiled));
+    var m = try regex_matcher.Matcher.init(allocator, compiled, input);
+    defer m.deinit();
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(allocator);
+
+    var pos: usize = 0;
+    while (pos <= input.len) {
+        const result = try m.find(pos) orelse {
+            // 残りをコピー
+            try buf.appendSlice(allocator, input[pos..]);
+            break;
+        };
+        // マッチ前の部分をコピー
+        try buf.appendSlice(allocator, input[pos..result.start]);
+        // 置換文字列を展開（$1, $2 等のグループ参照を処理）
+        try appendReplacement(allocator, &buf, replacement, result, input);
+        // 位置を進める（ゼロ幅マッチのとき無限ループを防ぐ）
+        pos = if (result.end > result.start) result.end else result.end + 1;
+    }
+
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = try buf.toOwnedSlice(allocator) };
+    return Value{ .string = str_obj };
+}
+
+/// 置換文字列を展開（$1, $2 でグループ参照）
+fn appendReplacement(
+    allocator: std.mem.Allocator,
+    buf: *std.ArrayListUnmanaged(u8),
+    replacement: []const u8,
+    result: regex_matcher.MatchResult,
+    input: []const u8,
+) !void {
+    var i: usize = 0;
+    while (i < replacement.len) {
+        if (replacement[i] == '\\' and i + 1 < replacement.len) {
+            // エスケープ: \$ → $, \\ → \
+            try buf.append(allocator, replacement[i + 1]);
+            i += 2;
+        } else if (replacement[i] == '$' and i + 1 < replacement.len and replacement[i + 1] >= '0' and replacement[i + 1] <= '9') {
+            // グループ参照: $0, $1, $2, ...
+            const group_idx: usize = replacement[i + 1] - '0';
+            if (group_idx < result.groups.len) {
+                if (result.groups[group_idx]) |span| {
+                    try buf.appendSlice(allocator, input[span.start..span.end]);
+                }
+            }
+            i += 2;
+        } else {
+            try buf.append(allocator, replacement[i]);
+            i += 1;
+        }
+    }
+}
+
+/// string-replace-first : 最初のマッチのみ置換
+pub fn stringReplaceFirst(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 3) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const replacement = switch (args[2]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+
+    if (args[1] == .regex) {
+        // 正規表現で最初のマッチのみ置換
+        const pat = args[1].regex;
+        const compiled: *const regex_mod.CompiledRegex = @ptrCast(@alignCast(pat.compiled));
+        var m = try regex_matcher.Matcher.init(allocator, compiled, s);
+        defer m.deinit();
+
+        const result = try m.find(0) orelse {
+            // マッチなし: 元の文字列をそのまま返す
+            const str_obj = try allocator.create(value_mod.String);
+            str_obj.* = .{ .data = try allocator.dupe(u8, s) };
+            return Value{ .string = str_obj };
+        };
+
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        defer buf.deinit(allocator);
+
+        try buf.appendSlice(allocator, s[0..result.start]);
+        try appendReplacement(allocator, &buf, replacement, result, s);
+        try buf.appendSlice(allocator, s[result.end..]);
+
+        const str_obj = try allocator.create(value_mod.String);
+        str_obj.* = .{ .data = try buf.toOwnedSlice(allocator) };
+        return Value{ .string = str_obj };
+    }
+
+    // 文字列マッチの場合: 最初のマッチのみ置換
+    const match_str = switch (args[1]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+
+    if (std.mem.indexOf(u8, s, match_str)) |idx| {
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        defer buf.deinit(allocator);
+
+        try buf.appendSlice(allocator, s[0..idx]);
+        try buf.appendSlice(allocator, replacement);
+        try buf.appendSlice(allocator, s[idx + match_str.len ..]);
+
+        const str_obj = try allocator.create(value_mod.String);
+        str_obj.* = .{ .data = try buf.toOwnedSlice(allocator) };
+        return Value{ .string = str_obj };
+    }
+
+    // マッチなし
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = try allocator.dupe(u8, s) };
+    return Value{ .string = str_obj };
+}
+
+/// re-quote-replacement : 置換文字列の $ と \ をエスケープ
+pub fn reQuoteReplacement(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .string) return error.TypeError;
+    const s = args[0].string.data;
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(allocator);
+
+    for (s) |c| {
+        if (c == '$' or c == '\\') {
+            try buf.append(allocator, '\\');
+        }
+        try buf.append(allocator, c);
     }
 
     const str_obj = try allocator.create(value_mod.String);
@@ -2952,6 +3112,8 @@ pub fn typeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
         .reduced_val => "reduced",
         .transient => "transient",
         .promise => "promise",
+        .regex => "regex",
+        .matcher => "matcher",
     };
 
     const str = try allocator.create(value_mod.String);
@@ -4801,8 +4963,15 @@ fn compareValues(a: Value, b: Value) i64 {
 /// string-split : 文字列を区切り文字で分割（clojure.string/split 簡易版）
 pub fn stringSplit(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 2) return error.ArityError;
-    if (args[0] != .string or args[1] != .string) return error.TypeError;
+    if (args[0] != .string) return error.TypeError;
     const s = args[0].string.data;
+
+    // Pattern の場合: 正規表現で分割
+    if (args[1] == .regex) {
+        return regexSplit(allocator, s, args[1].regex);
+    }
+
+    if (args[1] != .string) return error.TypeError;
     const sep = args[1].string.data;
 
     var result_buf: std.ArrayListUnmanaged(Value) = .empty;
@@ -4838,6 +5007,40 @@ pub fn stringSplit(allocator: std.mem.Allocator, args: []const Value) anyerror!V
     const result = try allocator.create(value_mod.PersistentVector);
     result.* = .{ .items = result_buf.toOwnedSlice(allocator) catch return error.OutOfMemory };
     return Value{ .vector = result };
+}
+
+/// 正規表現で分割（内部ヘルパー）
+fn regexSplit(allocator: std.mem.Allocator, input: []const u8, pat: *value_mod.Pattern) anyerror!Value {
+    const compiled: *const regex_mod.CompiledRegex = @ptrCast(@alignCast(pat.compiled));
+    var m = try regex_matcher.Matcher.init(allocator, compiled, input);
+    defer m.deinit();
+
+    var result_buf: std.ArrayListUnmanaged(Value) = .empty;
+    var pos: usize = 0;
+
+    while (pos <= input.len) {
+        const result = try m.find(pos) orelse {
+            // 残りを追加
+            const part = try allocator.dupe(u8, input[pos..]);
+            const str_obj = try allocator.create(value_mod.String);
+            str_obj.* = value_mod.String.init(part);
+            try result_buf.append(allocator, Value{ .string = str_obj });
+            break;
+        };
+
+        // マッチ前の部分を追加
+        const part = try allocator.dupe(u8, input[pos..result.start]);
+        const str_obj = try allocator.create(value_mod.String);
+        str_obj.* = value_mod.String.init(part);
+        try result_buf.append(allocator, Value{ .string = str_obj });
+
+        // 位置を進める
+        pos = if (result.end > result.start) result.end else result.end + 1;
+    }
+
+    const vec = try allocator.create(value_mod.PersistentVector);
+    vec.* = .{ .items = try result_buf.toOwnedSlice(allocator) };
+    return Value{ .vector = vec };
 }
 
 /// format : 簡易フォーマット（%s, %d のみ対応）
@@ -7516,6 +7719,8 @@ pub fn classFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value
         .var_val => "Var",
         .char_val => "Character",
         .fn_proto => "FnProto",
+        .regex => "Pattern",
+        .matcher => "Matcher",
     };
     const s = try allocator.create(value_mod.String);
     s.* = .{ .data = name };
@@ -8132,76 +8337,226 @@ pub fn chunkedSeqPred(_: std.mem.Allocator, _: []const Value) anyerror!Value {
     return value_mod.false_val;
 }
 
-// --- Regex stubs ---
+// --- Regex functions ---
 
-/// re-pattern — 文字列をそのまま返す（正規表現エンジンなし）
-pub fn rePatternFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len != 1) return error.ArityError;
-    if (args[0] != .string) return error.TypeError;
-    return args[0]; // パターン文字列をそのまま返す
+/// Pattern を取得（regex Value またはパターン文字列からコンパイル）
+fn getPattern(allocator: std.mem.Allocator, val: Value) anyerror!*value_mod.Pattern {
+    switch (val) {
+        .regex => |pat| return pat,
+        .string => |s| {
+            // 文字列からコンパイル
+            const compiled = try allocator.create(regex_mod.CompiledRegex);
+            compiled.* = try regex_matcher.compile(allocator, s.data);
+            const pat = try allocator.create(value_mod.Pattern);
+            pat.* = .{
+                .source = s.data,
+                .compiled = @ptrCast(compiled),
+                .group_count = compiled.group_count,
+            };
+            return pat;
+        },
+        else => return error.TypeError,
+    }
 }
 
-/// re-matcher — [pattern, string] ベクターを返す（マッチャーオブジェクト代替）
-pub fn reMatcherFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len != 2) return error.ArityError;
-    const items = try allocator.alloc(Value, 2);
-    items[0] = args[0];
-    items[1] = args[1];
+/// マッチ結果を Clojure 値に変換
+/// グループなし: マッチ文字列 (String)
+/// グループあり: [全体, group1, group2, ...] (Vector)
+fn matchResultToValue(allocator: std.mem.Allocator, result: regex_matcher.MatchResult, input: []const u8) anyerror!Value {
+    // キャプチャグループの有無を確認（groups[0] は全体マッチ）
+    var has_groups = false;
+    if (result.groups.len > 1) {
+        for (result.groups[1..]) |g| {
+            if (g != null) {
+                has_groups = true;
+                break;
+            }
+        }
+    }
+
+    if (!has_groups) {
+        // グループなし: マッチ文字列を返す
+        const match_text = input[result.start..result.end];
+        const str = try allocator.create(value_mod.String);
+        const data = try allocator.dupe(u8, match_text);
+        str.* = .{ .data = data };
+        return Value{ .string = str };
+    }
+
+    // グループあり: Vector を返す
+    const items = try allocator.alloc(Value, result.groups.len);
+    for (result.groups, 0..) |group_opt, i| {
+        if (group_opt) |span| {
+            const text = input[span.start..span.end];
+            const str = try allocator.create(value_mod.String);
+            const data = try allocator.dupe(u8, text);
+            str.* = .{ .data = data };
+            items[i] = Value{ .string = str };
+        } else {
+            items[i] = value_mod.nil;
+        }
+    }
     const vec = try allocator.create(value_mod.PersistentVector);
     vec.* = .{ .items = items };
     return Value{ .vector = vec };
 }
 
-/// re-find — 簡易部分文字列マッチ（正規表現なし、部分文字列一致のみ）
-pub fn reFindFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len < 1) return error.ArityError;
-    // re-find with matcher (vector) — 2arity: pattern, string
-    var pattern_str: []const u8 = undefined;
-    var target_str: []const u8 = undefined;
+/// re-pattern — 文字列 → Pattern コンパイル。既に Pattern ならそのまま返す。
+pub fn rePatternFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    switch (args[0]) {
+        .regex => return args[0], // 既に Pattern
+        .string => |s| {
+            const compiled = try allocator.create(regex_mod.CompiledRegex);
+            compiled.* = try regex_matcher.compile(allocator, s.data);
+            const pat = try allocator.create(value_mod.Pattern);
+            pat.* = .{
+                .source = try allocator.dupe(u8, s.data),
+                .compiled = @ptrCast(compiled),
+                .group_count = compiled.group_count,
+            };
+            return Value{ .regex = pat };
+        },
+        else => return error.TypeError,
+    }
+}
+
+/// re-matcher — Pattern + 文字列 → ステートフル Matcher 生成
+pub fn reMatcherFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const pat = try getPattern(allocator, args[0]);
+    if (args[1] != .string) return error.TypeError;
+    const input = args[1].string.data;
+
+    const m = try allocator.create(value_mod.RegexMatcher);
+    m.* = .{
+        .pattern = pat,
+        .input = input,
+        .pos = 0,
+        .last_groups = null,
+    };
+    return Value{ .matcher = m };
+}
+
+/// re-find — 2引数: Pattern + 文字列で最初のマッチ。1引数: Matcher を次のマッチに進める。
+pub fn reFindFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1 or args.len > 2) return error.ArityError;
 
     if (args.len == 1) {
-        // matcher から取得
-        if (args[0] == .vector) {
-            const v = args[0].vector;
-            if (v.items.len >= 2) {
-                if (v.items[0] == .string) pattern_str = v.items[0].string.data else return value_mod.nil;
-                if (v.items[1] == .string) target_str = v.items[1].string.data else return value_mod.nil;
-            } else return value_mod.nil;
-        } else return value_mod.nil;
-    } else {
-        if (args[0] != .string) return value_mod.nil;
-        if (args[1] != .string) return value_mod.nil;
-        pattern_str = args[0].string.data;
-        target_str = args[1].string.data;
+        // 1引数: Matcher のステートフル検索
+        if (args[0] != .matcher) return error.TypeError;
+        const rm = args[0].matcher;
+        const compiled: *const regex_mod.CompiledRegex = @ptrCast(@alignCast(rm.pattern.compiled));
+
+        var m = try regex_matcher.Matcher.init(allocator, compiled, rm.input);
+        defer m.deinit();
+
+        const result = try m.find(rm.pos) orelse {
+            rm.last_groups = null;
+            return value_mod.nil;
+        };
+
+        // 位置を進める（ゼロ幅マッチのとき無限ループを防ぐ）
+        rm.pos = if (result.end > result.start) result.end else result.end + 1;
+
+        // グループを保存
+        const groups = try matchResultToGroups(allocator, result, rm.input);
+        rm.last_groups = groups;
+
+        return matchResultToValue(allocator, result, rm.input);
     }
 
-    // 単純な部分文字列検索
-    if (std.mem.indexOf(u8, target_str, pattern_str)) |_| {
-        return args[if (args.len == 1) 0 else 0]; // パターンを返す
-    }
-    return value_mod.nil;
+    // 2引数: Pattern + 文字列
+    const pat = try getPattern(allocator, args[0]);
+    if (args[1] != .string) return error.TypeError;
+    const input = args[1].string.data;
+    const compiled: *const regex_mod.CompiledRegex = @ptrCast(@alignCast(pat.compiled));
+
+    const result = try regex_matcher.findFirst(allocator, compiled, input) orelse {
+        return value_mod.nil;
+    };
+    return matchResultToValue(allocator, result, input);
 }
 
-/// re-matches — 完全一致チェック（正規表現なし、文字列完全一致のみ）
-pub fn reMatchesFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+/// マッチ結果をグループ Value スライスに変換（re-groups 用）
+fn matchResultToGroups(allocator: std.mem.Allocator, result: regex_matcher.MatchResult, input: []const u8) anyerror![]const Value {
+    const groups = try allocator.alloc(Value, result.groups.len);
+    for (result.groups, 0..) |group_opt, i| {
+        if (group_opt) |span| {
+            const text = input[span.start..span.end];
+            const str = try allocator.create(value_mod.String);
+            const data = try allocator.dupe(u8, text);
+            str.* = .{ .data = data };
+            groups[i] = Value{ .string = str };
+        } else {
+            groups[i] = value_mod.nil;
+        }
+    }
+    return groups;
+}
+
+/// re-matches — 文字列全体がパターンに一致するか検証
+pub fn reMatchesFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 2) return error.ArityError;
-    if (args[0] != .string or args[1] != .string) return value_mod.nil;
-    if (std.mem.eql(u8, args[0].string.data, args[1].string.data)) {
-        return args[1];
-    }
-    return value_mod.nil;
+    const pat = try getPattern(allocator, args[0]);
+    if (args[1] != .string) return error.TypeError;
+    const input = args[1].string.data;
+    const compiled: *const regex_mod.CompiledRegex = @ptrCast(@alignCast(pat.compiled));
+
+    var m = try regex_matcher.Matcher.init(allocator, compiled, input);
+    defer m.deinit();
+
+    const result = try m.fullMatch() orelse {
+        return value_mod.nil;
+    };
+    return matchResultToValue(allocator, result, input);
 }
 
-/// re-seq — スタブ: 空リストを返す
-pub fn reSeqFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+/// re-seq — 全マッチのリストを返す（eager）
+pub fn reSeqFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const pat = try getPattern(allocator, args[0]);
+    if (args[1] != .string) return error.TypeError;
+    const input = args[1].string.data;
+    const compiled: *const regex_mod.CompiledRegex = @ptrCast(@alignCast(pat.compiled));
+
+    var results: std.ArrayListUnmanaged(Value) = .empty;
+
+    var m = try regex_matcher.Matcher.init(allocator, compiled, input);
+    defer m.deinit();
+
+    var pos: usize = 0;
+    while (pos <= input.len) {
+        const result = try m.find(pos) orelse break;
+        const val = try matchResultToValue(allocator, result, input);
+        try results.append(allocator, val);
+        // 位置を進める（ゼロ幅マッチのとき無限ループを防ぐ）
+        pos = if (result.end > result.start) result.end else result.end + 1;
+    }
+
     const l = try allocator.create(value_mod.PersistentList);
-    l.* = .{ .items = &[_]Value{} };
+    l.* = .{ .items = try results.toOwnedSlice(allocator) };
     return Value{ .list = l };
 }
 
-/// re-groups — スタブ: nil
-pub fn reGroupsFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
-    return value_mod.nil;
+/// re-groups — Matcher の最後のマッチのキャプチャグループを返す
+pub fn reGroupsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .matcher) return error.TypeError;
+    const rm = args[0].matcher;
+
+    const groups = rm.last_groups orelse return value_mod.nil;
+
+    // グループが1つ（全体マッチのみ）なら文字列を返す
+    if (groups.len <= 1) {
+        return if (groups.len == 1) groups[0] else value_mod.nil;
+    }
+
+    // 複数グループなら [全体, group1, group2, ...] の Vector を返す
+    const items = try allocator.dupe(Value, groups);
+    const vec = try allocator.create(value_mod.PersistentVector);
+    vec.* = .{ .items = items };
+    return Value{ .vector = vec };
 }
 
 // --- IO stubs ---
@@ -8396,6 +8751,8 @@ const builtins = [_]BuiltinDef{
     .{ .name = "ends-with?", .func = endsWith },
     .{ .name = "includes?", .func = includesStr },
     .{ .name = "string-replace", .func = stringReplace },
+    .{ .name = "string-replace-first", .func = stringReplaceFirst },
+    .{ .name = "re-quote-replacement", .func = reQuoteReplacement },
     .{ .name = "char-at", .func = charAt },
     // プロトコル
     .{ .name = "satisfies?", .func = satisfiesPred },

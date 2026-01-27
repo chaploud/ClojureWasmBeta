@@ -337,6 +337,31 @@ fn traceValue(gc: *GcAllocator, val: Value, gray_stack: *std.ArrayListUnmanaged(
 
         // fn_proto は Compiler が管理、GC 対象外
         .fn_proto => {},
+
+        // regex: Pattern 構造体と source 文字列を mark
+        .regex => |pat| {
+            gc.mark(@ptrCast(pat));
+            gc.markSlice(pat.source.ptr, pat.source.len);
+            // compiled は anyopaque ポインタ — mark のみ（内部は Arena で管理）
+            gc.mark(@ptrCast(@constCast(pat.compiled)));
+        },
+
+        .matcher => |m| {
+            gc.mark(@ptrCast(m));
+            // Pattern を mark（Pattern 自体のトレースは .regex 側で行われる想定だが念のため）
+            gc.mark(@ptrCast(m.pattern));
+            gc.markSlice(m.pattern.source.ptr, m.pattern.source.len);
+            gc.mark(@ptrCast(@constCast(m.pattern.compiled)));
+            // input 文字列を mark
+            gc.markSlice(m.input.ptr, m.input.len);
+            // last_groups
+            if (m.last_groups) |groups| {
+                gc.markSlice(@ptrCast(groups.ptr), groups.len * @sizeOf(Value));
+                for (groups) |g| {
+                    gray_stack.append(gc.backing, g) catch {};
+                }
+            }
+        },
     }
 }
 

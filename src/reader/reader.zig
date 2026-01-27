@@ -79,6 +79,7 @@ pub const Reader = struct {
             .float => self.readFloat(token),
             .ratio => self.readRatio(token),
             .string => self.readString(token),
+            .regex => self.readRegex(token),
             .symbol => self.readSymbol(token),
             .keyword => self.readKeyword(token),
 
@@ -286,6 +287,17 @@ pub const Reader = struct {
         }
 
         return result.toOwnedSlice(self.allocator) catch return error.OutOfMemory;
+    }
+
+    /// 正規表現リテラル #"pattern"
+    fn readRegex(self: *Reader, token: Token) err.Error!Form {
+        const text = token.text(self.source);
+        // #"..." — 先頭 #" と末尾 " を除去
+        if (text.len < 3) {
+            return err.parseError(.invalid_token, "Invalid regex literal", self.tokenLocation(token));
+        }
+        const pattern = text[2 .. text.len - 1];
+        return Form{ .regex = pattern };
     }
 
     /// シンボル

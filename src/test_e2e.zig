@@ -2625,3 +2625,130 @@ test "compare: Phase 11 parse and utility" {
         \\(min-key (fn [x] (* x x)) -3 2 1)
     , 1);
 }
+
+// ============================================================
+// Phase 22: 正規表現
+// ============================================================
+
+test "Phase 22: regex" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var env = Env.init(allocator);
+    defer env.deinit();
+    try env.setupBasic();
+    try core.registerCore(&env);
+
+    // --- re-find ---
+    // 基本: グループなし
+    try expectStrBoth(allocator, &env,
+        \\(re-find #"\d+" "abc123def")
+    , "123");
+
+    // マッチなし → nil
+    try expectNilBoth(allocator, &env,
+        \\(re-find #"xyz" "abc")
+    );
+
+    // キャプチャグループあり → Vector
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (re-find #"(\d+)-(\d+)" "12-34"))
+    , "[\"12-34\" \"12\" \"34\"]");
+
+    // --- re-matches ---
+    // 完全一致
+    try expectStrBoth(allocator, &env,
+        \\(re-matches #"\d+" "123")
+    , "123");
+
+    // 部分一致は nil
+    try expectNilBoth(allocator, &env,
+        \\(re-matches #"\d+" "abc123")
+    );
+
+    // 完全一致 + グループ
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (re-matches #"(\d+)-(\w+)" "12-ab"))
+    , "[\"12-ab\" \"12\" \"ab\"]");
+
+    // --- re-seq ---
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (re-seq #"\d+" "a1b2c3"))
+    , "(\"1\" \"2\" \"3\")");
+
+    // --- re-pattern ---
+    try expectStrBoth(allocator, &env,
+        \\(re-find (re-pattern "\\d+") "abc123")
+    , "123");
+
+    // --- re-matcher + re-find (ステートフル) ---
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (let [m (re-matcher #"\d+" "a1b2c3")] [(re-find m) (re-find m) (re-find m)]))
+    , "[\"1\" \"2\" \"3\"]");
+
+    // --- re-groups ---
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (let [m (re-matcher #"(\w+)@(\w+)" "user@host")] (re-find m) (re-groups m)))
+    , "[\"user@host\" \"user\" \"host\"]");
+
+    // --- type / class ---
+    try expectStrBoth(allocator, &env,
+        \\(type #"\d+")
+    , "regex");
+
+    try expectStrBoth(allocator, &env,
+        \\(class #"\d+")
+    , "Pattern");
+
+    // --- 複雑なパターン ---
+    // ワードバウンダリ
+    try expectStrBoth(allocator, &env,
+        \\(re-find #"\b\w+\b" "hello world")
+    , "hello");
+
+    // 非貪欲
+    try expectStrBoth(allocator, &env,
+        \\(re-find #"<.*?>" "<b>bold</b>")
+    , "<b>");
+
+    // 文字クラス
+    try expectStrBoth(allocator, &env,
+        \\(re-find #"[a-z]+" "ABC123def")
+    , "def");
+
+    // --- Phase 22d: clojure.string 正規表現対応 ---
+
+    // string-split with regex
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (string-split "a-b--c" #"-+"))
+    , "[\"a\" \"b\" \"c\"]");
+
+    try expectStrBoth(allocator, &env,
+        \\(pr-str (string-split "one::two:::three" #":+"))
+    , "[\"one\" \"two\" \"three\"]");
+
+    // string-replace with regex
+    try expectStrBoth(allocator, &env,
+        \\(string-replace "foo123bar456" #"\d+" "X")
+    , "fooXbarX");
+
+    // string-replace with group reference
+    try expectStrBoth(allocator, &env,
+        \\(string-replace "2024-01-15" #"(\d{4})-(\d{2})-(\d{2})" "$2/$3/$1")
+    , "01/15/2024");
+
+    // string-replace-first
+    try expectStrBoth(allocator, &env,
+        \\(string-replace-first "foo123bar456" #"\d+" "X")
+    , "fooXbar456");
+
+    // string-replace-first with string match
+    try expectStrBoth(allocator, &env,
+        \\(string-replace-first "hello world hello" "hello" "hi")
+    , "hi world hello");
+
+    // re-quote-replacement
+    try expectStrBoth(allocator, &env,
+        \\(re-quote-replacement "price is $10")
+    , "price is \\$10");
+}

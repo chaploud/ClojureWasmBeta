@@ -333,9 +333,9 @@ pub const Tokenizer = struct {
                 self.advance();
                 break :blk .set_lit;
             },
-            '"' => blk: {
-                // 正規表現リテラル開始（中身は別途読む）
-                break :blk .regex_start;
+            '"' => {
+                // 正規表現リテラル: #"..." を読む
+                return self.readRegex(start_pos, start_line, start_column);
             },
             '#' => blk: {
                 self.advance();
@@ -372,6 +372,44 @@ pub const Tokenizer = struct {
         const len: u16 = @intCast(self.pos - start_pos);
         return .{
             .kind = kind,
+            .start = start_pos,
+            .len = len,
+            .line = start_line,
+            .column = start_column,
+        };
+    }
+
+    /// 正規表現リテラル #"..."
+    /// 文字列と似ているが、エスケープは \" のみ処理（\d 等はそのまま保持）
+    fn readRegex(self: *Tokenizer, start_pos: u32, start_line: u32, start_column: u16) Token {
+        self.advance(); // 開き引用符をスキップ（# は既にスキップ済み）
+
+        while (!self.isEof()) {
+            const c = self.peek();
+            if (c == '"') {
+                self.advance();
+                const len: u16 = @intCast(self.pos - start_pos);
+                return .{
+                    .kind = .regex,
+                    .start = start_pos,
+                    .len = len,
+                    .line = start_line,
+                    .column = start_column,
+                };
+            } else if (c == '\\') {
+                self.advance(); // バックスラッシュ
+                if (!self.isEof()) {
+                    self.advance(); // エスケープ先の文字（\" も含め全てそのまま）
+                }
+            } else {
+                self.advance();
+            }
+        }
+
+        // EOF - 閉じ引用符なし
+        const len: u16 = @intCast(self.pos - start_pos);
+        return .{
+            .kind = .invalid,
             .start = start_pos,
             .len = len,
             .line = start_line,

@@ -75,13 +75,8 @@ pub const Form = union(enum) {
     map: []const Form, // [k1, v1, k2, v2, ...] 形式
     set: []const Form,
 
-    // === Reader専用構文 ===
-    // TODO: 以下を追加
-    // char_lit: u21,              // \a, \newline, etc.
-    // ratio: Ratio,               // 22/7
-    // regex: []const u8,          // #"pattern"
-    // tagged_lit: *TaggedLiteral, // #uuid, #inst, etc.
-    // reader_cond: *ReaderCond,   // #?, #?@
+    // === 正規表現リテラル ===
+    regex: []const u8, // #"pattern" — パターン文字列
 
     // === ヘルパー関数 ===
 
@@ -116,6 +111,7 @@ pub const Form = union(enum) {
             .vector => "vector",
             .map => "map",
             .set => "set",
+            .regex => "regex",
         };
     }
 
@@ -191,6 +187,11 @@ pub const Form = union(enum) {
                     try item.format("", .{}, writer);
                 }
                 try writer.writeByte('}');
+            },
+            .regex => |pattern| {
+                try writer.writeAll("#\"");
+                try writer.writeAll(pattern);
+                try writer.writeByte('"');
             },
         }
     }

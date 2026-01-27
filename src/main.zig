@@ -366,6 +366,12 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
                 try writer.writeAll("#<promise (pending)>");
             }
         },
+        .regex => |pat| {
+            try writer.writeAll("#\"");
+            try writer.writeAll(pat.source);
+            try writer.writeByte('"');
+        },
+        .matcher => try writer.writeAll("#<matcher>"),
     }
 }
 

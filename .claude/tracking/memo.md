@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 21 完了 — GC(シンプル版) Mark-Sweep at Expression Boundary**
+**Phase 22 完了 — 正規表現エンジン（本格実装）**
 
 ### 完了フェーズ
 
@@ -53,38 +53,64 @@
 | 19c   | DESIGN: NS操作/Reader/定義マクロ等(27+2dynvar) = 名前空間スタブ+load+definline                |
 | 20    | FINAL: 残り59一括実装 — binding/chunk/regex/IO/NS/defrecord/deftype/動的Var                   |
 | 21    | GC: Mark-Sweep at Expression Boundary (GcAllocator + tracing + 式境界GC)                      |
+| 22    | 正規表現エンジン（フルスクラッチ Zig 実装）                                                   |
 
 ### 実装状況
 
-545 done / 169 skip / 0 todo
+549 done / 169 skip / 0 todo (概算)
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
 ---
 
-## Phase 21 実装詳細
+## Phase 22 実装詳細
+
+### サブフェーズ
+
+| Sub   | 内容                                                                    |
+|-------|-------------------------------------------------------------------------|
+| 22a   | 正規表現エンジンコア (再帰下降パーサー + バックトラッキングマッチャー)  |
+| 22b   | 型統合 (Pattern/Matcher Value型 + #"..." Reader対応 + GC)              |
+| 22c   | コア関数 (re-find/re-matches/re-seq/re-matcher/re-groups/re-pattern)   |
+| 22d   | clojure.string 正規表現対応 (split/replace/replace-first)              |
+
+### 新規ファイル
+
+| ファイル                 | 内容                                                      |
+|--------------------------|-----------------------------------------------------------|
+| `src/regex/regex.zig`    | RegexNode AST + 再帰下降パーサー (19テスト)               |
+| `src/regex/matcher.zig`  | バックトラッキングマッチャー + ヘルパー関数 (23テスト)    |
 
 ### 変更ファイル
 
-| ファイル                     | 変更種別 | 内容                                          |
-|------------------------------|----------|-----------------------------------------------|
-| `src/gc/gc_allocator.zig`    | 新規     | GcAllocator: トラッキングアロケータ           |
-| `src/gc/tracing.zig`         | 書き換え | markRoots + traceValue (gray_stack 方式)      |
-| `src/gc/gc.zig`              | 書き換え | GC struct + GcGlobals struct                  |
-| `src/gc/arena.zig`           | 整理     | placeholder 削除                              |
-| `src/runtime/allocators.zig` | 修正     | GcAllocator ラップ + collectGarbage/forceGC   |
-| `src/lib/core.zig`           | 修正     | getGcGlobals() アクセサ追加                   |
-| `src/main.zig`               | 修正     | 式境界 GC トリガー追加                        |
-| `src/root.zig`               | 修正     | gc/gc_allocator/gc_tracing モジュール export  |
+| ファイル                    | 変更内容                                               |
+|-----------------------------|--------------------------------------------------------|
+| `src/runtime/value.zig`     | Pattern/RegexMatcher 構造体 + regex/matcher variant    |
+| `src/reader/form.zig`       | `regex: []const u8` Form variant                       |
+| `src/reader/tokenizer.zig`  | `readRegex` (#"..." 読み取り)                          |
+| `src/reader/reader.zig`     | `.regex` トークンハンドリング                          |
+| `src/analyzer/analyze.zig`  | analyzeRegex + valueToForm                             |
+| `src/gc/tracing.zig`        | regex/matcher の GC トレース                           |
+| `src/lib/core.zig`          | 6関数の本格実装 + 3関数追加                            |
+| `src/main.zig`              | printValue に regex/matcher ケース追加                  |
+| `src/root.zig`              | regex モジュール export                                |
+| `src/test_e2e.zig`          | Phase 22 E2E テスト追加                                |
+
+### 対応する正規表現構文
+
+リテラル, `.`, `[abc]`, `[^abc]`, `[a-z]`, `\d\D\w\W\s\S`,
+`*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`, `*?`, `+?`, `??`,
+`^`, `$`, `\b`, `\B`, `|`, `(...)`, `(?:...)`,
+`(?=...)`, `(?!...)`, `(?i)`, `(?m)`, `(?s)`, `\1`-`\9`
 
 ### 設計ポイント
 
-- **GcAllocator**: `std.mem.Allocator` VTable をフック。alloc/free/resize/remap を全追跡
-- **Registry**: `AutoHashMapUnmanaged(*anyopaque, AllocInfo)` — O(1) lookup
-- **Tracing**: gray_stack (ArrayListUnmanaged) で再帰回避、幅優先トレース
-- **閾値**: 初期 1MB、sweep 後に `bytes_allocated * 2` に動的調整（最小 256KB）
-- **式境界 GC**: `allocs.collectGarbage()` を各式評価後に呼び出し
-- **fn_proto は GC 対象外**: Compiler 管理
+- **バックトラッキング方式**: Java/Python/Ruby と同じ (NFA ではなく再帰)
+- **AST 直接走査**: 中間命令列なし (初期実装としてシンプル)
+- **gray_stack**: 再帰回避 (マッチャー内) + lazy quantifier は tryMatchNodesAt 経由
+- **循環依存回避**: Pattern.compiled は `*const anyopaque` (regex.CompiledRegex へのキャスト)
+- **RegexMatcher**: re-matcher の返す Value 型。pos/last_groups でステートフル検索
+- **$1/$2 参照**: replace 時のグループ参照 + `\$`/`\\` エスケープ
 
 ---
 
@@ -93,10 +119,6 @@
 ### 次のフェーズ（品質向上・新機能）
 
 ```
-Phase 22: 正規表現エンジン（本格実装）
-  └ 現在の re-* はスタブ（文字列一致のみ）
-  └ Zig で正規表現エンジン実装 or PCRE バインディング
-
 Phase 23: 動的バインディング（本格実装）
   └ 現在の binding/with-redefs は let に展開するスタブ
   └ thread-local binding stack の実装
@@ -114,7 +136,7 @@ Phase LAST: Wasm 連携
 
 ## 設計判断の控え
 
-1. **正規表現**: Zig 標準ライブラリにないため外部実装 or 自前が要る。現在はスタブ。
+1. **正規表現**: Zig フルスクラッチ実装。バックトラッキング方式で Java regex 互換。
 2. **skip 方針**: 明確に JVM 固有（proxy, agent, STM, Java array, unchecked-*, BigDecimal）のみ skip。
    迷うものは実装する。
 3. **JVM 型変換**: byte/short/long/float 等は Zig キャスト相当に簡略化。

@@ -447,6 +447,21 @@ pub const Reduced = struct {
     }
 };
 
+/// コンパイル済み正規表現パターン
+pub const Pattern = struct {
+    source: []const u8, // 元のパターン文字列
+    compiled: *const anyopaque, // *regex.CompiledRegex（循環依存を避ける）
+    group_count: u16, // キャプチャグループ数
+};
+
+/// ステートフル正規表現マッチャー（re-matcher で生成）
+pub const RegexMatcher = struct {
+    pattern: *Pattern, // パターン参照
+    input: []const u8, // 入力文字列
+    pos: usize, // 次の検索開始位置
+    last_groups: ?[]const Value, // 最後のマッチのグループ（re-groups 用）
+};
+
 /// Promise（1回だけ deliver 可能なボックス）
 pub const Promise = struct {
     value: ?Value,
@@ -651,6 +666,10 @@ pub const Value = union(enum) {
     // === Phase 18: promise ===
     promise: *Promise, // 1回だけ deliver 可能
 
+    // === Phase 22: regex ===
+    regex: *Pattern, // コンパイル済み正規表現パターン
+    matcher: *RegexMatcher, // ステートフルマッチャー
+
     // === ヘルパー関数 ===
 
     /// nil かどうか
@@ -739,6 +758,8 @@ pub const Value = union(enum) {
             .reduced_val => |a| a.value.eql(other.reduced_val.value), // 内部値で比較
             .transient => |a| a == other.transient, // 参照等価
             .promise => |a| a == other.promise, // 参照等価
+            .regex => |a| a == other.regex, // 参照等価
+            .matcher => |a| a == other.matcher, // 参照等価
         };
     }
 
@@ -772,6 +793,8 @@ pub const Value = union(enum) {
             .reduced_val => "reduced",
             .transient => "transient",
             .promise => "promise",
+            .regex => "regex",
+            .matcher => "matcher",
         };
     }
 
@@ -803,6 +826,8 @@ pub const Value = union(enum) {
             .reduced_val => "reduced",
             .transient => "transient",
             .promise => "promise",
+            .regex => "regex",
+            .matcher => "matcher",
         };
     }
 
@@ -964,6 +989,14 @@ pub const Value = union(enum) {
                     try writer.writeAll("#<promise (pending)>");
                 }
             },
+            .regex => |pat| {
+                try writer.writeAll("#\"");
+                try writer.writeAll(pat.source);
+                try writer.writeByte('"');
+            },
+            .matcher => {
+                try writer.writeAll("#<matcher>");
+            },
         }
     }
 
@@ -1079,9 +1112,11 @@ pub const Value = union(enum) {
                 new_r.* = .{ .value = try r.value.deepClone(allocator) };
                 break :blk .{ .reduced_val = new_r };
             },
-            // Transient/Promise は参照をそのまま保持（ミュータブルなので deepClone は意味がない）
+            // Transient/Promise/Regex/Matcher は参照をそのまま保持
             .transient => self,
             .promise => self,
+            .regex => self,
+            .matcher => self,
         };
     }
 

@@ -3383,19 +3383,26 @@ vars:
       status: todo
     re-quote-replacement:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
     replace:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: string-replace として実装（regex/string 両対応）
     replace-first:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: string-replace-first として実装
     reverse:
       type: function
       status: todo
     split:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: string-split として実装（regex/string 両対応）
     split-lines:
       type: function
       status: todo

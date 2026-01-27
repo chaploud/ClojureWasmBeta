@@ -73,6 +73,7 @@ pub const Analyzer = struct {
             .int => |n| self.makeConstant(value_mod.intVal(n)),
             .float => |n| self.makeConstant(value_mod.floatVal(n)),
             .string => |s| self.analyzeString(s),
+            .regex => |pattern| self.analyzeRegex(pattern),
             .keyword => |sym| self.analyzeKeyword(sym),
             .symbol => |sym| self.analyzeSymbol(sym),
 
@@ -90,6 +91,30 @@ pub const Analyzer = struct {
         const str = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
         str.* = value_mod.String.init(s);
         return self.makeConstant(.{ .string = str });
+    }
+
+    /// 正規表現リテラル → コンパイル済み Pattern Value
+    fn analyzeRegex(self: *Analyzer, pattern: []const u8) err.Error!*Node {
+        const regex = @import("../regex/regex.zig");
+        const matcher = @import("../regex/matcher.zig");
+
+        // パターンをコンパイル
+        const compiled = matcher.compile(self.allocator, pattern) catch {
+            return err.parseError(.invalid_token, "Invalid regex pattern", .{});
+        };
+
+        // CompiledRegex をヒープに確保
+        const compiled_ptr = self.allocator.create(regex.CompiledRegex) catch return error.OutOfMemory;
+        compiled_ptr.* = compiled;
+
+        // Pattern Value を作成
+        const pat = self.allocator.create(value_mod.Pattern) catch return error.OutOfMemory;
+        pat.* = .{
+            .source = pattern,
+            .compiled = @ptrCast(compiled_ptr),
+            .group_count = compiled.group_count,
+        };
+        return self.makeConstant(.{ .regex = pat });
     }
 
     fn analyzeKeyword(self: *Analyzer, sym: FormSymbol) err.Error!*Node {
@@ -2396,6 +2421,22 @@ pub const Analyzer = struct {
                 s.* = .{ .items = vals };
                 break :blk .{ .set = s };
             },
+            .regex => |pattern| blk: {
+                // regex Form → コンパイルして regex Value
+                const regex = @import("../regex/regex.zig");
+                const matcher_m = @import("../regex/matcher.zig");
+                const compiled = matcher_m.compile(self.allocator, pattern) catch
+                    return err.parseError(.invalid_token, "Invalid regex pattern", .{});
+                const compiled_ptr = self.allocator.create(regex.CompiledRegex) catch return error.OutOfMemory;
+                compiled_ptr.* = compiled;
+                const pat = self.allocator.create(value_mod.Pattern) catch return error.OutOfMemory;
+                pat.* = .{
+                    .source = pattern,
+                    .compiled = @ptrCast(compiled_ptr),
+                    .group_count = compiled.group_count,
+                };
+                break :blk .{ .regex = pat };
+            },
         };
     }
 
@@ -4315,7 +4356,8 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .vector = forms };
             },
-            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq, .delay_val, .volatile_val, .reduced_val, .transient, .promise => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .regex => |pat| Form{ .regex = pat.source },
+            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq, .delay_val, .volatile_val, .reduced_val, .transient, .promise, .matcher => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

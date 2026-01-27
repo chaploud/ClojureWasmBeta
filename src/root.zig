@@ -78,6 +78,10 @@ pub const gc = @import("gc/gc.zig");
 pub const gc_allocator = @import("gc/gc_allocator.zig");
 pub const gc_tracing = @import("gc/tracing.zig");
 
+// === 正規表現 ===
+pub const regex = @import("regex/regex.zig");
+pub const regex_matcher = @import("regex/matcher.zig");
+
 // === 標準ライブラリ ===
 pub const core = @import("lib/core.zig");
 
