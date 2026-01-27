@@ -2752,3 +2752,117 @@ test "Phase 22: regex" {
         \\(re-quote-replacement "price is $10")
     , "price is \\$10");
 }
+
+// ============================================================
+// Phase 23: 動的バインディング
+// ============================================================
+
+test "Phase 23: binding basic" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    // def ^:dynamic
+    _ = try evalExpr(allocator, &env, "(def ^:dynamic *x* 1)");
+
+    // 基本 binding
+    try expectIntBoth(allocator, &env, "(binding [*x* 10] *x*)", 10);
+
+    // binding 後に root に戻る
+    try expectIntBoth(allocator, &env, "(do (binding [*x* 10] nil) *x*)", 1);
+}
+
+test "Phase 23: binding nested" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    _ = try evalExpr(allocator, &env, "(def ^:dynamic *x* 1)");
+    _ = try evalExpr(allocator, &env, "(def ^:dynamic *y* 2)");
+
+    // ネスト binding
+    try expectIntBoth(allocator, &env,
+        \\(binding [*x* 10]
+        \\  (binding [*y* 20]
+        \\    (+ *x* *y*)))
+    , 30);
+}
+
+test "Phase 23: set! in binding" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    _ = try evalExpr(allocator, &env, "(def ^:dynamic *x* 1)");
+
+    // set! in binding
+    try expectIntBoth(allocator, &env,
+        \\(binding [*x* 10]
+        \\  (set! *x* 99)
+        \\  *x*)
+    , 99);
+}
+
+test "Phase 23: with-redefs" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    _ = try evalExpr(allocator, &env,
+        \\(defn greet [] "hello")
+    );
+
+    // with-redefs でモック（TreeWalk のみ）
+    {
+        const result = try evalWithBackend(allocator, &env,
+            \\(with-redefs [greet (fn [] "mock")]
+            \\  (greet))
+        , .tree_walk);
+        switch (result) {
+            .string => |s| try std.testing.expectEqualStrings("mock", s.data),
+            else => return error.UnexpectedValue,
+        }
+    }
+
+    // with-redefs 後に元に戻る（TreeWalk のみ）
+    {
+        const r = try evalWithBackend(allocator, &env, "(greet)", .tree_walk);
+        switch (r) {
+            .string => |s| try std.testing.expectEqualStrings("hello", s.data),
+            else => return error.UnexpectedValue,
+        }
+    }
+
+}
+
+test "Phase 23: thread-bound?" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env = try setupTestEnv(allocator);
+    defer env.deinit();
+
+    _ = try evalExpr(allocator, &env, "(def ^:dynamic *x* 1)");
+
+    // binding 内では thread-bound? が true
+    try expectBoolBoth(allocator, &env,
+        \\(binding [*x* 10]
+        \\  (thread-bound? (var *x*)))
+    , true);
+
+    // binding 外では false
+    try expectBoolBoth(allocator, &env, "(thread-bound? (var *x*))", false);
+}

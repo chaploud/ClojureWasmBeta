@@ -220,6 +220,8 @@ pub const Analyzer = struct {
                 return self.analyzeExtendType(items);
             } else if (std.mem.eql(u8, sym_name, "lazy-seq")) {
                 return self.analyzeLazySeq(items);
+            } else if (std.mem.eql(u8, sym_name, "var")) {
+                return self.analyzeVarSpecial(items);
             }
 
             // 組み込みマクロ展開（Form→Form 変換して再解析）
@@ -1094,19 +1096,54 @@ pub const Analyzer = struct {
 
     fn analyzeDef(self: *Analyzer, items: []const Form) err.Error!*Node {
         // (def name) または (def name value)
+        // (def ^:dynamic name value) → reader が (def (with-meta name {:dynamic true}) value) に変換
         if (items.len < 2 or items.len > 3) {
             return err.parseError(.invalid_arity, "def requires 1 or 2 arguments", .{});
         }
 
-        if (items[1] != .symbol) {
+        var sym_name: []const u8 = undefined;
+        var is_dynamic = false;
+
+        // items[1] がシンボルか (with-meta sym meta) かを判定
+        if (items[1] == .symbol) {
+            sym_name = items[1].symbol.name;
+        } else if (items[1] == .list) {
+            // (with-meta sym {:dynamic true}) パターンを検出
+            const wm_items = items[1].list;
+            if (wm_items.len == 3 and wm_items[0] == .symbol and
+                std.mem.eql(u8, wm_items[0].symbol.name, "with-meta"))
+            {
+                if (wm_items[1] != .symbol) {
+                    return err.parseError(.invalid_binding, "def name must be a symbol", .{});
+                }
+                sym_name = wm_items[1].symbol.name;
+                // メタデータマップから :dynamic を検索
+                if (wm_items[2] == .map) {
+                    const meta_entries = wm_items[2].map;
+                    var mi: usize = 0;
+                    while (mi < meta_entries.len) : (mi += 2) {
+                        if (meta_entries[mi] == .keyword) {
+                            if (std.mem.eql(u8, meta_entries[mi].keyword.name, "dynamic")) {
+                                if (mi + 1 < meta_entries.len and meta_entries[mi + 1] == .bool_true) {
+                                    is_dynamic = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                return err.parseError(.invalid_binding, "def name must be a symbol", .{});
+            }
+        } else {
             return err.parseError(.invalid_binding, "def name must be a symbol", .{});
         }
 
-        const sym_name = items[1].symbol.name;
-
         // Var を先に作成（再帰的な defn で fn body から参照できるように）
         if (self.env.getCurrentNs()) |ns| {
-            _ = ns.intern(sym_name) catch return error.OutOfMemory;
+            const v = ns.intern(sym_name) catch return error.OutOfMemory;
+            if (is_dynamic) {
+                v.dynamic = true;
+            }
         }
 
         const init_node = if (items.len == 3)
@@ -1118,6 +1155,7 @@ pub const Analyzer = struct {
         def_data.* = .{
             .sym_name = sym_name,
             .init = init_node,
+            .is_dynamic = is_dynamic,
             .stack = .{},
         };
 
@@ -1764,12 +1802,12 @@ pub const Analyzer = struct {
         } else if (std.mem.eql(u8, name, "case*")) {
             // case* は内部的に case と同等
             return try self.expandCase(items);
-        } else if (std.mem.eql(u8, name, "var")) {
-            return try self.expandVar(items);
         } else if (std.mem.eql(u8, name, "defrecord")) {
             return try self.expandDefrecord(items);
         } else if (std.mem.eql(u8, name, "deftype")) {
             return try self.expandDeftype(items);
+        } else if (std.mem.eql(u8, name, "set!")) {
+            return try self.expandSetBang(items);
         }
         return null;
     }
@@ -4101,19 +4139,73 @@ pub const Analyzer = struct {
 
     // ── Phase 20: 追加マクロ展開 ──
 
-    /// (binding [var val ...] & body) → (let [var val ...] & body) スタブ
-    /// 本来は動的バインディングだが、簡易版として let に展開
+    /// (binding [*x* 10 *y* 20] body1 body2) →
+    /// (do (push-thread-bindings {(var *x*) 10 (var *y*) 20})
+    ///     (try (do body1 body2) (finally (pop-thread-bindings))))
     fn expandBinding(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
             return err.parseError(.invalid_arity, "binding requires bindings vector and body", .{});
         }
-        // (let [bindings] body...)
-        const let_forms = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
-        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
-        for (items[1..], 0..) |item, i| {
-            let_forms[i + 1] = item;
+        const bindings = switch (items[1]) {
+            .vector => |v| v,
+            else => return err.parseError(.invalid_binding, "binding requires a vector of bindings", .{}),
+        };
+        if (bindings.len % 2 != 0) {
+            return err.parseError(.invalid_binding, "binding requires an even number of forms", .{});
         }
-        return Form{ .list = let_forms };
+
+        // マップ {(var *x*) 10, (var *y*) 20} を構築
+        const map_entries = self.allocator.alloc(Form, bindings.len) catch return error.OutOfMemory;
+        var i: usize = 0;
+        while (i < bindings.len) : (i += 2) {
+            // (var sym) を構築
+            const var_form = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            var_form[0] = Form{ .symbol = form_mod.Symbol.init("var") };
+            var_form[1] = bindings[i];
+            map_entries[i] = Form{ .list = var_form };
+            map_entries[i + 1] = bindings[i + 1];
+        }
+
+        // (push-thread-bindings {map})
+        const push_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        push_forms[0] = Form{ .symbol = form_mod.Symbol.init("push-thread-bindings") };
+        push_forms[1] = Form{ .map = map_entries };
+
+        // body を do で包む
+        const body_forms = items[2..];
+        const body_form = if (body_forms.len == 1)
+            body_forms[0]
+        else blk: {
+            const do_forms = self.allocator.alloc(Form, body_forms.len + 1) catch return error.OutOfMemory;
+            do_forms[0] = Form{ .symbol = form_mod.Symbol.init("do") };
+            for (body_forms, 0..) |bf, j| {
+                do_forms[j + 1] = bf;
+            }
+            break :blk Form{ .list = do_forms };
+        };
+
+        // (pop-thread-bindings)
+        const pop_forms = self.allocator.alloc(Form, 1) catch return error.OutOfMemory;
+        pop_forms[0] = Form{ .symbol = form_mod.Symbol.init("pop-thread-bindings") };
+
+        // (finally (pop-thread-bindings))
+        const finally_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        finally_forms[0] = Form{ .symbol = form_mod.Symbol.init("finally") };
+        finally_forms[1] = Form{ .list = pop_forms };
+
+        // (try body (finally ...))
+        const try_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        try_forms[0] = Form{ .symbol = form_mod.Symbol.init("try") };
+        try_forms[1] = body_form;
+        try_forms[2] = Form{ .list = finally_forms };
+
+        // (do (push-thread-bindings ...) (try ...))
+        const do_outer = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        do_outer[0] = Form{ .symbol = form_mod.Symbol.init("do") };
+        do_outer[1] = Form{ .list = push_forms };
+        do_outer[2] = Form{ .list = try_forms };
+
+        return Form{ .list = do_outer };
     }
 
     /// (bound-fn [args] body) → (fn [args] body) スタブ
@@ -4158,9 +4250,55 @@ pub const Analyzer = struct {
         return self.expandBinding(items);
     }
 
-    /// (with-redefs [name val ...] & body) → (let [name val ...] & body) スタブ
+    /// (with-redefs [name val ...] & body) →
+    /// (with-redefs-fn {(var name) val ...} (fn [] body...))
     fn expandWithRedefs(self: *Analyzer, items: []const Form) err.Error!Form {
-        return self.expandBinding(items);
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "with-redefs requires bindings vector and body", .{});
+        }
+        const bindings = switch (items[1]) {
+            .vector => |v| v,
+            else => return err.parseError(.invalid_binding, "with-redefs requires a vector of bindings", .{}),
+        };
+        if (bindings.len % 2 != 0) {
+            return err.parseError(.invalid_binding, "with-redefs requires an even number of forms", .{});
+        }
+
+        // マップ {(var name) val ...} を構築
+        const map_entries = self.allocator.alloc(Form, bindings.len) catch return error.OutOfMemory;
+        var i: usize = 0;
+        while (i < bindings.len) : (i += 2) {
+            const var_form = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            var_form[0] = Form{ .symbol = form_mod.Symbol.init("var") };
+            var_form[1] = bindings[i];
+            map_entries[i] = Form{ .list = var_form };
+            map_entries[i + 1] = bindings[i + 1];
+        }
+
+        // body を (fn [] body...) に包む
+        const body_forms = items[2..];
+        const fn_body = if (body_forms.len == 1)
+            body_forms[0]
+        else blk: {
+            const do_forms = self.allocator.alloc(Form, body_forms.len + 1) catch return error.OutOfMemory;
+            do_forms[0] = Form{ .symbol = form_mod.Symbol.init("do") };
+            for (body_forms, 0..) |bf, j| {
+                do_forms[j + 1] = bf;
+            }
+            break :blk Form{ .list = do_forms };
+        };
+        const fn_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        fn_forms[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        fn_forms[1] = Form{ .vector = &[_]Form{} };
+        fn_forms[2] = fn_body;
+
+        // (with-redefs-fn {map} (fn [] body))
+        const call_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        call_forms[0] = Form{ .symbol = form_mod.Symbol.init("with-redefs-fn") };
+        call_forms[1] = Form{ .map = map_entries };
+        call_forms[2] = Form{ .list = fn_forms };
+
+        return Form{ .list = call_forms };
     }
 
     /// (with-open [name val ...] & body) → (let [name val ...] & body) スタブ
@@ -4191,18 +4329,44 @@ pub const Analyzer = struct {
     }
 
     /// (var x) → (resolve 'x) スタブ
-    fn expandVar(self: *Analyzer, items: []const Form) err.Error!Form {
+    /// (set! *x* val) → (set! (var *x*) val)
+    /// シンボルを (var sym) に変換して set! 関数に渡す
+    fn expandSetBang(self: *Analyzer, items: []const Form) err.Error!?Form {
+        if (items.len != 3) {
+            return err.parseError(.invalid_arity, "set! requires 2 arguments", .{});
+        }
+        // items[1] がシンボルなら (var sym) に変換
+        if (items[1] == .symbol) {
+            const var_form = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            var_form[0] = Form{ .symbol = form_mod.Symbol.init("var") };
+            var_form[1] = items[1];
+            const call_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            call_forms[0] = Form{ .symbol = form_mod.Symbol.init("set!") };
+            call_forms[1] = Form{ .list = var_form };
+            call_forms[2] = items[2];
+            return Form{ .list = call_forms };
+        }
+        // 既に (var sym) 形式ならそのまま関数呼び出しとして処理
+        return null;
+    }
+
+    /// (var sym) → Var オブジェクト自体を返す定数ノード
+    fn analyzeVarSpecial(self: *Analyzer, items: []const Form) err.Error!*Node {
         if (items.len < 2) {
             return err.parseError(.invalid_arity, "var requires a symbol", .{});
         }
-        // (resolve 'x)
-        const quote_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
-        quote_forms[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
-        quote_forms[1] = items[1];
-        const resolve_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
-        resolve_forms[0] = Form{ .symbol = form_mod.Symbol.init("resolve") };
-        resolve_forms[1] = Form{ .list = quote_forms };
-        return Form{ .list = resolve_forms };
+        const sym_form = items[1];
+        const sym_name = switch (sym_form) {
+            .symbol => |s| s.name,
+            else => return err.parseError(.invalid_binding, "var requires a symbol argument", .{}),
+        };
+        // Env.resolve で NS + clojure.core フォールバック込みで解決
+        const sym = value_mod.Symbol{ .name = sym_name, .namespace = null };
+        const v = self.env.resolve(sym) orelse
+            return err.parseError(.undefined_symbol, "unable to resolve var", .{});
+        const node = self.allocator.create(Node) catch return error.OutOfMemory;
+        node.* = node_mod.constantNode(Value{ .var_val = @ptrCast(v) });
+        return node;
     }
 
     /// (defrecord Name [fields] & body) → (do (defn ->Name [fields] (hash-map ...)) nil) スタブ

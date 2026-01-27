@@ -62,6 +62,19 @@ pub fn markRoots(gc: *GcAllocator, env: *Env, globals: GcGlobals) void {
         }
     }
 
+    // 4. 動的バインディングフレーム
+    {
+        const var_mod = @import("../runtime/var.zig");
+        var frame = var_mod.getCurrentFrame();
+        while (frame) |f| {
+            for (f.entries) |entry| {
+                // Var 自体は NS 経由で mark 済みなので Value のみ追加
+                gray_stack.append(gc.backing, entry.value) catch {};
+            }
+            frame = f.prev;
+        }
+    }
+
     // ワークスタックを処理（幅優先トレース）
     while (gray_stack.items.len > 0) {
         const val = gray_stack.pop().?;

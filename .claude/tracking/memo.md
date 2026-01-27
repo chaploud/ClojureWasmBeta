@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 22 完了 — 正規表現エンジン（本格実装）**
+**Phase 23 完了 — 動的バインディング（本格実装）**
 
 ### 完了フェーズ
 
@@ -54,6 +54,7 @@
 | 20    | FINAL: 残り59一括実装 — binding/chunk/regex/IO/NS/defrecord/deftype/動的Var                   |
 | 21    | GC: Mark-Sweep at Expression Boundary (GcAllocator + tracing + 式境界GC)                      |
 | 22    | 正規表現エンジン（フルスクラッチ Zig 実装）                                                   |
+| 23    | 動的バインディング（本格実装）                                                                |
 
 ### 実装状況
 
@@ -63,54 +64,47 @@
 
 ---
 
-## Phase 22 実装詳細
+## Phase 23 実装詳細
 
 ### サブフェーズ
 
-| Sub   | 内容                                                                    |
-|-------|-------------------------------------------------------------------------|
-| 22a   | 正規表現エンジンコア (再帰下降パーサー + バックトラッキングマッチャー)  |
-| 22b   | 型統合 (Pattern/Matcher Value型 + #"..." Reader対応 + GC)              |
-| 22c   | コア関数 (re-find/re-matches/re-seq/re-matcher/re-groups/re-pattern)   |
-| 22d   | clojure.string 正規表現対応 (split/replace/replace-first)              |
-
-### 新規ファイル
-
-| ファイル                 | 内容                                                      |
-|--------------------------|-----------------------------------------------------------|
-| `src/regex/regex.zig`    | RegexNode AST + 再帰下降パーサー (19テスト)               |
-| `src/regex/matcher.zig`  | バックトラッキングマッチャー + ヘルパー関数 (23テスト)    |
+| Sub   | 内容                                                                          |
+|-------|-------------------------------------------------------------------------------|
+| 23a   | Var バインディングフレーム基盤 (BindingEntry/Frame + push/pop/get/set)        |
+| 23b   | core.zig スタブ本格化 (push/pop/set!/thread-bound?/get-bindings/with-redefs) |
+| 23c   | Analyzer マクロ展開修正 + Reader ^: メタ対応 + (var sym) 特殊形式            |
+| 23d   | Compiler emitVarRef dynamic対応 (var_load_dynamic)                           |
+| 23e   | dynamic フラグ設定 (registerDynamicVars) + GC トレース                       |
+| 23f   | E2E テスト (binding/nested/set!/with-redefs/thread-bound?)                   |
 
 ### 変更ファイル
 
-| ファイル                    | 変更内容                                               |
-|-----------------------------|--------------------------------------------------------|
-| `src/runtime/value.zig`     | Pattern/RegexMatcher 構造体 + regex/matcher variant    |
-| `src/reader/form.zig`       | `regex: []const u8` Form variant                       |
-| `src/reader/tokenizer.zig`  | `readRegex` (#"..." 読み取り)                          |
-| `src/reader/reader.zig`     | `.regex` トークンハンドリング                          |
-| `src/analyzer/analyze.zig`  | analyzeRegex + valueToForm                             |
-| `src/gc/tracing.zig`        | regex/matcher の GC トレース                           |
-| `src/lib/core.zig`          | 6関数の本格実装 + 3関数追加                            |
-| `src/main.zig`              | printValue に regex/matcher ケース追加                  |
-| `src/root.zig`              | regex モジュール export                                |
-| `src/test_e2e.zig`          | Phase 22 E2E テスト追加                                |
-
-### 対応する正規表現構文
-
-リテラル, `.`, `[abc]`, `[^abc]`, `[a-z]`, `\d\D\w\W\s\S`,
-`*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`, `*?`, `+?`, `??`,
-`^`, `$`, `\b`, `\B`, `|`, `(...)`, `(?:...)`,
-`(?=...)`, `(?!...)`, `(?i)`, `(?m)`, `(?s)`, `\1`-`\9`
+| ファイル                       | 変更内容                                                       |
+|--------------------------------|----------------------------------------------------------------|
+| `src/runtime/var.zig`          | BindingEntry/Frame + push/pop/get/set + deref dynamic対応      |
+| `src/lib/core.zig`             | 6スタブ本格化 + registerDynamicVars に .dynamic = true          |
+| `src/reader/reader.zig`        | readMeta() — ^:keyword / ^{map} / ^Type メタデータ対応         |
+| `src/analyzer/node.zig`        | DefNode に is_dynamic フィールド追加                           |
+| `src/analyzer/analyze.zig`     | expandBinding 書換 + analyzeVarSpecial + expandSetBang 等      |
+| `src/compiler/emit.zig`        | emitVarRef: dynamic Var → var_load_dynamic                     |
+| `src/vm/vm.zig`                | var_load_dynamic の TODO コメント更新                          |
+| `src/runtime/evaluator.zig`    | runDef: is_dynamic → v.dynamic = true                          |
+| `src/gc/tracing.zig`           | markRoots にバインディングフレームトレース追加                 |
+| `src/test_e2e.zig`             | Phase 23 E2E テスト 5件追加                                    |
 
 ### 設計ポイント
 
-- **バックトラッキング方式**: Java/Python/Ruby と同じ (NFA ではなく再帰)
-- **AST 直接走査**: 中間命令列なし (初期実装としてシンプル)
-- **gray_stack**: 再帰回避 (マッチャー内) + lazy quantifier は tryMatchNodesAt 経由
-- **循環依存回避**: Pattern.compiled は `*const anyopaque` (regex.CompiledRegex へのキャスト)
-- **RegexMatcher**: re-matcher の返す Value 型。pos/last_groups でステートフル検索
-- **$1/$2 参照**: replace 時のグループ参照 + `\$`/`\\` エスケープ
+- **マクロ展開方式**: `(binding [...] body)` → `push-thread-bindings` + `try/finally` + `pop-thread-bindings`
+- **グローバルフレームスタック**: シングルスレッド前提 (Wasm ターゲット)
+- **`(var sym)` 特殊形式**: Analyzer で Var オブジェクトを constantNode として返す
+- **with-redefs**: root 直接差替 + finally 復元 (TreeWalk のみ完全動作、VM は制限あり)
+- **GC**: バインディングフレーム内の Value をトレース
+- **Reader メタデータ**: `^:dynamic` → `(with-meta sym {:dynamic true})` 展開
+
+### 既知の制限
+
+- VM での `with-redefs` 後のユーザー関数呼び出しが signal 6 でクラッシュする
+  (VM のユーザー関数呼び出しに関する既存の問題の可能性)
 
 ---
 
@@ -119,10 +113,6 @@
 ### 次のフェーズ（品質向上・新機能）
 
 ```
-Phase 23: 動的バインディング（本格実装）
-  └ 現在の binding/with-redefs は let に展開するスタブ
-  └ thread-local binding stack の実装
-
 Phase 24: 名前空間（本格実装）
   └ 現在の ns/require/use はスタブ
   └ ファイルロード、refer フィルタリング、alias
@@ -143,5 +133,7 @@ Phase LAST: Wasm 連携
    instance?/class は内部タグ検査。深追いせず最小限で。
 4. **GC**: 式境界 Mark-Sweep。GcAllocator で全 persistent alloc を追跡。
    閾値超過時にのみ実行。CLI 用途では十分な性能。
+5. **動的バインディング**: マクロ展開方式 (push+try/finally+pop)。
+   新 Node/Opcode 不要。既存インフラを最大限活用。
 
 詳細: `docs/reference/architecture.md`

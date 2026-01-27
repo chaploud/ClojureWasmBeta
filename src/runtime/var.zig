@@ -44,10 +44,11 @@ pub const Var = struct {
         return self.root;
     }
 
-    /// 値を取得（thread-local を優先）
-    /// TODO: スレッドローカルバインディング実装時に拡張
+    /// 値を取得（動的バインディングを優先）
     pub fn deref(self: *const Var) Value {
-        // 現時点では root のみ
+        if (self.dynamic) {
+            if (getThreadBinding(self)) |val| return val;
+        }
         return self.root;
     }
 
@@ -82,18 +83,72 @@ pub const Var = struct {
     }
 };
 
-// === Thread-local binding（将来実装）===
-//
-// スレッドローカルバインディングのフレーム
-// pub const Frame = struct {
-//     bindings: *PersistentMap,  // Var → Value
-//     prev: ?*Frame,
-// };
-//
-// threadlocal var current_frame: ?*Frame = null;
-//
-// pub fn pushThreadBindings(bindings: *PersistentMap) void { ... }
-// pub fn popThreadBindings() void { ... }
+// === バインディングフレーム（動的バインディング）===
+
+/// バインディングエントリ（Var → Value）
+pub const BindingEntry = struct {
+    var_ptr: *Var,
+    value: Value,
+};
+
+/// バインディングフレーム（push/pop 単位）
+pub const BindingFrame = struct {
+    entries: []BindingEntry,
+    prev: ?*BindingFrame,
+};
+
+/// グローバルバインディングスタック（シングルスレッド前提 — Wasm ターゲット）
+var current_frame: ?*BindingFrame = null;
+
+/// push-thread-bindings: 新しいフレームを積む
+pub fn pushBindings(frame: *BindingFrame) void {
+    frame.prev = current_frame;
+    current_frame = frame;
+}
+
+/// pop-thread-bindings: フレームを外す
+pub fn popBindings() void {
+    if (current_frame) |f| {
+        current_frame = f.prev;
+    }
+}
+
+/// フレームスタックから Var の動的値を検索
+pub fn getThreadBinding(v: *const Var) ?Value {
+    var frame = current_frame;
+    while (frame) |f| {
+        for (f.entries) |e| {
+            if (e.var_ptr == @as(*Var, @constCast(v))) return e.value;
+        }
+        frame = f.prev;
+    }
+    return null;
+}
+
+/// set!: 現在のフレーム内の Var 値を変更
+pub fn setThreadBinding(v: *Var, new_val: Value) !void {
+    var frame = current_frame;
+    while (frame) |f| {
+        for (f.entries) |*e| {
+            if (e.var_ptr == v) {
+                e.value = new_val;
+                return;
+            }
+        }
+        frame = f.prev;
+    }
+    return error.IllegalState; // binding されていない Var に set! はエラー
+}
+
+/// Var がスレッドバインディングを持つか
+pub fn hasThreadBinding(v: *const Var) bool {
+    return getThreadBinding(v) != null;
+}
+
+/// 現在のフレームを取得（GC 用）
+pub fn getCurrentFrame() ?*BindingFrame {
+    return current_frame;
+}
 
 // === テスト ===
 
@@ -120,4 +175,79 @@ test "Var フラグ" {
     try std.testing.expect(v.isDynamic());
     try std.testing.expect(v.isPrivate());
     try std.testing.expect(!v.isMacro());
+}
+
+test "動的バインディング push/pop" {
+    var v = Var{
+        .sym = Symbol.init("*x*"),
+        .ns_name = "user",
+        .dynamic = true,
+    };
+    v.bindRoot(value.intVal(1));
+
+    // バインディングなし → root
+    try std.testing.expect(v.deref().eql(value.intVal(1)));
+    try std.testing.expect(!hasThreadBinding(&v));
+
+    // push
+    var entries = [_]BindingEntry{.{ .var_ptr = &v, .value = value.intVal(10) }};
+    var frame = BindingFrame{ .entries = &entries, .prev = null };
+    pushBindings(&frame);
+
+    try std.testing.expect(v.deref().eql(value.intVal(10)));
+    try std.testing.expect(hasThreadBinding(&v));
+
+    // pop → root に戻る
+    popBindings();
+    try std.testing.expect(v.deref().eql(value.intVal(1)));
+    try std.testing.expect(!hasThreadBinding(&v));
+}
+
+test "動的バインディング ネスト" {
+    var x = Var{ .sym = Symbol.init("*x*"), .ns_name = "user", .dynamic = true };
+    var y = Var{ .sym = Symbol.init("*y*"), .ns_name = "user", .dynamic = true };
+    x.bindRoot(value.intVal(1));
+    y.bindRoot(value.intVal(2));
+
+    var entries1 = [_]BindingEntry{.{ .var_ptr = &x, .value = value.intVal(10) }};
+    var frame1 = BindingFrame{ .entries = &entries1, .prev = null };
+    pushBindings(&frame1);
+
+    var entries2 = [_]BindingEntry{.{ .var_ptr = &y, .value = value.intVal(20) }};
+    var frame2 = BindingFrame{ .entries = &entries2, .prev = null };
+    pushBindings(&frame2);
+
+    try std.testing.expect(x.deref().eql(value.intVal(10)));
+    try std.testing.expect(y.deref().eql(value.intVal(20)));
+
+    popBindings();
+    try std.testing.expect(x.deref().eql(value.intVal(10)));
+    try std.testing.expect(y.deref().eql(value.intVal(2)));
+
+    popBindings();
+    try std.testing.expect(x.deref().eql(value.intVal(1)));
+    try std.testing.expect(y.deref().eql(value.intVal(2)));
+}
+
+test "set! バインディング内" {
+    var v = Var{ .sym = Symbol.init("*x*"), .ns_name = "user", .dynamic = true };
+    v.bindRoot(value.intVal(1));
+
+    var entries = [_]BindingEntry{.{ .var_ptr = &v, .value = value.intVal(10) }};
+    var frame = BindingFrame{ .entries = &entries, .prev = null };
+    pushBindings(&frame);
+
+    try setThreadBinding(&v, value.intVal(99));
+    try std.testing.expect(v.deref().eql(value.intVal(99)));
+
+    popBindings();
+    // root は変わらない
+    try std.testing.expect(v.deref().eql(value.intVal(1)));
+}
+
+test "set! バインディング外はエラー" {
+    var v = Var{ .sym = Symbol.init("*x*"), .ns_name = "user", .dynamic = true };
+    v.bindRoot(value.intVal(1));
+
+    try std.testing.expectError(error.IllegalState, setThreadBinding(&v, value.intVal(99)));
 }

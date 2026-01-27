@@ -536,6 +536,11 @@ fn runDef(node: *const node_mod.DefNode, ctx: *Context) EvalError!Value {
         v.setMacro(true);
     }
 
+    // dynamic フラグを設定
+    if (node.is_dynamic) {
+        v.dynamic = true;
+    }
+
     // Var を返す（#'var 形式）
     // TODO: Var を Value に含める
     return value_mod.nil;

@@ -8194,47 +8194,134 @@ pub fn loadFileFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
 
 // --- Binding / threading stubs ---
 
-/// binding: スタブ（動的バインディングは未実装、引数を無視して body 相当を返す）
-/// 本来はマクロ展開で処理するため、ここでは関数としてはスタブのみ
+/// binding: マクロ展開で処理するため関数としては不要（互換性のためスタブ残し）
 pub fn bindingStubFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
     return value_mod.nil;
 }
 
-/// set! — 動的Var への代入（スタブ: nilを返す）
+/// set! — 動的 Var への代入（binding スコープ内でのみ有効）
 pub fn setBangFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len < 2) return error.ArityError;
-    // 将来的には動的バインディングの値を更新
+    // args[0] は var_val（Var ポインタ）
+    const v: *var_mod.Var = switch (args[0]) {
+        .var_val => |ptr| @ptrCast(@alignCast(ptr)),
+        else => return error.TypeError,
+    };
+    try var_mod.setThreadBinding(v, args[1]);
     return args[1];
 }
 
-/// get-thread-bindings — スタブ: 空マップを返す
+/// get-thread-bindings — 現在のフレームの全バインディングをマップとして返す
 pub fn getThreadBindingsFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const frame = var_mod.getCurrentFrame();
+    if (frame == null) {
+        const m = try allocator.create(value_mod.PersistentMap);
+        m.* = .{ .entries = &[_]Value{} };
+        return Value{ .map = m };
+    }
+    // フレームスタックを走査して全エントリを収集
+    var all_entries: std.ArrayListUnmanaged(Value) = .empty;
+    var f = frame;
+    while (f) |fr| {
+        for (fr.entries) |e| {
+            try all_entries.append(allocator, Value{ .var_val = @ptrCast(e.var_ptr) });
+            try all_entries.append(allocator, e.value);
+        }
+        f = fr.prev;
+    }
     const m = try allocator.create(value_mod.PersistentMap);
-    m.* = .{ .entries = &[_]Value{} };
+    m.* = .{ .entries = try all_entries.toOwnedSlice(allocator) };
     return Value{ .map = m };
 }
 
-/// push-thread-bindings — スタブ
-pub fn pushThreadBindingsFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+/// push-thread-bindings — マップから BindingFrame を構築して push
+pub fn pushThreadBindingsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    // args[0] は map (Var → Value のペア)
+    const m = switch (args[0]) {
+        .map => |mp| mp,
+        else => return error.TypeError,
+    };
+    const n_pairs = m.entries.len / 2;
+    if (n_pairs == 0) return value_mod.nil;
+
+    // BindingEntry[] を構築
+    const entries = try allocator.alloc(var_mod.BindingEntry, n_pairs);
+    var idx: usize = 0;
+    var i: usize = 0;
+    while (i < m.entries.len) : (i += 2) {
+        const key = m.entries[i];
+        const val = m.entries[i + 1];
+        // key は var_val であるべき
+        const v: *var_mod.Var = switch (key) {
+            .var_val => |ptr| @ptrCast(@alignCast(ptr)),
+            else => return error.TypeError,
+        };
+        // dynamic フラグを確認
+        if (!v.isDynamic()) return error.IllegalState;
+        entries[idx] = .{ .var_ptr = v, .value = val };
+        idx += 1;
+    }
+
+    // BindingFrame を allocate
+    const frame = try allocator.create(var_mod.BindingFrame);
+    frame.* = .{ .entries = entries, .prev = null };
+    var_mod.pushBindings(frame);
     return value_mod.nil;
 }
 
-/// pop-thread-bindings — スタブ
+/// pop-thread-bindings — フレームを外す
 pub fn popThreadBindingsFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    var_mod.popBindings();
     return value_mod.nil;
 }
 
-/// thread-bound? — スタブ: false
-pub fn threadBoundPred(_: std.mem.Allocator, _: []const Value) anyerror!Value {
-    return value_mod.false_val;
+/// thread-bound? — Var がバインディングフレーム内か
+pub fn threadBoundPred(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const v: *const var_mod.Var = switch (args[0]) {
+        .var_val => |ptr| @ptrCast(@alignCast(ptr)),
+        else => return error.TypeError,
+    };
+    return if (var_mod.hasThreadBinding(v)) value_mod.true_val else value_mod.false_val;
 }
 
-/// with-redefs-fn — スタブ: fn を呼び出すだけ
+/// with-redefs-fn — Var の root を一時退避 → 差替 → fn 呼び出し → 復元
 pub fn withRedefsFnFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len < 2) return error.ArityError;
-    // args[0] = bindings map (ignored), args[1] = fn to call
     const call_fn_opt = call_fn orelse return error.TypeError;
-    return call_fn_opt(args[1], &[_]Value{}, allocator);
+    // args[0] = map (Var → new-value), args[1] = fn
+    const m = switch (args[0]) {
+        .map => |mp| mp,
+        else => return error.TypeError,
+    };
+    const n_pairs = m.entries.len / 2;
+
+    // 元の root を退避
+    const old_roots = try allocator.alloc(Value, n_pairs);
+    const vars = try allocator.alloc(*var_mod.Var, n_pairs);
+    var idx: usize = 0;
+    var i: usize = 0;
+    while (i < m.entries.len) : (i += 2) {
+        const v: *var_mod.Var = switch (m.entries[i]) {
+            .var_val => |ptr| @ptrCast(@alignCast(ptr)),
+            else => return error.TypeError,
+        };
+        old_roots[idx] = v.getRawRoot();
+        vars[idx] = v;
+        v.bindRoot(m.entries[i + 1]);
+        idx += 1;
+    }
+
+    // fn を呼び出し（エラーでも必ず復元する）
+    const result = call_fn_opt(args[1], &[_]Value{}, allocator);
+
+    // 復元
+    for (vars, old_roots) |v, old| {
+        v.bindRoot(old);
+    }
+
+    return result;
 }
 
 /// requiring-resolve — resolve のエイリアス（require はスタブ）
@@ -9101,57 +9188,68 @@ fn registerDynamicVars(allocator: std.mem.Allocator, core_ns: anytype) !void {
     // *clojure-version*
     {
         const v = try core_ns.intern("*clojure-version*");
+        v.dynamic = true;
         const ver = try clojureVersionFn(allocator, &[_]Value{});
         v.bindRoot(ver);
     }
     // *assert* — デフォルト true
     {
         const v = try core_ns.intern("*assert*");
+        v.dynamic = true;
         v.bindRoot(value_mod.true_val);
     }
     // *print-length* — デフォルト nil（無制限）
     {
         const v = try core_ns.intern("*print-length*");
+        v.dynamic = true;
         v.bindRoot(value_mod.nil);
     }
     // *print-level* — デフォルト nil（無制限）
     {
         const v = try core_ns.intern("*print-level*");
+        v.dynamic = true;
         v.bindRoot(value_mod.nil);
     }
     // *print-meta* — デフォルト false
     {
         const v = try core_ns.intern("*print-meta*");
+        v.dynamic = true;
         v.bindRoot(value_mod.false_val);
     }
     // *print-readably* — デフォルト true
     {
         const v = try core_ns.intern("*print-readably*");
+        v.dynamic = true;
         v.bindRoot(value_mod.true_val);
     }
     // *print-dup* — デフォルト false
     {
         const v = try core_ns.intern("*print-dup*");
+        v.dynamic = true;
         v.bindRoot(value_mod.false_val);
     }
     // *print-namespace-maps* — デフォルト true
     {
         const v = try core_ns.intern("*print-namespace-maps*");
+        v.dynamic = true;
         v.bindRoot(value_mod.true_val);
     }
     // *flush-on-newline* — デフォルト true
     {
         const v = try core_ns.intern("*flush-on-newline*");
+        v.dynamic = true;
         v.bindRoot(value_mod.true_val);
     }
     // *read-eval* — デフォルト true
     {
         const v = try core_ns.intern("*read-eval*");
+        v.dynamic = true;
         v.bindRoot(value_mod.true_val);
     }
     // *compile-path* — デフォルト "classes"
     {
         const v = try core_ns.intern("*compile-path*");
+        v.dynamic = true;
         const str = try allocator.create(value_mod.String);
         str.* = value_mod.String.init("classes");
         v.bindRoot(Value{ .string = str });
@@ -9159,13 +9257,16 @@ fn registerDynamicVars(allocator: std.mem.Allocator, core_ns: anytype) !void {
     // *1, *e — デフォルト nil
     {
         const v1 = try core_ns.intern("*1");
+        v1.dynamic = true;
         v1.bindRoot(value_mod.nil);
         const ve = try core_ns.intern("*e");
+        ve.dynamic = true;
         ve.bindRoot(value_mod.nil);
     }
     // Phase 20: 追加動的 Var
     {
         const v = try core_ns.intern("*ns*");
+        v.dynamic = true;
         // *ns* はシンボル 'clojure.core を初期値として設定
         const sym = try allocator.create(value_mod.Symbol);
         sym.* = .{ .name = "clojure.core", .namespace = null };
@@ -9173,44 +9274,54 @@ fn registerDynamicVars(allocator: std.mem.Allocator, core_ns: anytype) !void {
     }
     {
         const v = try core_ns.intern("*in*");
+        v.dynamic = true;
         v.bindRoot(value_mod.nil); // stdin リーダーは未実装
     }
     {
         const v = try core_ns.intern("*out*");
+        v.dynamic = true;
         v.bindRoot(value_mod.nil); // stdout ライターは未実装
     }
     {
         const v = try core_ns.intern("*err*");
+        v.dynamic = true;
         v.bindRoot(value_mod.nil); // stderr ライターは未実装
     }
     {
         const v = try core_ns.intern("*file*");
+        v.dynamic = true;
         v.bindRoot(value_mod.nil);
     }
     {
         const v = try core_ns.intern("*agent*");
+        v.dynamic = true;
         v.bindRoot(value_mod.nil);
     }
     {
         const v = try core_ns.intern("*repl*");
+        v.dynamic = true;
         v.bindRoot(value_mod.false_val);
     }
     {
         const v = try core_ns.intern("*compile-files*");
+        v.dynamic = true;
         v.bindRoot(value_mod.false_val);
     }
     {
         const v = try core_ns.intern("*compiler-options*");
+        v.dynamic = true;
         const m = try allocator.create(value_mod.PersistentMap);
         m.* = .{ .entries = &[_]Value{} };
         v.bindRoot(Value{ .map = m });
     }
     {
         const v = try core_ns.intern("*reader-resolver*");
+        v.dynamic = true;
         v.bindRoot(value_mod.nil);
     }
     {
         const v = try core_ns.intern("*suppress-read*");
+        v.dynamic = true;
         v.bindRoot(value_mod.false_val);
     }
 }

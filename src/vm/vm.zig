@@ -256,8 +256,7 @@ pub const VM = struct {
                     try self.push(v.deref());
                 },
                 .var_load_dynamic => {
-                    // TODO: 動的バインディング対応
-                    // 現時点では var_load と同じ
+                    // Var.deref() が動的バインディングフレームを参照する
                     const var_val = constants[instr.operand];
                     if (var_val != .var_val) return error.InvalidInstruction;
                     const v: *Var = @ptrCast(@alignCast(var_val.var_val));

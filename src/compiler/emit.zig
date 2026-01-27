@@ -150,7 +150,13 @@ pub const Compiler = struct {
         // Var ポインタを定数として格納
         const var_val = Value{ .var_val = ref.var_ref };
         const idx = self.chunk.addConstant(var_val) catch return error.TooManyConstants;
-        try self.chunk.emit(.var_load, idx);
+        // dynamic Var は var_load_dynamic を使い、deref() で動的バインディングを参照
+        const v: *Var = @ptrCast(@alignCast(ref.var_ref));
+        if (v.isDynamic()) {
+            try self.chunk.emit(.var_load_dynamic, idx);
+        } else {
+            try self.chunk.emit(.var_load, idx);
+        }
         self.sp_depth += 1;
     }
 

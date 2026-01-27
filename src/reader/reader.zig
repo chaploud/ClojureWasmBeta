@@ -102,6 +102,9 @@ pub const Reader = struct {
             .var_quote => self.readWrapped("var"),
             .symbolic => self.readSymbolic(),
 
+            // メタデータ ^
+            .meta, .meta_deprecated => try self.readMeta(),
+
             // 閉じ括弧は直接呼ばれるとエラー
             .rparen, .rbracket, .rbrace => self.unmatchedDelimiterError(token),
 
@@ -431,6 +434,54 @@ pub const Reader = struct {
         items[1] = Form{ .vector = &[_]Form{} }; // 仮の空引数（TODO: %1, %2 解析）
         items[2] = if (body.len == 1) body[0] else Form{ .list = body };
 
+        return Form{ .list = items };
+    }
+
+    /// ^ (メタデータ)
+    /// ^:keyword form → (with-meta form {:keyword true})
+    /// ^{map} form → (with-meta form {map})
+    /// ^String form → (with-meta form {:tag String})
+    fn readMeta(self: *Reader) err.Error!Form {
+        // メタデータフォームを読む
+        const meta_token = self.nextToken();
+        if (meta_token.kind == .eof) {
+            return err.parseError(.unexpected_eof, "EOF after ^", .{});
+        }
+        const meta_form = try self.readForm(meta_token);
+
+        // 対象フォームを読む
+        const target_token = self.nextToken();
+        if (target_token.kind == .eof) {
+            return err.parseError(.unexpected_eof, "EOF after metadata", .{});
+        }
+        const target_form = try self.readForm(target_token);
+
+        // メタデータをマップに正規化
+        const meta_map = switch (meta_form) {
+            // ^:keyword → {:keyword true}
+            .keyword => |kw| blk: {
+                const entries = try self.allocator.alloc(Form, 2);
+                entries[0] = Form{ .keyword = kw };
+                entries[1] = Form.bool_true;
+                break :blk Form{ .map = entries };
+            },
+            // ^{...} → そのまま
+            .map => meta_form,
+            // ^Symbol → {:tag Symbol}
+            .symbol => |sym| blk: {
+                const entries = try self.allocator.alloc(Form, 2);
+                entries[0] = Form{ .keyword = Symbol.init("tag") };
+                entries[1] = Form{ .symbol = sym };
+                break :blk Form{ .map = entries };
+            },
+            else => return err.parseError(.invalid_token, "Invalid metadata form", .{}),
+        };
+
+        // (with-meta target meta-map)
+        const items = try self.allocator.alloc(Form, 3);
+        items[0] = Form{ .symbol = Symbol.init("with-meta") };
+        items[1] = target_form;
+        items[2] = meta_map;
         return Form{ .list = items };
     }
 
