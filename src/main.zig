@@ -131,11 +131,12 @@ pub fn main() !void {
     var allocs = Allocators.init(gpa_allocator);
     defer allocs.deinit();
 
-    // 環境を初期化（persistent アロケータを使用）
-    var env = Env.init(allocs.persistent());
+    // 環境を初期化（GPA を直接使用: Env/Namespace/Var/HashMap はインフラ）
+    // GcAllocator 経由にすると GC sweep がインフラの HashMap backing を解放してしまう
+    var env = Env.init(gpa_allocator);
     defer env.deinit();
     try env.setupBasic();
-    try core.registerCore(&env);
+    try core.registerCore(&env, allocs.persistent());
     core.initLoadedLibs(allocs.persistent());
 
     // 各式を評価
@@ -414,10 +415,10 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
     var allocs = Allocators.init(gpa_allocator);
     defer allocs.deinit();
 
-    var env = Env.init(allocs.persistent());
+    var env = Env.init(gpa_allocator);
     defer env.deinit();
     try env.setupBasic();
-    try core.registerCore(&env);
+    try core.registerCore(&env, allocs.persistent());
     core.initLoadedLibs(allocs.persistent());
 
     // バナー

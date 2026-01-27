@@ -9787,18 +9787,21 @@ const builtins = [_]BuiltinDef{
 };
 
 /// clojure.core の組み込み関数を Env に登録
-pub fn registerCore(env: *Env) !void {
+/// value_allocator: Value/Fn 等の Clojure オブジェクト用アロケータ
+///   （GcAllocator 経由で GC 追跡される）
+/// env.allocator: Namespace/Var/HashMap 等のインフラ用アロケータ
+pub fn registerCore(env: *Env, value_allocator: std.mem.Allocator) !void {
     const core_ns = try env.findOrCreateNs("clojure.core");
 
     for (builtins) |b| {
         const v = try core_ns.intern(b.name);
-        const fn_obj = try env.allocator.create(Fn);
+        const fn_obj = try value_allocator.create(Fn);
         fn_obj.* = Fn.initBuiltin(b.name, b.func);
         v.bindRoot(Value{ .fn_val = fn_obj });
     }
 
     // 動的 Var（値として登録）
-    try registerDynamicVars(env.allocator, core_ns);
+    try registerDynamicVars(value_allocator, core_ns);
 }
 
 /// 動的 Var の初期値を登録

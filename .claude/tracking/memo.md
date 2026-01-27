@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 26 完了 — Reader Conditionals + 外部ライブラリ統合テスト**
+**Phase T4 進行中 — sci テストスイート移植**
 
 ### 完了フェーズ
 
@@ -58,6 +58,10 @@
 | 24    | 名前空間（本格実装）                                                                          |
 | 25    | REPL (対話型シェル)                                                                           |
 | 26    | Reader Conditionals + 外部ライブラリ統合テスト (medley v1.4.0)                                |
+| T1    | Assert ベーステストランナー (基盤)                                                            |
+| T2    | sci 関数カバレッジ監査 + コアテスト (372/390 pass = 95%)                                      |
+| T3    | 最小 clojure.test 実装 (deftest/is/testing/run-tests)                                         |
+| T4    | sci テストスイート移植 (進行中)                                                               |
 
 ### 実装状況
 
@@ -67,45 +71,56 @@
 
 ---
 
-## Phase 26 実装詳細
+## Phase T4 実装詳細
 
-### 機能
+### sci テストスイート移植
 
-- **Reader Conditional `#?`**: `:clj` 分岐を選択、`:default` フォールバック対応
-- **`.cljc` ファイル対応**: `require` で `.clj` → `.cljc` フォールバック検索
-- **`--classpath=path1:path2`**: 複数クラスパスルート指定
-- **`instance?` 特殊形式**: Java 型名をシンボル定数として解決
-- **名前付き fn 自己再帰**: クロージャスロットで自己参照パッチ
-- **`#(...)` fn リテラル**: `%`, `%1`, `%2`, `%&` パラメータスキャン + body ラップ
-- **`reduced` 早期終了**: `reduce` / `reduce-kv` で `reduced` 値をアンラップ
-- **`'` シンボル文字**: `coll'`, `x'` 等のシンボルを許可
-- **Java 互換シンボル**: `clojure.lang.PersistentQueue/EMPTY` 等の名前空間付きシンボル解決
+| テストファイル                           | テスト | アサーション | 状態 |
+|------------------------------------------|--------|--------------|------|
+| `test/compat/sci/core_test.clj`          | 33     | 123          | PASS |
+| `test/compat/sci/vars_test.clj`          | 7      | 15           | PASS |
+| `test/compat/sci/hierarchies_test.clj`   | 5      | 5            | PASS |
+| **合計**                                 | **45** | **143**      |      |
 
-### 変更ファイル
+### テスト基盤
 
-| ファイル                              | 変更内容                                              |
-|---------------------------------------|-------------------------------------------------------|
-| `src/reader/tokenizer.zig`            | `isSymbolChar` で `'` を許可                          |
-| `src/reader/reader.zig`               | `readFnLit` 全面書き直し + `readReaderCond` 追加      |
-| `src/analyzer/analyze.zig`            | `instance?` 特殊形式 + 名前付き fn + Java シンボル    |
-| `src/runtime/evaluator.zig`           | 名前付き fn 自己参照 + `reduced` ハンドリング         |
-| `src/lib/core.zig`                    | `reduceKv` reduced 対応 + `.cljc` + classpath         |
-| `src/main.zig`                        | `--classpath` オプション                              |
-| `src/test_e2e.zig`                    | Phase 26 E2E テスト 7 件追加                          |
-| `test/libs/medley_trimmed/core.cljc`  | medley v1.4.0 トリミング版 (新規)                     |
-| `test/libs/medley/core.cljc`          | medley v1.4.0 フルソース (新規)                       |
-| `test/integration/test_medley.clj`    | medley 統合テスト (新規)                              |
+| ファイル                    | 内容                                      |
+|-----------------------------|-------------------------------------------|
+| `src/clj/clojure/test.clj` | 最小 clojure.test (deftest/is/run-tests)  |
+| `test/lib/test_runner.clj`  | Assert ベーステストランナー               |
+| `test/run_tests.sh`         | シェルテストランナー (T2+sci 両対応)      |
 
-### medley 統合テスト結果
+### テスト移植時の制限回避ルール
 
-**medley-trimmed (22関数)**: 全テスト pass
-- Tier 1: abs, find-first, assoc-some, dissoc-in, update-existing
-- Tier 2: map-keys, map-vals, filter-keys, filter-vals
-- Tier 3: boolean?, least, greatest
+deftest body 内 (= defn body 内) で使えない構文:
+- マップリテラル `{...}` → `(hash-map ...)` または外部ヘルパー関数
+- セットリテラル `#{...}` → `(hash-set ...)` または外部ヘルパー関数
+- マップ分配束縛 `{:keys [...]}` → 外部ヘルパー関数
+- `def ^:dynamic` / `defmacro` → 外部ヘルパー関数
+- `(def name "docstring" value)` (3-arg def) → スキップ
 
-**フル medley**: form #39 (deref-swap!) で停止 — `compare-and-set!` 未実装
+### 新規発見バグ一覧
 
-### 既知の制限
+| バグ                               | 影響         | 回避策                         |
+|------------------------------------|--------------|--------------------------------|
+| map/set リテラル in macro body     | load-file 時 | hash-map/hash-set              |
+| fn-level recur returns nil         | defn+recur   | loop+recur を使用              |
+| vector-list equality broken        | = [1] '(1)   | into [] で変換                 |
+| map-as-fn 2-arity                  | ({:a 1} k d) | get with default               |
+| symbol-as-fn                       | ('a map)     | get                            |
+| defonce not preventing redef       | defonce      | スキップ                       |
+| letfn mutual recursion             | letfn f→g    | スキップ                       |
+| #'var as callable                  | (#'foo)      | スキップ                       |
+| (str (def x 1)) returns ""         | def-returns  | スキップ                       |
+| ^:const not respected              | const        | スキップ                       |
+| var-set no effect                  | var-set      | スキップ                       |
+| alter-var-root uses thread-local   | avr+binding  | スキップ                       |
+| with-local-vars not implemented    | wlv          | スキップ                       |
+| add-watch on var not implemented   | add-watch    | スキップ                       |
+| thread-bound? 1-arity only         | thread-bound | 1引数で使用                    |
+| defmacro inside defn → Undefined   | defmacro     | トップレベルで定義             |
+
+### 既知の制限 (Phase 26 から引き継ぎ)
 
 - VM で `reduced` 未対応 (TreeWalk のみ)
 - sets-as-functions 未対応 (`#{:a :b}` を関数として使用不可)
@@ -134,8 +149,10 @@ Phase LAST: Wasm 連携
    迷うものは実装する。
 3. **JVM 型変換**: byte/short/long/float 等は Zig キャスト相当に簡略化。
    instance?/class は内部タグ検査。深追いせず最小限で。
-4. **GC**: 式境界 Mark-Sweep。GcAllocator で全 persistent alloc を追跡。
-   閾値超過時にのみ実行。CLI 用途では十分な性能。
+4. **GC**: 式境界 Mark-Sweep。GcAllocator で Clojure Value のみ追跡。
+   インフラ (Env/Namespace/Var/HashMap) は GPA 直接管理で GC 対象外。
+   閾値超過時にのみ実行。サイクル検出付き (自己参照 fn 等に対応)。
+   loop/recur は recur_buffer で in-place 更新 (GC 負荷を大幅削減)。
 5. **動的バインディング**: マクロ展開方式 (push+try/finally+pop)。
    新 Node/Opcode 不要。既存インフラを最大限活用。
 

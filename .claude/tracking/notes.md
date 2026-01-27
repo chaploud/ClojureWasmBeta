@@ -22,11 +22,21 @@
   - `runSwap` / `resetBang`: atom 更新前に値を deepClone
   - `Chunk.addConstant`: VM bytecode 定数を deepClone
   - `Value.deepClone`: Atom の内部値も再帰的にクローン
-- **メモリリーク（Phase 10 GC で対応予定）**:
-  - deepClone により古い値が孤立する（GC で回収予定）
-  - evaluator.zig の args 配列（バインディングスタック改善で対応）
-  - Value 所有権（Var 破棄時に内部 Fn が解放されない）
-  - context.withBinding の配列（バインディング毎に新配列を確保）
+- **メモリリーク（GC で回収済み）**:
+  - deepClone により古い値が孤立 → GC sweep で回収
+  - evaluator.zig の args 配列 → GC 対象
+  - Value 所有権 → GC で管理
+  - context.withBinding の配列 → GC 対象
+- **GC アーキテクチャ (Phase 21+修正)**:
+  - **アロケータ分離**: Env/Namespace/Var/HashMap は GPA 直接管理 (GC 対象外)。
+    Clojure Value (*String, *Vector, *Fn 等) は GcAllocator 経由 (GC 追跡)。
+    main.zig: `Env.init(gpa_allocator)`, `registerCore(&env, allocs.persistent())`
+  - **サイクル検出**: `gc.mark()` が `bool` を返す (true=既マーク)。
+    `traceValue` で既マークオブジェクトをスキップ。
+    `(fn foo [] foo)` 等の自己参照 fn による無限ループを防止。
+  - **loop/recur 最適化**: `runLoop` で recur_buffer を事前割り当て。
+    `runRecur` で in-place 再利用。毎イテレーションの GcAllocator 経由 alloc を排除。
+    Context に `recur_buffer: ?[]Value` フィールド追加。
 
 ## Analyzer
 

@@ -138,7 +138,7 @@ fn expectErrorBoth(allocator: std.mem.Allocator, env: *Env, source: []const u8) 
 fn setupTestEnv(allocator: std.mem.Allocator) !Env {
     var env = Env.init(allocator);
     try env.setupBasic();
-    try core.registerCore(&env);
+    try core.registerCore(&env, allocator);
     return env;
 }
 
@@ -2637,7 +2637,7 @@ test "Phase 22: regex" {
     var env = Env.init(allocator);
     defer env.deinit();
     try env.setupBasic();
-    try core.registerCore(&env);
+    try core.registerCore(&env, allocator);
 
     // --- re-find ---
     // 基本: グループなし

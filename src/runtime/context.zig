@@ -37,6 +37,10 @@ pub const Context = struct {
     /// non-null: recur 発生、値を含む
     recur_values: ?RecurValues = null,
 
+    /// loop/recur 用: 事前割り当て済み recur バッファ
+    /// runLoop で1回だけ alloc し、runRecur で毎回再利用する
+    recur_buffer: ?[]Value = null,
+
     /// 初期化（バインディングなし）
     pub fn init(allocator: std.mem.Allocator, env: *Env) Context {
         return .{

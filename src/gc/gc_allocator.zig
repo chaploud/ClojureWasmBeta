@@ -60,14 +60,15 @@ pub const GcAllocator = struct {
         };
     }
 
-    /// 破棄（残存アロケーションを全て解放）
+    /// 破棄
+    /// 残存する全アロケーションを backing allocator に返却し、
+    /// registry HashMap を解放する。
     pub fn deinit(self: *GcAllocator) void {
-        // registry に残っている全エントリを backing から解放
         var iter = self.allocs.iterator();
         while (iter.next()) |entry| {
-            const ptr: [*]u8 = @ptrCast(entry.key_ptr.*);
+            const raw_ptr: [*]u8 = @ptrCast(entry.key_ptr.*);
             const info = entry.value_ptr.*;
-            self.backing.rawFree(ptr[0..info.size], info.alignment, 0);
+            self.backing.rawFree(raw_ptr[0..info.size], info.alignment, 0);
         }
         self.allocs.deinit(self.backing);
     }
@@ -81,17 +82,21 @@ pub const GcAllocator = struct {
     }
 
     /// ポインタを mark（到達可能としてマーク）
-    pub fn mark(self: *GcAllocator, ptr: *anyopaque) void {
+    /// 戻り値: true = 既にマーク済み（再トレース不要）、false = 初回マーク
+    pub fn mark(self: *GcAllocator, ptr: *anyopaque) bool {
         if (self.allocs.getPtr(ptr)) |info| {
+            const was_marked = info.marked;
             info.marked = true;
+            return was_marked;
         }
+        return false;
     }
 
     /// スライスポインタを mark（[]T の .ptr を渡す）
     pub fn markSlice(self: *GcAllocator, ptr: ?[*]const u8, len: usize) void {
         if (ptr == null or len == 0) return;
         const raw: *anyopaque = @ptrCast(@constCast(ptr.?));
-        self.mark(raw);
+        _ = self.mark(raw);
     }
 
     /// 全 marked フラグをクリア
@@ -298,8 +303,8 @@ test "GcAllocator mark と sweep" {
     try std.testing.expect(before_bytes > 0);
 
     // p1 と p3 だけ mark
-    gc.mark(@ptrCast(p1));
-    gc.mark(@ptrCast(p3));
+    _ = gc.mark(@ptrCast(p1));
+    _ = gc.mark(@ptrCast(p3));
 
     // sweep → p2 が解放される
     gc.sweep();
@@ -347,7 +352,7 @@ test "GcAllocator sweep 後の閾値調整" {
 
     // 確保して mark してから sweep
     const p1 = try a.create(u64);
-    gc.mark(@ptrCast(p1));
+    _ = gc.mark(@ptrCast(p1));
     gc.sweep();
 
     // 閾値が MIN_THRESHOLD 以上であること

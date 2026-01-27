@@ -134,15 +134,22 @@ fn runLoop(node: *const node_mod.LoopNode, ctx: *Context) EvalError!Value {
     const start_idx = ctx.bindings.len;
     var loop_ctx = current_ctx;
 
+    // recur 用バッファを事前割り当て（毎反復の alloc を回避）
+    const num_loop_bindings = node.bindings.len;
+    const recur_buf = ctx.allocator.alloc(Value, num_loop_bindings) catch return error.OutOfMemory;
+    loop_ctx.recur_buffer = recur_buf;
+
     // loop 本体を繰り返し評価
     while (true) {
         loop_ctx.clearRecur();
         const result = try run(node.body, &loop_ctx);
 
         if (loop_ctx.hasRecur()) {
-            // recur の値で再バインド
+            // recur の値でバインディングをインプレース更新（新規割り当てを回避）
             const recur_vals = loop_ctx.recur_values.?.values;
-            loop_ctx = loop_ctx.replaceBindings(start_idx, recur_vals) catch return error.OutOfMemory;
+            for (recur_vals, 0..) |val, i| {
+                loop_ctx.bindings[start_idx + i] = val;
+            }
             continue;
         }
 
@@ -152,8 +159,13 @@ fn runLoop(node: *const node_mod.LoopNode, ctx: *Context) EvalError!Value {
 
 /// recur 評価
 fn runRecur(node: *const node_mod.RecurNode, ctx: *Context) EvalError!Value {
+    // 事前割り当てバッファがあれば再利用、なければ新規割り当て
+    const vals = if (ctx.recur_buffer) |buf|
+        buf[0..node.args.len]
+    else
+        ctx.allocator.alloc(Value, node.args.len) catch return error.OutOfMemory;
+
     // 引数を評価
-    var vals = ctx.allocator.alloc(Value, node.args.len) catch return error.OutOfMemory;
     for (node.args, 0..) |arg, i| {
         vals[i] = try run(arg, ctx);
     }
