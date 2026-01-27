@@ -82,6 +82,11 @@ pub const gc_tracing = @import("gc/tracing.zig");
 pub const regex = @import("regex/regex.zig");
 pub const regex_matcher = @import("regex/matcher.zig");
 
+// === Wasm ===
+pub const wasm_loader = @import("wasm/loader.zig");
+pub const wasm_runtime = @import("wasm/runtime.zig");
+pub const wasm_types = @import("wasm/types.zig");
+
 // === 標準ライブラリ ===
 pub const core = @import("lib/core.zig");
 

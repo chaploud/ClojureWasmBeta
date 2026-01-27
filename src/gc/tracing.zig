@@ -377,6 +377,11 @@ fn traceValue(gc: *GcAllocator, val: Value, gray_stack: *std.ArrayListUnmanaged(
                 }
             }
         },
+
+        // wasm_module: ポインタのみ mark（内部は zware 管理）
+        .wasm_module => |wm| {
+            _ = gc.mark(@ptrCast(wm));
+        },
     }
 }
 

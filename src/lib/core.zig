@@ -23,6 +23,8 @@ const tree_walk = @import("../runtime/evaluator.zig");
 const Context = @import("../runtime/context.zig").Context;
 const regex_mod = @import("../regex/regex.zig");
 const regex_matcher = @import("../regex/matcher.zig");
+const wasm_loader = @import("../wasm/loader.zig");
+const wasm_runtime = @import("../wasm/runtime.zig");
 
 /// 組み込み関数の型（value.zig との循環依存を避けるためここで定義）
 pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
@@ -1825,6 +1827,15 @@ fn printValue(writer: anytype, val: Value) !void {
             try writer.writeByte('"');
         },
         .matcher => try writer.writeAll("#<matcher>"),
+        .wasm_module => |wm| {
+            if (wm.path) |path| {
+                try writer.writeAll("#<wasm-module ");
+                try writer.writeAll(path);
+                try writer.writeByte('>');
+            } else {
+                try writer.writeAll("#<wasm-module>");
+            }
+        },
     }
 }
 
@@ -3430,6 +3441,7 @@ pub fn typeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
         .promise => "promise",
         .regex => "regex",
         .matcher => "matcher",
+        .wasm_module => "wasm-module",
     };
 
     const str = try allocator.create(value_mod.String);
@@ -8586,6 +8598,7 @@ pub fn classFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value
         .fn_proto => "FnProto",
         .regex => "Pattern",
         .matcher => "Matcher",
+        .wasm_module => "WasmModule",
     };
     const s = try allocator.create(value_mod.String);
     s.* = .{ .data = name };
@@ -10043,6 +10056,62 @@ pub fn lineSeqFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value 
 }
 
 // ============================================================
+// Phase LAST: Wasm 連携
+// ============================================================
+
+/// wasm/load-module: .wasm ファイルをロードして WasmModule を返す
+fn wasmLoadModule(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const path = switch (args[0]) {
+        .string => |s| s.data,
+        else => return error.TypeError,
+    };
+    const wm = wasm_loader.loadModule(allocator, path) catch {
+        return error.WasmLoadError;
+    };
+    return Value{ .wasm_module = wm };
+}
+
+/// wasm/invoke: WasmModule のエクスポート関数を呼び出す
+fn wasmInvoke(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    // (wasm/invoke module "func-name" arg1 arg2 ...)
+    if (args.len < 2) return error.ArityError;
+    const wm = switch (args[0]) {
+        .wasm_module => |m| m,
+        else => return error.TypeError,
+    };
+    const func_name = switch (args[1]) {
+        .string => |s| s.data,
+        else => return error.TypeError,
+    };
+    const func_args = args[2..];
+    return wasm_runtime.invoke(wm, func_name, func_args, allocator) catch {
+        return error.WasmInvokeError;
+    };
+}
+
+/// wasm/exports: WasmModule のエクスポート一覧をマップで返す
+fn wasmExports(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const wm = switch (args[0]) {
+        .wasm_module => |m| m,
+        else => return error.TypeError,
+    };
+    return wasm_runtime.getExports(wm, allocator) catch {
+        return error.WasmInvokeError;
+    };
+}
+
+/// wasm/module?: WasmModule かどうかを判定
+fn isWasmModule(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .wasm_module => value_mod.true_val,
+        else => value_mod.false_val,
+    };
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -10532,6 +10601,14 @@ const builtins = [_]BuiltinDef{
     .{ .name = "map-indexed", .func = mapIndexedFn },
 };
 
+/// wasm 名前空間に登録する関数
+const wasm_builtins = [_]BuiltinDef{
+    .{ .name = "load-module", .func = wasmLoadModule },
+    .{ .name = "invoke", .func = wasmInvoke },
+    .{ .name = "exports", .func = wasmExports },
+    .{ .name = "module?", .func = isWasmModule },
+};
+
 /// clojure.core の組み込み関数を Env に登録
 /// value_allocator: Value/Fn 等の Clojure オブジェクト用アロケータ
 ///   （GcAllocator 経由で GC 追跡される）
@@ -10546,8 +10623,23 @@ pub fn registerCore(env: *Env, value_allocator: std.mem.Allocator) !void {
         v.bindRoot(Value{ .fn_val = fn_obj });
     }
 
+    // wasm 名前空間の関数を登録
+    try registerWasmNs(env, value_allocator);
+
     // 動的 Var（値として登録）
     try registerDynamicVars(value_allocator, core_ns);
+}
+
+/// wasm 名前空間の組み込み関数を登録
+fn registerWasmNs(env: *Env, value_allocator: std.mem.Allocator) !void {
+    const wasm_ns = try env.findOrCreateNs("wasm");
+
+    for (wasm_builtins) |b| {
+        const v = try wasm_ns.intern(b.name);
+        const fn_obj = try value_allocator.create(Fn);
+        fn_obj.* = Fn.initBuiltin(b.name, b.func);
+        v.bindRoot(Value{ .fn_val = fn_obj });
+    }
 }
 
 /// 動的 Var の初期値を登録

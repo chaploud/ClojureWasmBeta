@@ -1,83 +1,64 @@
-//! Types: Clojure ↔ Wasm 型マッピング
+//! Wasm 型変換ユーティリティ
 //!
-//! Clojure の Value と Wasm の型を相互変換。
-//! Component Model の型システムに準拠。
-//!
-//! マッピング:
-//!   Clojure       Wasm Component Model
-//!   ─────────────────────────────────
-//!   nil           option<T> の none
-//!   bool          bool
-//!   int (i64)     s64
-//!   float (f64)   float64
-//!   string        string
-//!   vector        list<T>
-//!   map           record / variant
-//!   keyword       enum
-//!
-//! 詳細: docs/reference/architecture.md
-//!
-//! TODO: Wasm連携実装時に有効化
+//! Clojure Value ↔ Wasm u64 の相互変換。
+//! zware は全パラメータを u64 配列で受け渡しするため、
+//! ビットキャストで変換する。
 
 const std = @import("std");
+const value_mod = @import("../runtime/value.zig");
+const Value = value_mod.Value;
 
-// TODO: 実装時にコメント解除
-// const value = @import("../runtime/value.zig");
-// const Value = value.Value;
+/// Clojure Value → Wasm u64 変換
+/// int → i64 → @bitCast(u64)
+/// float → f64 → @bitCast(u64)
+/// bool → 1/0
+/// nil → 0
+pub fn valueToWasmU64(v: Value) !u64 {
+    return switch (v) {
+        .int => |n| @bitCast(n),
+        .float => |f| @bitCast(f),
+        .bool_val => |b| if (b) @as(u64, 1) else @as(u64, 0),
+        .nil => 0,
+        else => error.TypeError,
+    };
+}
 
-/// Wasm 値型
-/// TODO: 実装時にコメント解除
-pub const WasmValue = union(enum) {
-    // i32_val: i32,
-    // i64_val: i64,
-    // f32_val: f32,
-    // f64_val: f64,
-    // string_val: []const u8,
-    // list_val: []WasmValue,
-    // record_val: *Record,
+/// Wasm i32 結果 → Clojure Value
+/// u64 の下位32ビットを i32 として取り出し、i64 に拡張
+pub fn wasmI32ToValue(raw: u64) Value {
+    const i: i32 = @bitCast(@as(u32, @truncate(raw)));
+    return .{ .int = @as(i64, i) };
+}
 
-    placeholder: void,
-};
+/// Wasm i64 結果 → Clojure Value
+pub fn wasmI64ToValue(raw: u64) Value {
+    const i: i64 = @bitCast(raw);
+    return .{ .int = i };
+}
 
-/// Wasm 関数シグネチャ
-pub const FuncSignature = struct {
-    // params: []WasmType,
-    // results: []WasmType,
+/// Wasm f32 結果 → Clojure Value
+pub fn wasmF32ToValue(raw: u64) Value {
+    const f: f32 = @bitCast(@as(u32, @truncate(raw)));
+    return .{ .float = @as(f64, f) };
+}
 
-    placeholder: void,
-};
+/// Wasm f64 結果 → Clojure Value
+pub fn wasmF64ToValue(raw: u64) Value {
+    const f: f64 = @bitCast(raw);
+    return .{ .float = f };
+}
 
-/// 型変換
-/// TODO: 実装時にコメント解除
-pub const TypeConverter = struct {
-    placeholder: void,
-
-    // /// Clojure Value → Wasm Value
-    // pub fn toWasm(v: Value) !WasmValue {
-    //     return switch (v) {
-    //         .nil => .{ .i32_val = 0 },  // option none
-    //         .bool_val => |b| .{ .i32_val = if (b) 1 else 0 },
-    //         .int => |i| .{ .i64_val = i },
-    //         .float => |f| .{ .f64_val = f },
-    //         .string => |s| .{ .string_val = s.data },
-    //         // ...
-    //     };
-    // }
-
-    // /// Wasm Value → Clojure Value
-    // pub fn fromWasm(w: WasmValue) !Value {
-    //     return switch (w) {
-    //         .i64_val => |i| Value{ .int = i },
-    //         .f64_val => |f| Value{ .float = f },
-    //         .string_val => |s| Value{ .string = ... },
-    //         // ...
-    //     };
-    // }
-};
+pub const TypeError = error{TypeError};
 
 // === テスト ===
 
-test "placeholder" {
-    const w: WasmValue = .{ .placeholder = {} };
-    _ = w;
+test "valueToWasmU64 int" {
+    const v: Value = .{ .int = 42 };
+    const raw = try valueToWasmU64(v);
+    try std.testing.expectEqual(@as(u64, @bitCast(@as(i64, 42))), raw);
+}
+
+test "wasmI32ToValue" {
+    const v = wasmI32ToValue(7);
+    try std.testing.expectEqual(@as(i64, 7), v.int);
 }

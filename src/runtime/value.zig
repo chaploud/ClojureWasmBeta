@@ -623,6 +623,17 @@ pub const CompFn = struct {
     fns: []const Value, // 合成される関数（左から右の順、実行は右から左）
 };
 
+// === Wasm ===
+
+/// ロード済み Wasm モジュール
+pub const WasmModule = struct {
+    path: ?[]const u8, // ファイルパス (デバッグ用)
+    store: *anyopaque, // *zware.Store
+    instance: *anyopaque, // *zware.Instance
+    module_ptr: *anyopaque, // *zware.Module
+    closed: bool,
+};
+
 // === Value 本体 ===
 
 /// Runtime値
@@ -678,6 +689,9 @@ pub const Value = union(enum) {
     // === Phase 22: regex ===
     regex: *Pattern, // コンパイル済み正規表現パターン
     matcher: *RegexMatcher, // ステートフルマッチャー
+
+    // === Phase LAST: wasm ===
+    wasm_module: *WasmModule, // ロード済み Wasm モジュール
 
     // === ヘルパー関数 ===
 
@@ -789,6 +803,7 @@ pub const Value = union(enum) {
             .promise => |a| a == other.promise, // 参照等価
             .regex => |a| a == other.regex, // 参照等価
             .matcher => |a| a == other.matcher, // 参照等価
+            .wasm_module => |a| a == other.wasm_module, // 参照等価
         };
     }
 
@@ -824,6 +839,7 @@ pub const Value = union(enum) {
             .promise => "promise",
             .regex => "regex",
             .matcher => "matcher",
+            .wasm_module => "wasm-module",
         };
     }
 
@@ -857,6 +873,7 @@ pub const Value = union(enum) {
             .promise => "promise",
             .regex => "regex",
             .matcher => "matcher",
+            .wasm_module => "wasm-module",
         };
     }
 
@@ -1026,6 +1043,13 @@ pub const Value = union(enum) {
             .matcher => {
                 try writer.writeAll("#<matcher>");
             },
+            .wasm_module => |wm| {
+                if (wm.path) |path| {
+                    try writer.print("#<wasm-module {s}>", .{path});
+                } else {
+                    try writer.writeAll("#<wasm-module>");
+                }
+            },
         }
     }
 
@@ -1142,11 +1166,12 @@ pub const Value = union(enum) {
                 new_r.* = .{ .value = try r.value.deepClone(allocator) };
                 break :blk .{ .reduced_val = new_r };
             },
-            // Transient/Promise/Regex/Matcher は参照をそのまま保持
+            // Transient/Promise/Regex/Matcher/WasmModule は参照をそのまま保持
             .transient => self,
             .promise => self,
             .regex => self,
             .matcher => self,
+            .wasm_module => self,
         };
     }
 

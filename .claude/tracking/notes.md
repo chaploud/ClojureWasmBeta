@@ -395,3 +395,41 @@ bash/zsh の history expansion (`!` が特殊文字) が原因。
   - REPL ではソース文字列を persistent allocator で確保し、GC に管理を委ねる
 - **括弧バランス**: `isBalanced()` で `()[]{}` の対応と文字列リテラル内のエスケープを考慮
 - **結果履歴**: `*1`/`*2`/`*3` は user NS の Var として定義。`*e` はエラー時用 (現在 nil のみ)
+
+## Wasm 連携 (Phase LAST)
+
+### zware API まとめ
+
+- **Store**: `Store.init(allocator)` — Wasm ストア (モジュール・インスタンスの管理)
+- **Module**: `Module.init(allocator, bytes)` → `.decode()` — バイナリをデコード
+- **Instance**: `Instance.init(allocator, &store, module)` → `.instantiate()` — インスタンス化
+- **invoke**: `instance.invoke(name, in_u64s, out_u64s, .{})` — 関数呼び出し
+- **ホスト関数**: `store.exposeHostFunction(module, name, fn_ptr, ctx, params, results)`
+- **メモリ**: `instance.getMemory(0)` → 線形メモリアクセス
+
+### 型変換パターン
+
+- **Value.int → Wasm u64**: `@bitCast(@as(i64, val.int))` (i32 なら @truncate → @intCast)
+- **Wasm u64 → Value.int**: `@as(i32, @truncate(raw))` → `@as(i64, @intCast(...))` → `Value{ .int = ... }`
+- **Value.float → Wasm u64**: `@bitCast(val.float)`
+- **Wasm u64 → Value.float**: `@as(f64, @bitCast(raw))`
+
+### WasmModule 構造体設計
+
+```zig
+pub const WasmModule = struct {
+    path: ?[]const u8,       // デバッグ用パス
+    store: *anyopaque,       // *zware.Store (ヒープ確保)
+    instance: *anyopaque,    // *zware.Instance (ヒープ確保)
+    module_ptr: *anyopaque,  // *zware.Module (ヒープ確保)
+    closed: bool,
+};
+```
+
+### エラーマッピング
+
+- Unreachable → `{:type :wasm/trap}`
+- OutOfBounds → `{:type :wasm/memory-error}`
+- DivByZero → `{:type :wasm/arithmetic-error}`
+- ExportNotFound → `{:type :wasm/export-error, :name "..."}`
+- TypeMismatch → `{:type :wasm/type-error}`

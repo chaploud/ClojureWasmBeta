@@ -27,9 +27,9 @@ Source Code
 └──────────────────────────────────────────────────────────────┘
      ↓ Value
 ┌──────────────────────────────────────────────────────────────┐
-│ src/wasm/ (将来)                                             │
-│   Component Model 連携                                       │
+│ src/wasm/ (zware ベース)                                      │
 │   .wasm ロード、関数呼び出し、型変換                         │
+│   メモリ操作、ホスト関数、WASI サポート                      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -103,6 +103,14 @@ src/
 ├── lib/                # Clojure標準ライブラリ
 │   └── core.zig        # clojure.core 組み込み関数
 │
+├── wasm/               # Wasm 連携 (zware)
+│   ├── types.zig       # Value ↔ Wasm 型変換
+│   ├── loader.zig      # .wasm ロード + インスタンス化
+│   ├── runtime.zig     # invoke / exports
+│   ├── interop.zig     # 文字列/メモリ変換
+│   ├── host_functions.zig # ホスト関数ブリッジ
+│   └── wasi.zig        # WASI サポート
+│
 └── main.zig            # CLI
 ```
 
@@ -137,9 +145,25 @@ src/
 
 ### 今後のフェーズ
 
-#### Phase LAST: Wasm 連携
+#### Phase LAST: Wasm 連携 (zware)
 
-言語機能充実後。Component Model 対応、.wasm ロード・呼び出し、型マッピング。
+zware (pure Zig Wasm runtime) ベースの Wasm 連携。
+
+| Sub | 内容                              | 主要ファイル                            |
+|-----|-----------------------------------|-----------------------------------------|
+| La  | zware 導入 + load + invoke (数値) | build.zig, value.zig, wasm/*.zig        |
+| Lb  | メモリ操作 + 文字列 interop       | wasm/interop.zig, core.zig              |
+| Lc  | ホスト関数注入 (Clojure→Wasm)     | wasm/host_functions.zig, core.zig       |
+| Ld  | WASI 基本サポート                 | wasm/wasi.zig, core.zig                 |
+| Le  | エラー改善 + GC + ドキュメント    | core.zig, tracing.zig, docs             |
+
+API:
+```clojure
+(def m (wasm/load-module "math.wasm"))
+(wasm/invoke m "add" 3 4)     ;=> 7
+(wasm/exports m)               ;=> {:add {:type :func} ...}
+(wasm/module? m)               ;=> true
+```
 
 ---
 

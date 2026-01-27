@@ -6,7 +6,17 @@
 
 ## 現在地点
 
-**Phase Q 完了 — Phase LAST (Wasm 連携) 準備完了**
+**Phase LAST 進行中 — Wasm 連携 (zware)**
+
+### Phase LAST サブフェーズ
+
+| Sub   | 内容                              | 状態         |
+|-------|-----------------------------------|--------------|
+| La    | zware 導入 + load + invoke (数値) | ✅ 完了      |
+| Lb    | メモリ操作 + 文字列 interop       | 未着手       |
+| Lc    | ホスト関数注入 (Clojure→Wasm)     | 未着手       |
+| Ld    | WASI 基本サポート                 | 未着手       |
+| Le    | エラー改善 + GC + ドキュメント    | 未着手       |
 
 ### 完了フェーズ
 
@@ -84,7 +94,7 @@
 
 ### テスト全体結果
 
-**729 pass, 1 fail(意図的), 0 error** (total: 730)
+**741 pass, 1 fail(意図的), 0 error** (total: 742)
 
 ### sci テストスイート移植
 
@@ -114,7 +124,9 @@
 | `test/compat/sequences.clj`              | 48           | PASS |
 | `test/compat/strings.clj`                | 54           | PASS |
 | `test/compat/test_framework_test.clj`    | 8+1 fail     | PASS(意図的1fail) |
-| **compat 合計**                          | **520**      |      |
+| `test/compat/var_system.clj`             | 13           | PASS |
+| `test/compat/wasm_basic.clj`             | 12           | PASS |
+| **compat 合計**                          | **545**      |      |
 
 ### テスト基盤
 
@@ -223,11 +235,15 @@ deftest body 内 (= defn body 内) で使えない構文:
   Q6  ✅ ドキュメント整備
 ```
 
-### 次のフェーズ
+### 現在のフェーズ
 
 ```
-Phase LAST: Wasm 連携
-  └ Component Model 対応、.wasm ロード・呼び出し、型マッピング
+Phase LAST: Wasm 連携 (zware pure Zig runtime)
+  La ✅ zware 導入 + load + invoke (数値のみ)
+  Lb    メモリ操作 + 文字列 interop
+  Lc    ホスト関数注入 (Clojure→Wasm)
+  Ld    WASI 基本サポート
+  Le    エラー改善 + GC + ドキュメント
 ```
 
 ---

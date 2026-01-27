@@ -404,6 +404,15 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
             try writer.writeByte('"');
         },
         .matcher => try writer.writeAll("#<matcher>"),
+        .wasm_module => |wm| {
+            if (wm.path) |path| {
+                try writer.writeAll("#<wasm-module ");
+                try writer.writeAll(path);
+                try writer.writeByte('>');
+            } else {
+                try writer.writeAll("#<wasm-module>");
+            }
+        },
     }
 }
 
