@@ -19,6 +19,7 @@
       "mcp__emacs-tools__claude-code-ide-mcp-xref-find-references",
       "mcp__ide__getDiagnostics"
     ],
-    "deny": []
+    "deny": [],
+    "language": "japanese"
   }
 }
