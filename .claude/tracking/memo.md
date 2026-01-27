@@ -73,6 +73,10 @@
 
 ## Phase T4 実装詳細
 
+### テスト全体結果
+
+**678 pass, 1 fail(意図的), 0 error** (total: 679)
+
 ### sci テストスイート移植
 
 | テストファイル                           | テスト | アサーション | 状態 |
@@ -82,7 +86,26 @@
 | `test/compat/sci/hierarchies_test.clj`   | 5      | 5            | PASS |
 | `test/compat/sci/multimethods_test.clj`  | 4      | 4            | PASS |
 | `test/compat/sci/error_test.clj`         | 6      | 12           | PASS |
-| **合計**                                 | **55** | **159**      |      |
+| **sci 合計**                             | **55** | **159**      |      |
+
+### compat テスト
+
+| テストファイル                           | アサーション | 状態 |
+|------------------------------------------|--------------|------|
+| `test/compat/atoms.clj`                  | 33           | PASS |
+| `test/compat/collections.clj`            | 76           | PASS |
+| `test/compat/control_flow.clj`           | 43           | PASS |
+| `test/compat/core_basic.clj`             | 54           | PASS |
+| `test/compat/dynamic_binding.clj`        | 15           | PASS |
+| `test/compat/higher_order.clj`           | 33           | PASS |
+| `test/compat/lazy_seq.clj`               | 39           | PASS |
+| `test/compat/multimethods.clj`           | 17           | PASS |
+| `test/compat/predicates.clj`             | 91           | PASS |
+| `test/compat/regex.clj`                  | 17           | PASS |
+| `test/compat/sequences.clj`              | 48           | PASS |
+| `test/compat/strings.clj`                | 45           | PASS |
+| `test/compat/test_framework_test.clj`    | 8+1 fail     | PASS(意図的1fail) |
+| **compat 合計**                          | **520**      |      |
 
 ### テスト基盤
 
