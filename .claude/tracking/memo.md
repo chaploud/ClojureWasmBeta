@@ -14,7 +14,7 @@
 |-------|-----------------------------------|--------------|
 | La    | zware 導入 + load + invoke (数値) | ✅ 完了      |
 | Lb    | メモリ操作 + 文字列 interop       | ✅ 完了      |
-| Lc    | ホスト関数注入 (Clojure→Wasm)     | 未着手       |
+| Lc    | ホスト関数注入 (Clojure→Wasm)     | ✅ 完了      |
 | Ld    | WASI 基本サポート                 | 未着手       |
 | Le    | エラー改善 + GC + ドキュメント    | 未着手       |
 
@@ -94,7 +94,7 @@
 
 ### テスト全体結果
 
-**748 pass, 1 fail(意図的), 0 error** (total: 749)
+**753 pass, 1 fail(意図的), 0 error** (total: 754)
 
 ### sci テストスイート移植
 
@@ -127,7 +127,8 @@
 | `test/compat/var_system.clj`             | 13           | PASS |
 | `test/compat/wasm_basic.clj`             | 12           | PASS |
 | `test/compat/wasm_memory.clj`            | 7            | PASS |
-| **compat 合計**                          | **552**      |      |
+| `test/compat/wasm_host.clj`              | 5            | PASS |
+| **compat 合計**                          | **557**      |      |
 
 ### テスト基盤
 
@@ -242,7 +243,7 @@ deftest body 内 (= defn body 内) で使えない構文:
 Phase LAST: Wasm 連携 (zware pure Zig runtime)
   La ✅ zware 導入 + load + invoke (数値のみ)
   Lb ✅ メモリ操作 + 文字列 interop
-  Lc    ホスト関数注入 (Clojure→Wasm)
+  Lc ✅ ホスト関数注入 (Clojure→Wasm)
   Ld    WASI 基本サポート
   Le    エラー改善 + GC + ドキュメント
 ```

@@ -6,7 +6,9 @@
 const std = @import("std");
 const zware = @import("zware");
 const value_mod = @import("../runtime/value.zig");
+const Value = value_mod.Value;
 const WasmModule = value_mod.WasmModule;
+const host_functions = @import("host_functions.zig");
 
 /// 最大ファイルサイズ (10MB)
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -42,6 +44,55 @@ pub fn loadModule(allocator: std.mem.Allocator, path: []const u8) !*WasmModule {
     };
 
     // 5. WasmModule 構造体を作成
+    const wm = try allocator.create(WasmModule);
+    const path_copy = try allocator.dupe(u8, path);
+    wm.* = .{
+        .path = path_copy,
+        .store = @ptrCast(store),
+        .instance = @ptrCast(instance),
+        .module_ptr = @ptrCast(module),
+        .closed = false,
+    };
+
+    return wm;
+}
+
+/// .wasm ファイルをロードし、ホスト関数を登録してインスタンス化
+pub fn loadModuleWithImports(allocator: std.mem.Allocator, path: []const u8, imports_map: Value) !*WasmModule {
+    // 1. ファイル読み込み
+    const file = std.fs.cwd().openFile(path, .{}) catch {
+        return error.WasmFileNotFound;
+    };
+    defer file.close();
+
+    const bytes = file.readToEndAlloc(allocator, MAX_FILE_SIZE) catch {
+        return error.WasmFileReadError;
+    };
+
+    // 2. Store をヒープに確保
+    const store = try allocator.create(zware.Store);
+    store.* = zware.Store.init(allocator);
+
+    // 3. Module をヒープに確保してデコード
+    const module = try allocator.create(zware.Module);
+    module.* = zware.Module.init(allocator, bytes);
+    module.decode() catch {
+        return error.WasmDecodeError;
+    };
+
+    // 4. ホスト関数を登録（instantiate の前）
+    host_functions.registerImports(store, module, imports_map, allocator) catch {
+        return error.WasmInstantiateError;
+    };
+
+    // 5. Instance をヒープに確保してインスタンス化
+    const instance = try allocator.create(zware.Instance);
+    instance.* = zware.Instance.init(allocator, store, module.*);
+    instance.instantiate() catch {
+        return error.WasmInstantiateError;
+    };
+
+    // 6. WasmModule 構造体を作成
     const wm = try allocator.create(WasmModule);
     const path_copy = try allocator.dupe(u8, path);
     wm.* = .{

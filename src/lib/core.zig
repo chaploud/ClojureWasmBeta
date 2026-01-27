@@ -10060,13 +10060,46 @@ pub fn lineSeqFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value 
 // Phase LAST: Wasm 連携
 // ============================================================
 
+/// PersistentMap からキーワード名で値を検索
+fn lookupKeywordInMap(map: *const value_mod.PersistentMap, name: []const u8) ?Value {
+    const entries = map.entries;
+    var idx: usize = 0;
+    while (idx + 1 < entries.len) : (idx += 2) {
+        const key = entries[idx];
+        const key_name: []const u8 = switch (key) {
+            .keyword => |kw| kw.name,
+            else => continue,
+        };
+        if (std.mem.eql(u8, key_name, name)) {
+            return entries[idx + 1];
+        }
+    }
+    return null;
+}
+
 /// wasm/load-module: .wasm ファイルをロードして WasmModule を返す
 fn wasmLoadModule(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len != 1) return error.ArityError;
+    if (args.len < 1 or args.len > 2) return error.ArityError;
     const path = switch (args[0]) {
         .string => |s| s.data,
         else => return error.TypeError,
     };
+    // 第2引数: オプションのインポートマップ {:imports {"env" {"func" clj-fn}}}
+    if (args.len == 2) {
+        const opts = args[1];
+        const opts_map = switch (opts) {
+            .map => |m| m,
+            else => return error.TypeError,
+        };
+        // :imports キーを検索
+        const imports_val = lookupKeywordInMap(opts_map, "imports");
+        if (imports_val) |imp| {
+            const wm = wasm_loader.loadModuleWithImports(allocator, path, imp) catch {
+                return error.WasmLoadError;
+            };
+            return Value{ .wasm_module = wm };
+        }
+    }
     const wm = wasm_loader.loadModule(allocator, path) catch {
         return error.WasmLoadError;
     };
