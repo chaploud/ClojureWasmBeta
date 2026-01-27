@@ -121,57 +121,37 @@ src/
 | 8.0      | VM基盤 (Bytecode, Compiler, VM, --compare)                                                                                |
 | 8.1-8.20 | VM機能拡充（クロージャ、HOF、シーケンス、マクロ、例外、Atom、文字列、マルチメソッド、プロトコル、letfn、動的リテラル 等） |
 | 9-9.2    | LazySeq — 遅延シーケンス基盤、遅延 map/filter/concat、遅延ジェネレータ                                                    |
-| 11       | PURE バッチ — 述語(23)+コレクション/ユーティリティ(17)+ビット演算/HOF(17) = +57関数                                       |
+| 11-18b   | PURE+DESIGN — 組み込み関数 (delay/volatile/reduced/transient/transduce/atom拡張/var操作/階層/promise等)                   |
+| 19a-19c  | struct/eval/read-string/sorted/dynamic-vars/NS操作/Reader/定義マクロ                                                      |
+| 20       | FINAL — binding/chunk/regex/IO/NS/defrecord/deftype/動的Var                                                               |
+| 21       | GC — Mark-Sweep at Expression Boundary                                                                                    |
+| 22       | 正規表現エンジン (フルスクラッチ Zig 実装)                                                                                |
+| 23       | 動的バインディング (本格実装)                                                                                             |
+| 24       | 名前空間 (本格実装)                                                                                                       |
+| 25       | REPL (対話型シェル)                                                                                                       |
+| 26       | Reader Conditionals + 外部ライブラリ統合テスト (medley v1.4.0)                                                            |
+| T1-T4    | テストフレームワーク + sci テストスイート移植 (678 pass)                                                                   |
 
 > 詳細な完了フェーズ履歴: `.claude/tracking/memo.md`
 
 ### 今後のフェーズ
 
-残り 243 todo を 4 層（PURE / DESIGN / SUBSYSTEM / JVM_ADAPT）に分類し、
-設計不要の PURE → 新型が要る DESIGN → 新サブシステムの SUBSYSTEM の順で進める。
-GC は旧計画で Phase 10 だったが、ArenaAllocator でバッチ実行に問題がないため
-言語機能充実後（Phase 23）に延期。
+#### Phase Q: Wasm 前品質修正 (進行中)
 
-#### Phase 12: PURE 残り（~55 件）
+テスト移植 (Phase T4) で発見された問題を Wasm 連携前に全て解消する。
 
-既存基盤の組み合わせで実装可能。設計不要。
-
-- 述語: bytes?, class?, decimal?, ratio?, rational?, record? 等
-- HOF: juxt, memoize, trampoline
-- シーケンス: lazy-cat, tree-seq, partition-by, replicate
-- 算術: *', +', -', dec', inc'（オーバーフロー安全）
-- ユーティリティ: gensym, clojure-version, newline, printf, println-str
-- ハッシュ: hash-combine, hash-ordered-coll, hash-unordered-coll, mix-collection-hash
-- マルチメソッド拡張: get-method, methods, remove-method, remove-all-methods, prefer-method, prefers
-- 型変換: char, byte, short, long, float, num, find-keyword, parse-uuid, random-uuid, comparator
-
-#### Phase 13-18: DESIGN（~75 件）
-
-新しいデータ構造・パターンが要るが、サブシステムは不要。
-
-| Phase | 内容                                                                          |
-|-------|-------------------------------------------------------------------------------|
-| 13    | delay/force, volatile, transient                                              |
-| 14    | reduced/transduce 基盤（Reduced ラッパー型、completing, cat, eduction）       |
-| 15    | Atom 拡張・Var 操作・メタデータ（watch, validator, var-get/set, alter-meta!） |
-| 16    | defrecord・deftype・defstruct                                                 |
-| 17    | 階層システム（derive, ancestors, descendants, isa?）                          |
-| 18    | 動的束縛（binding, with-bindings）, sorted コレクション（赤黒木）, promise    |
-
-#### Phase 19-22: SUBSYSTEM（~100 件）
-
-新しいサブシステムの構築が必要。
-
-| Phase | 内容                                                                           |
-|-------|--------------------------------------------------------------------------------|
-| 19    | 正規表現（re-find, re-matches, re-seq 等）— Zig に標準なし、要検討             |
-| 20    | 名前空間システム（ns, require, use, refer, load 等）— マルチファイル対応       |
-| 21    | I/O（slurp, spit, read-line, *in*/*out*/*err*, with-open 等）                  |
-| 22    | Reader/Eval（read, read-string, eval, macroexpand 等）— セルフホスティング基盤 |
-
-#### Phase 23: GC
-
-ArenaAllocator でバッチ実行は問題なし。長時間 REPL 対応時に実装。
+| Sub   | 内容                                         | 複雑度 |
+|-------|----------------------------------------------|--------|
+| Q3    | Var システム修正 (def返値, #'var, var-set等)  | 低     |
+| Q4a   | VM reduced 対応                              | 低     |
+| Q2b   | fn-level recur 修正                          | 中     |
+| Q1a   | Special Form 正規化 — eager 7関数            | 高     |
+| Q1b   | Special Form 正規化 — lazy 5関数             | 高     |
+| Q2a   | Map/Set リテラルの関数内コンパイル修正       | 中     |
+| Q4b   | letfn 相互再帰修正                           | 中     |
+| Q1c   | 死コード削除 (12 Node/Opcode)                | 中     |
+| Q5    | with-out-str + 文字列表示                    | 高     |
+| Q6    | ドキュメント整備 + ベンチマーク基盤          | 低     |
 
 #### Phase LAST: Wasm 連携
 

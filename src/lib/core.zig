@@ -1589,7 +1589,15 @@ fn printValue(writer: anytype, val: Value) !void {
             }
         },
         .fn_proto => try writer.writeAll("#<fn-proto>"),
-        .var_val => try writer.writeAll("#<var>"),
+        .var_val => |vp| {
+            const v: *const var_mod.Var = @ptrCast(@alignCast(vp));
+            try writer.writeAll("#'");
+            if (v.ns_name.len > 0) {
+                try writer.writeAll(v.ns_name);
+                try writer.writeByte('/');
+            }
+            try writer.writeAll(v.sym.name);
+        },
         .atom => |a| {
             try writer.writeAll("#<atom ");
             try printValue(writer, a.value);
@@ -7104,7 +7112,7 @@ pub fn varGetFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
     return v.deref();
 }
 
-/// var-set : Var の root 値を設定
+/// var-set : スレッドバインディングの値を設定 (binding 内でのみ有効)
 /// (var-set var val) → val
 pub fn varSetFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
@@ -7113,7 +7121,7 @@ pub fn varSetFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
         .var_val => |vp| @as(*Var, @ptrCast(@alignCast(vp))),
         else => return error.TypeError,
     };
-    v.bindRoot(args[1]);
+    try var_mod.setThreadBinding(v, args[1]);
     return args[1];
 }
 
@@ -7129,7 +7137,7 @@ pub fn alterVarRootFn(allocator: std.mem.Allocator, args: []const Value) anyerro
     // (f current-val extra-args...)
     var call_args = std.ArrayList(Value).empty;
     defer call_args.deinit(allocator);
-    try call_args.append(allocator, v.deref());
+    try call_args.append(allocator, v.getRawRoot());
     for (args[2..]) |extra| {
         try call_args.append(allocator, extra);
     }

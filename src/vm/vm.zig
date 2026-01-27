@@ -809,6 +809,13 @@ pub const VM = struct {
                 }
                 try self.callValue(arg_count);
             },
+            .var_val => |vp| {
+                // Var を関数として呼び出し: (#'foo args...) → deref して再帰呼び出し
+                const v: *var_mod.Var = @ptrCast(@alignCast(vp));
+                const derefed = v.deref();
+                self.stack[fn_idx] = derefed;
+                try self.callValue(arg_count);
+            },
             else => return error.TypeError,
         }
     }
@@ -1092,6 +1099,12 @@ pub const VM = struct {
 
             // 結果を取得
             acc = self.pop();
+
+            // reduced チェック（早期終了）
+            if (acc == .reduced_val) {
+                acc = acc.reduced_val.value;
+                break;
+            }
         }
 
         // 結果をプッシュ
@@ -1189,8 +1202,8 @@ pub const VM = struct {
             v.setMacro(true);
         }
 
-        // nil を push（戻り値）
-        try self.push(value_mod.nil);
+        // Var を push（戻り値 — #'ns/name 形式）
+        try self.push(Value{ .var_val = @ptrCast(v) });
     }
 
     /// defmulti を実行

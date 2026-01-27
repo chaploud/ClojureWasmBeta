@@ -342,9 +342,30 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
                 fn_ctx = fn_ctx.withBindings(args) catch return error.OutOfMemory;
             }
 
-            // ボディを評価
+            // ボディを評価 (fn-level recur 対応)
             const body: *const Node = @ptrCast(@alignCast(arity.body));
-            break :blk run(body, &fn_ctx);
+            const param_count = arity.params.len;
+            const start_idx = fn_ctx.bindings.len - param_count;
+
+            // recur 用バッファを事前割り当て
+            const recur_buf = ctx.allocator.alloc(Value, param_count) catch return error.OutOfMemory;
+            fn_ctx.recur_buffer = recur_buf;
+
+            while (true) {
+                fn_ctx.clearRecur();
+                const result = try run(body, &fn_ctx);
+
+                if (fn_ctx.hasRecur()) {
+                    // recur の値でパラメータバインディングをインプレース更新
+                    const recur_vals = fn_ctx.recur_values.?.values;
+                    for (recur_vals, 0..) |val, i| {
+                        fn_ctx.bindings[start_idx + i] = val;
+                    }
+                    continue;
+                }
+
+                break :blk result;
+            }
         },
         .partial_fn => |p| blk: {
             // partial_fn: 部分適用された引数と新しい引数を結合
@@ -441,6 +462,11 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
                 },
                 else => not_found,
             };
+        },
+        .var_val => |vp| {
+            // Var を関数として呼び出し: (#'foo args...) → deref して再帰呼び出し
+            const v: *var_mod.Var = @ptrCast(@alignCast(vp));
+            return callWithArgs(v.deref(), args, ctx);
         },
         else => error.TypeError,
     };
@@ -580,9 +606,8 @@ fn runDef(node: *const node_mod.DefNode, ctx: *Context) EvalError!Value {
         v.dynamic = true;
     }
 
-    // Var を返す（#'var 形式）
-    // TODO: Var を Value に含める
-    return value_mod.nil;
+    // Var を返す（#'ns/name 形式）
+    return Value{ .var_val = @ptrCast(v) };
 }
 
 /// defmulti 評価

@@ -25,6 +25,7 @@ const Backend = clj.Backend;
 const Allocators = clj.Allocators;
 const core = clj.core;
 const engine_mod = clj.engine;
+const var_mod = clj.var_mod;
 
 /// CLI エラー
 const CliError = error{
@@ -330,7 +331,15 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
             }
         },
         .fn_proto => try writer.writeAll("#<fn-proto>"),
-        .var_val => try writer.writeAll("#<var>"),
+        .var_val => |vp| {
+            const v: *const var_mod.Var = @ptrCast(@alignCast(vp));
+            try writer.writeAll("#'");
+            if (v.ns_name.len > 0) {
+                try writer.writeAll(v.ns_name);
+                try writer.writeByte('/');
+            }
+            try writer.writeAll(v.sym.name);
+        },
         .atom => |a| {
             try writer.writeAll("#<atom ");
             try printValue(writer, a.value);

@@ -3512,18 +3512,35 @@ pub const Analyzer = struct {
 
     // ── Phase 8.19 マクロ ──
 
-    /// (defonce name expr) → (do (when (not (resolve 'name)) (def name expr)) (var-get name))
-    /// 簡易版: (def name expr) と同じ（二重定義を許容）
+    /// (defonce name expr) → (when-not (resolve (quote name)) (def name expr))
     fn expandDefonce(self: *Analyzer, items: []const Form) err.Error!Form {
-        // (defonce name expr) → (def name expr)
         if (items.len != 3) {
             return err.parseError(.invalid_arity, "defonce requires a name and an expression", .{});
         }
+
+        // (quote name)
+        const quote_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        quote_forms[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
+        quote_forms[1] = items[1]; // name
+
+        // (resolve (quote name))
+        const resolve_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        resolve_forms[0] = Form{ .symbol = form_mod.Symbol.init("resolve") };
+        resolve_forms[1] = Form{ .list = quote_forms };
+
+        // (def name expr)
         const def_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
         def_forms[0] = Form{ .symbol = form_mod.Symbol.init("def") };
         def_forms[1] = items[1]; // name
         def_forms[2] = items[2]; // expr
-        return Form{ .list = def_forms };
+
+        // (when-not (resolve (quote name)) (def name expr))
+        const when_not_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        when_not_forms[0] = Form{ .symbol = form_mod.Symbol.init("when-not") };
+        when_not_forms[1] = Form{ .list = resolve_forms };
+        when_not_forms[2] = Form{ .list = def_forms };
+
+        return Form{ .list = when_not_forms };
     }
 
     /// (defn- name ...) → (defn name ...)（private は未サポートなので defn と同等）

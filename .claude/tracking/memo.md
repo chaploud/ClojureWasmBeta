@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase T4 進行中 — sci テストスイート移植**
+**Phase Q 進行中 — Wasm 前品質修正**
 
 ### 完了フェーズ
 
@@ -61,7 +61,7 @@
 | T1    | Assert ベーステストランナー (基盤)                                                            |
 | T2    | sci 関数カバレッジ監査 + コアテスト (372/390 pass = 95%)                                      |
 | T3    | 最小 clojure.test 実装 (deftest/is/testing/run-tests)                                         |
-| T4    | sci テストスイート移植 (進行中)                                                               |
+| T4    | sci テストスイート移植                                                                        |
 
 ### 実装状況
 
@@ -75,7 +75,7 @@
 
 ### テスト全体結果
 
-**678 pass, 1 fail(意図的), 0 error** (total: 679)
+**691 pass, 1 fail(意図的), 0 error** (total: 692)
 
 ### sci テストスイート移植
 
@@ -126,25 +126,26 @@ deftest body 内 (= defn body 内) で使えない構文:
 
 ### 新規発見バグ一覧
 
-| バグ                               | 影響         | 回避策                         |
-|------------------------------------|--------------|--------------------------------|
-| map/set リテラル in macro body     | load-file 時 | hash-map/hash-set              |
-| fn-level recur returns nil         | defn+recur   | loop+recur を使用              |
-| vector-list equality broken        | = [1] '(1)   | 修正済み (eql で sequential 比較) |
-| map-as-fn 2-arity                  | ({:a 1} k d) | get with default               |
-| symbol-as-fn                       | ('a map)     | get                            |
-| defonce not preventing redef       | defonce      | スキップ                       |
-| letfn mutual recursion             | letfn f→g    | スキップ                       |
-| #'var as callable                  | (#'foo)      | スキップ                       |
-| (str (def x 1)) returns ""         | def-returns  | スキップ                       |
-| ^:const not respected              | const        | スキップ                       |
-| var-set no effect                  | var-set      | スキップ                       |
-| alter-var-root uses thread-local   | avr+binding  | スキップ                       |
-| with-local-vars not implemented    | wlv          | スキップ                       |
-| add-watch on var not implemented   | add-watch    | スキップ                       |
-| thread-bound? 1-arity only         | thread-bound | 1引数で使用                    |
-| defmacro inside defn → Undefined   | defmacro     | トップレベルで定義             |
-| with-out-str 未実装 (出力未キャプチャ) | io           | str(do body) に展開、空文字列  |
+| バグ                               | 影響         | 回避策                         | 修正Phase |
+|------------------------------------|--------------|--------------------------------|-----------|
+| map/set リテラル in macro body     | load-file 時 | hash-map/hash-set              | Q2a       |
+| fn-level recur returns nil         | defn+recur   | loop+recur を使用              | Q2b       |
+| vector-list equality broken        | = [1] '(1)   | 修正済み (eql で sequential 比較) | 済        |
+| map-as-fn 2-arity                  | ({:a 1} k d) | get with default               | —         |
+| symbol-as-fn                       | ('a map)     | get                            | —         |
+| defonce not preventing redef       | defonce      | スキップ                       | Q3e       |
+| letfn mutual recursion             | letfn f→g    | スキップ                       | Q4b       |
+| #'var as callable                  | (#'foo)      | スキップ                       | Q3b       |
+| (str (def x 1)) returns ""         | def-returns  | スキップ                       | Q3a       |
+| ^:const not respected              | const        | スキップ                       | —         |
+| var-set no effect                  | var-set      | スキップ                       | Q3c       |
+| alter-var-root uses thread-local   | avr+binding  | スキップ                       | Q3d       |
+| with-local-vars not implemented    | wlv          | スキップ                       | —         |
+| add-watch on var not implemented   | add-watch    | スキップ                       | —         |
+| thread-bound? 1-arity only         | thread-bound | 1引数で使用                    | —         |
+| defmacro inside defn → Undefined   | defmacro     | トップレベルで定義             | —         |
+| with-out-str 未実装 (出力未キャプチャ) | io           | str(do body) に展開、空文字列  | Q5        |
+| VM reduced 未対応                  | reduce early | TreeWalk のみ                  | Q4a       |
 
 ### 本セッションで実装した機能
 
@@ -171,11 +172,22 @@ deftest body 内 (= defn body 内) で使えない構文:
 
 ## ロードマップ
 
-### 次のフェーズ（品質向上・新機能）
+### 次のフェーズ (Phase Q → Phase LAST)
 
 ```
+Phase Q: Wasm 前品質修正 (進行中)
+  Q3  Var システム修正 (def返値, #'var呼出, var-set, alter-var-root, defonce)
+  Q4a VM reduced 対応
+  Q2b fn-level recur 修正
+  Q1a Special Form 正規化 (eager 7関数)
+  Q1b Special Form 正規化 (lazy 5関数)
+  Q2a Map/Set リテラルの関数内コンパイル調査・修正
+  Q4b letfn 相互再帰修正
+  Q1c 死コード削除 (12 Node/Opcode)
+  Q5  with-out-str + 文字列表示
+  Q6  ドキュメント整備 + ベンチマーク基盤
+
 Phase LAST: Wasm 連携
-  └ 言語機能充実後
   └ Component Model 対応、.wasm ロード・呼び出し、型マッピング
 ```
 

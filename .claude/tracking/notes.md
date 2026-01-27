@@ -99,7 +99,7 @@
 
 ## Atom
 
-- `swap!` は特殊形式（関数呼び出しが必要なため通常の BuiltinFn では不可）
+- `swap!` は特殊形式として実装されているが、Phase 13 以降の `call_fn` threadlocal パターンにより通常の BuiltinFn に移行可能 (vswap!/alter-var-root/trampoline と同パターン)。Phase Q1a で移行予定。
 - `atom`, `deref`, `reset!`, `atom?` は通常の組み込み関数
 
 ## VM: let-closure（修正済み）
@@ -285,6 +285,54 @@
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある
 - `swap!`, `reset!` 等を含む式は Write ツールでファイル経由で渡すか、`$(cat file)` で回避
+- **`!` 表示問題**: コード内にバグはない。bash の history expansion (`!` がスペース後に特殊文字として展開) が原因。ファイル経由で実行すれば正常動作する。
+
+## Special Form 正規化 (Phase Q1)
+
+### 移行パターン
+
+本家 Clojure で通常関数であるのに analyzer が特殊形式として扱っている 12 関数を、
+通常の builtin 関数に移行する。
+
+**現在のパイプライン** (各関数共通):
+```
+(map f coll)
+  → analyze.zig: analyzeList が "map" を検出 → analyzeMap2
+  → node.zig: MapNode { fn_arg, seq_arg }
+  → evaluator.zig: runMap → Transform(.map, f, source) → LazySeq
+  → emit.zig: emitMap → map_seq opcode
+  → vm.zig: executeMapSeq
+```
+
+**移行後のパイプライン**:
+```
+(map f coll)
+  → analyze.zig: analyzeList → 通常の関数呼び出し
+  → node.zig: CallNode (Var lookup → mapFn)
+  → evaluator.zig: callWithArgs → BuiltinFn → mapFn
+  → emit.zig: emitCall → call opcode
+  → vm.zig: executeCall → mapFn
+```
+
+### call_fn threadlocal パターン
+
+HOF (高階関数) を builtin として実装する場合、内部で Clojure 関数を呼び出す必要がある。
+`call_fn` threadlocal が Phase 13 以降で導入され、以下の関数が同パターンで動作:
+
+- `vswap!`: `(f @vol args...)` を call_fn で実行
+- `alter-var-root`: `(f root args...)` を call_fn で実行
+- `trampoline`: 戻り値が関数なら call_fn でループ呼び出し
+- `force`: delay の thunk を call_fn で呼び出し
+
+### 対象関数 (12)
+
+Eager (7): apply, partial, comp, reduce, sort-by, group-by, swap!
+Lazy (5): map, filter, take-while, drop-while, map-indexed
+
+### TransformKind 拡張
+
+map, filter, mapcat に加えて take_while, drop_while, map_indexed を追加。
+Transform に index フィールド追加 (map-indexed 用)。
 
 ## REPL (Phase 25)
 
