@@ -447,6 +447,16 @@ pub const Reduced = struct {
     }
 };
 
+/// Promise（1回だけ deliver 可能なボックス）
+pub const Promise = struct {
+    value: ?Value,
+    delivered: bool,
+
+    pub fn init() Promise {
+        return .{ .value = null, .delivered = false };
+    }
+};
+
 /// Transient（一時的ミュータブルコレクション）
 /// transient で永続コレクションからミュータブルコピーを作成し、
 /// conj!/assoc!/dissoc!/disj!/pop! でインプレース操作、
@@ -638,6 +648,9 @@ pub const Value = union(enum) {
     // === Phase 14: transient ===
     transient: *Transient, // 一時的ミュータブルコレクション
 
+    // === Phase 18: promise ===
+    promise: *Promise, // 1回だけ deliver 可能
+
     // === ヘルパー関数 ===
 
     /// nil かどうか
@@ -725,6 +738,7 @@ pub const Value = union(enum) {
             .volatile_val => |a| a == other.volatile_val, // 参照等価
             .reduced_val => |a| a.value.eql(other.reduced_val.value), // 内部値で比較
             .transient => |a| a == other.transient, // 参照等価
+            .promise => |a| a == other.promise, // 参照等価
         };
     }
 
@@ -757,6 +771,7 @@ pub const Value = union(enum) {
             .volatile_val => "volatile",
             .reduced_val => "reduced",
             .transient => "transient",
+            .promise => "promise",
         };
     }
 
@@ -787,6 +802,7 @@ pub const Value = union(enum) {
             .volatile_val => "volatile",
             .reduced_val => "reduced",
             .transient => "transient",
+            .promise => "promise",
         };
     }
 
@@ -941,6 +957,13 @@ pub const Value = union(enum) {
                 };
                 try writer.print("#<transient-{s}>", .{kind_str});
             },
+            .promise => |p| {
+                if (p.delivered) {
+                    try writer.writeAll("#<promise (delivered)>");
+                } else {
+                    try writer.writeAll("#<promise (pending)>");
+                }
+            },
         }
     }
 
@@ -1056,8 +1079,9 @@ pub const Value = union(enum) {
                 new_r.* = .{ .value = try r.value.deepClone(allocator) };
                 break :blk .{ .reduced_val = new_r };
             },
-            // Transient は参照をそのまま保持（ミュータブルなので deepClone は意味がない）
+            // Transient/Promise は参照をそのまま保持（ミュータブルなので deepClone は意味がない）
             .transient => self,
+            .promise => self,
         };
     }
 

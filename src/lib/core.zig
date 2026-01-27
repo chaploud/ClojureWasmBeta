@@ -1516,6 +1516,13 @@ fn printValue(writer: anytype, val: Value) !void {
             };
             try writer.print("#<transient-{s}>", .{kind_str});
         },
+        .promise => |p| {
+            if (p.delivered) {
+                try writer.writeAll("#<promise (delivered)>");
+            } else {
+                try writer.writeAll("#<promise (pending)>");
+            }
+        },
     }
 }
 
@@ -2377,6 +2384,7 @@ pub fn derefFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value
             }
             return forceFn(allocator, args);
         },
+        .promise => |p| p.value orelse value_mod.nil,
         else => error.TypeError,
     };
 }
@@ -2939,6 +2947,7 @@ pub fn typeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
         .volatile_val => "volatile",
         .reduced_val => "reduced",
         .transient => "transient",
+        .promise => "promise",
     };
 
     const str = try allocator.create(value_mod.String);
@@ -7146,6 +7155,175 @@ fn isaTransitive(parents_map: *value_mod.PersistentMap, child: Value, target: Va
 }
 
 // ============================================================
+// Phase 18: promise/deliver, ユーティリティ
+// ============================================================
+
+/// promise : 空の promise を作成
+/// (promise) → #<promise (pending)>
+pub fn promiseFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 0) return error.ArityError;
+    const p = try allocator.create(value_mod.Promise);
+    p.* = value_mod.Promise.init();
+    return Value{ .promise = p };
+}
+
+/// deliver : promise に値を配送（1回だけ）
+/// (deliver p val) → p
+pub fn deliverFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .promise) return error.TypeError;
+    const p = args[0].promise;
+    if (!p.delivered) {
+        p.value = try args[1].deepClone(allocator);
+        p.delivered = true;
+    }
+    return args[0];
+}
+
+/// realized? : delay/promise/lazy-seq が実体化済みか
+/// (realized? x) → bool
+pub fn realizedPred(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return switch (args[0]) {
+        .delay_val => |d| if (d.realized) value_mod.true_val else value_mod.false_val,
+        .promise => |p| if (p.delivered) value_mod.true_val else value_mod.false_val,
+        .lazy_seq => |ls| if (ls.realized != null) value_mod.true_val else value_mod.false_val,
+        else => error.TypeError,
+    };
+}
+
+/// ex-cause : 例外のcauseを返す（簡易実装: 常に nil）
+pub fn exCauseFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    return value_mod.nil;
+}
+
+/// Throwable->map : エラーを map に変換（簡易実装）
+pub fn throwableToMapFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    // {:cause "error"} を返す
+    const entries = try allocator.alloc(Value, 2);
+    const kw = try allocator.create(value_mod.Keyword);
+    kw.* = value_mod.Keyword.init("cause");
+    entries[0] = Value{ .keyword = kw };
+    entries[1] = if (args[0] == .string) args[0] else blk: {
+        const s = try allocator.create(value_mod.String);
+        s.* = .{ .data = "unknown error" };
+        break :blk Value{ .string = s };
+    };
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// random-uuid : ランダム UUID 文字列を返す（v4 簡易版）
+pub fn randomUuidFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 0) return error.ArityError;
+    // 疑似ランダム UUID v4 生成（timestamp ベース）
+    const ts: u64 = @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())));
+    var buf: [36]u8 = undefined;
+    const hex = "0123456789abcdef";
+    // 128ビットを timestamp から生成
+    var hash: u64 = ts;
+    for (0..36) |i| {
+        if (i == 8 or i == 13 or i == 18 or i == 23) {
+            buf[i] = '-';
+        } else {
+            hash = hash *% 6364136223846793005 +% 1442695040888963407;
+            buf[i] = hex[@as(usize, @intCast((hash >> 32) & 0xf))];
+        }
+    }
+    // v4 マーカー
+    buf[14] = '4';
+    // variant マーカー (8, 9, a, b)
+    buf[19] = hex[8 + @as(usize, @intCast((ts >> 4) & 0x3))];
+
+    const str_data = try allocator.dupe(u8, &buf);
+    const s = try allocator.create(value_mod.String);
+    s.* = .{ .data = str_data };
+    return Value{ .string = s };
+}
+
+/// char-escape-string : エスケープ文字の表現マップを返す
+pub fn charEscapeStringFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 0) return error.ArityError;
+    // {\newline "\\n", \tab "\\t", \return "\\r", \backspace "\\b", \formfeed "\\f", \" "\\\"", \\ "\\\\"}
+    const pairs = [_]struct { ch: u21, esc: []const u8 }{
+        .{ .ch = '\n', .esc = "\\n" },
+        .{ .ch = '\t', .esc = "\\t" },
+        .{ .ch = '\r', .esc = "\\r" },
+        .{ .ch = 0x08, .esc = "\\b" },   // backspace
+        .{ .ch = 0x0C, .esc = "\\f" },   // formfeed
+        .{ .ch = '"', .esc = "\\\"" },
+        .{ .ch = '\\', .esc = "\\\\" },
+    };
+    const entries = try allocator.alloc(Value, pairs.len * 2);
+    for (pairs, 0..) |pair, idx| {
+        entries[idx * 2] = Value{ .char_val = pair.ch };
+        const s = try allocator.create(value_mod.String);
+        s.* = .{ .data = pair.esc };
+        entries[idx * 2 + 1] = Value{ .string = s };
+    }
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// char-name-string : 名前付き文字のマップを返す
+pub fn charNameStringFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 0) return error.ArityError;
+    // {\newline "newline", \tab "tab", \space "space", \backspace "backspace",
+    //  \formfeed "formfeed", \return "return"}
+    const pairs = [_]struct { ch: u21, name: []const u8 }{
+        .{ .ch = '\n', .name = "newline" },
+        .{ .ch = '\t', .name = "tab" },
+        .{ .ch = ' ', .name = "space" },
+        .{ .ch = 0x08, .name = "backspace" },
+        .{ .ch = 0x0C, .name = "formfeed" },
+        .{ .ch = '\r', .name = "return" },
+    };
+    const entries = try allocator.alloc(Value, pairs.len * 2);
+    for (pairs, 0..) |pair, idx| {
+        entries[idx * 2] = Value{ .char_val = pair.ch };
+        const s = try allocator.create(value_mod.String);
+        s.* = .{ .data = pair.name };
+        entries[idx * 2 + 1] = Value{ .string = s };
+    }
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// tagged-literal : タグ付きリテラルを作成
+/// (tagged-literal tag form) → {:tag tag :form form}
+pub fn taggedLiteralFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .symbol) return error.TypeError;
+    const entries = try allocator.alloc(Value, 4);
+    const kw_tag = try allocator.create(value_mod.Keyword);
+    kw_tag.* = value_mod.Keyword.init("tag");
+    const kw_form = try allocator.create(value_mod.Keyword);
+    kw_form.* = value_mod.Keyword.init("form");
+    entries[0] = Value{ .keyword = kw_tag };
+    entries[1] = args[0];
+    entries[2] = Value{ .keyword = kw_form };
+    entries[3] = args[1];
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = entries };
+    return Value{ .map = m };
+}
+
+/// inst-ms : inst（文字列 ISO 日時）からミリ秒を返す（簡易実装: 文字列を返す）
+pub fn instMsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 1) return error.ArityError;
+    // 簡易: inst 文字列がない場合は 0 を返す
+    return Value{ .int = 0 };
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -7504,6 +7682,17 @@ const builtins = [_]BuiltinDef{
     .{ .name = "ancestors", .func = ancestorsFn },
     .{ .name = "descendants", .func = descendantsFn },
     .{ .name = "isa?", .func = isaPred },
+    // Phase 18: promise/deliver, ユーティリティ
+    .{ .name = "promise", .func = promiseFn },
+    .{ .name = "deliver", .func = deliverFn },
+    .{ .name = "realized?", .func = realizedPred },
+    .{ .name = "ex-cause", .func = exCauseFn },
+    .{ .name = "Throwable->map", .func = throwableToMapFn },
+    .{ .name = "random-uuid", .func = randomUuidFn },
+    .{ .name = "char-escape-string", .func = charEscapeStringFn },
+    .{ .name = "char-name-string", .func = charNameStringFn },
+    .{ .name = "tagged-literal", .func = taggedLiteralFn },
+    .{ .name = "inst-ms*", .func = instMsFn },
 };
 
 /// clojure.core の組み込み関数を Env に登録

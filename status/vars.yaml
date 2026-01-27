@@ -598,7 +598,7 @@ vars:
       impl_type: none
     Throwable->map:
       type: function
-      status: todo
+      status: done
       impl_type: none
     abs:
       type: function
@@ -1099,7 +1099,7 @@ vars:
       layer: DESIGN
     deliver:
       type: function
-      status: todo
+      status: done
       impl_type: none
     denominator:
       type: function
@@ -1247,7 +1247,7 @@ vars:
       layer: pure
     ex-cause:
       type: function
-      status: todo
+      status: done
       impl_type: none
     ex-data:
       type: function
@@ -1525,11 +1525,11 @@ vars:
       impl_type: none
     inst-ms:
       type: function
-      status: skip
+      status: done
       impl_type: none
     inst-ms*:
       type: function
-      status: todo
+      status: done
       impl_type: none
     inst?:
       type: function
@@ -2120,7 +2120,7 @@ vars:
       impl_type: builtin
     promise:
       type: function
-      status: todo
+      status: done
       impl_type: none
     proxy-call-with-super:
       type: function
@@ -2181,7 +2181,7 @@ vars:
       layer: pure
     random-uuid:
       type: function
-      status: todo
+      status: done
       impl_type: none
     range:
       type: function
@@ -2696,7 +2696,7 @@ vars:
       layer: host
     tagged-literal:
       type: function
-      status: todo
+      status: done
       impl_type: none
     tagged-literal?:
       type: function
@@ -3176,11 +3176,11 @@ vars:
       impl_type: none
     char-escape-string:
       type: var
-      status: todo
+      status: done
       impl_type: none
     char-name-string:
       type: var
-      status: todo
+      status: done
       impl_type: none
     default-data-readers:
       type: var

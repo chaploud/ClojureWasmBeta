@@ -356,6 +356,13 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
             };
             try writer.print("#<transient-{s}>", .{kind_str});
         },
+        .promise => |p| {
+            if (p.delivered) {
+                try writer.writeAll("#<promise (delivered)>");
+            } else {
+                try writer.writeAll("#<promise (pending)>");
+            }
+        },
     }
 }
 

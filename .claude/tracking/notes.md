@@ -245,6 +245,17 @@
 - **buildHierarchy**: parents/ancestors/descendants の3つの `*PersistentMap` からマップ構築
   - ancestors/descendants は動的計算のためダミー空マップで可
 
+## Phase 18: promise/deliver + ユーティリティ
+
+- **Promise 型**: value.zig に `Promise` struct 追加、`promise: *Promise` を Value union に追加
+  - deliver で deepClone して persistent メモリに格納
+  - deref で `p.value orelse nil` を返す（ブロッキングなし）
+  - realized? は `p.delivered` フラグで判定
+- **random-uuid**: timestamp ベースの LCG で v4 UUID を生成（セキュリティ用途には非推奨）
+- **char-escape-string / char-name-string**: char_val キーのマップを返す（定数テーブル）
+- **--compare MISMATCH**: Promise/Atom 等の参照型は TreeWalk と VM で別オブジェクトになるため
+  `deliver` の返値で MISMATCH（表示は同じ）。既知の制限。
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

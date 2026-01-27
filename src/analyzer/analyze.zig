@@ -4054,7 +4054,7 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .vector = forms };
             },
-            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq, .delay_val, .volatile_val, .reduced_val, .transient => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq, .delay_val, .volatile_val, .reduced_val, .transient, .promise => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

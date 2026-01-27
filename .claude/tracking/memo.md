@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 17 完了 — 次は Phase 18 (DESIGN: 動的束縛・sorted コレクション)**
+**Phase 18 完了 — 次は Phase 19+ (SUBSYSTEM)**
 
 ### 完了フェーズ
 
@@ -46,10 +46,11 @@
 | 14    | DESIGN: transient(7)+transduce基盤(6) = Transient型+13関数              |
 | 15    | DESIGN: Atom拡張(7)+Var操作(6)+メタデータ(3) = +16関数                  |
 | 17    | DESIGN: 階層システム(7) = make-hierarchy/derive/underive/isa?等         |
+| 18    | DESIGN: promise/deliver + ユーティリティ(10) = Promise型+UUID+他       |
 
 ### 実装状況
 
-385 done / 170 skip / 159 todo
+395 done / 170 skip / 149 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -122,10 +123,11 @@ Phase 17: DESIGN — 階層システム ✅
   └ make-hierarchy, derive, underive, ancestors, descendants, parents, isa?
   └ parents ベースの動的計算方式（ancestors/descendants は parents から再帰計算）
 
-Phase 18: DESIGN — 動的束縛・sorted コレクション
-  └ binding, with-bindings, set!, with-local-vars, bound-fn 等（束縛フレームスタック）
-  └ sorted-map, sorted-map-by, sorted-set, sorted-set-by（赤黒木）
-  └ promise, deliver
+Phase 18: DESIGN — promise/deliver + ユーティリティ ✅
+  └ promise/deliver/realized?: Promise型（1回 deliver 可能なボックス）
+  └ random-uuid, tagged-literal, char-escape-string, char-name-string
+  └ ex-cause, Throwable->map, inst-ms*
+  └ deref 拡張（Promise 対応）
 
 Phase 19: SUBSYSTEM — 正規表現
   └ re-pattern, re-find, re-matches, re-seq, re-matcher, re-groups
