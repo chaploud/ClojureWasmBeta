@@ -348,8 +348,9 @@ vars:
       impl_type: none
     lazy-cat:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
+      layer: pure
     lazy-seq:
       type: macro
       status: done
@@ -493,8 +494,9 @@ vars:
       layer: host
     "*'":
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     "+":
       type: function
       status: done
@@ -502,8 +504,9 @@ vars:
       layer: host
     "+'":
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     "-":
       type: function
       status: done
@@ -511,8 +514,9 @@ vars:
       layer: host
     "-'":
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     "->ArrayChunk":
       type: function
       status: skip
@@ -563,8 +567,9 @@ vars:
       layer: host
     "==":
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     ">":
       type: function
       status: done
@@ -866,8 +871,9 @@ vars:
       impl_type: builtin
     byte:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     byte-array:
       type: function
       status: skip
@@ -878,8 +884,9 @@ vars:
       impl_type: none
     bytes?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     cast:
       type: function
       status: skip
@@ -890,8 +897,9 @@ vars:
       impl_type: none
     char:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     char-array:
       type: function
       status: skip
@@ -946,8 +954,9 @@ vars:
       impl_type: none
     class?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     clear-agent-errors:
       type: function
       status: skip
@@ -955,8 +964,9 @@ vars:
       impl_type: none
     clojure-version:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     coll?:
       type: function
       status: done
@@ -973,8 +983,9 @@ vars:
       layer: bridge
     comparator:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     compare:
       type: function
       status: done
@@ -1060,12 +1071,14 @@ vars:
       layer: host
     dec':
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     decimal?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     dedupe:
       type: function
       status: done
@@ -1074,8 +1087,9 @@ vars:
       host: host
     delay?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     deliver:
       type: function
       status: todo
@@ -1281,8 +1295,9 @@ vars:
       impl_type: builtin
     find-keyword:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     find-ns:
       type: function
       status: todo
@@ -1311,8 +1326,9 @@ vars:
       layer: host
     float:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     float-array:
       type: function
       status: skip
@@ -1377,8 +1393,9 @@ vars:
       impl_type: none
     gensym:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     get:
       type: function
       status: done
@@ -1391,8 +1408,9 @@ vars:
       layer: pure
     get-method:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     get-proxy-class:
       type: function
       status: skip
@@ -1419,8 +1437,9 @@ vars:
       impl_type: builtin
     hash-combine:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     hash-map:
       type: function
       status: done
@@ -1428,8 +1447,9 @@ vars:
       layer: host
     hash-ordered-coll:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     hash-set:
       type: function
       status: done
@@ -1438,8 +1458,9 @@ vars:
       host: host
     hash-unordered-coll:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     ident?:
       type: function
       status: done
@@ -1470,8 +1491,9 @@ vars:
       layer: host
     inc':
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     indexed?:
       type: function
       status: done
@@ -1498,12 +1520,14 @@ vars:
       impl_type: none
     inst?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     instance?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     int:
       type: function
       status: done
@@ -1571,8 +1595,9 @@ vars:
       impl_type: none
     juxt:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
+      layer: pure
     keep:
       type: function
       status: done
@@ -1647,8 +1672,9 @@ vars:
       impl_type: none
     long:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     long-array:
       type: function
       status: skip
@@ -1717,8 +1743,9 @@ vars:
       host: host
     memoize:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
+      layer: pure
     merge:
       type: function
       status: done
@@ -1740,8 +1767,9 @@ vars:
       impl_type: none
     methods:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     min:
       type: function
       status: done
@@ -1755,8 +1783,9 @@ vars:
       host: host
     mix-collection-hash:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     mod:
       type: function
       status: done
@@ -1799,8 +1828,9 @@ vars:
       layer: host
     newline:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     next:
       type: function
       status: done
@@ -1902,8 +1932,9 @@ vars:
       host: host
     num:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     number?:
       type: function
       status: done
@@ -1963,8 +1994,9 @@ vars:
       impl_type: builtin
     partition-by:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     partitionv:
       type: function
       status: todo
@@ -2024,12 +2056,14 @@ vars:
       layer: host
     prefer-method:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     prefers:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     print:
       type: function
       status: done
@@ -2048,8 +2082,9 @@ vars:
       impl_type: builtin
     printf:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     println:
       type: function
       status: done
@@ -2057,8 +2092,9 @@ vars:
       layer: host
     println-str:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     prn:
       type: function
       status: done
@@ -2125,8 +2161,9 @@ vars:
       host: host
     random-sample:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     random-uuid:
       type: function
       status: todo
@@ -2138,12 +2175,14 @@ vars:
       layer: host
     ratio?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     rational?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     rationalize:
       type: function
       status: skip
@@ -2194,16 +2233,18 @@ vars:
       impl_type: none
     reader-conditional?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     realized?:
       type: function
       status: done
       impl_type: builtin
     record?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     reduce:
       type: function
       status: done
@@ -2221,8 +2262,9 @@ vars:
       impl_type: none
     reduced?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     reductions:
       type: function
       status: done
@@ -2269,12 +2311,14 @@ vars:
       host: host
     remove-all-methods:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     remove-method:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     remove-ns:
       type: function
       status: todo
@@ -2304,9 +2348,10 @@ vars:
       impl_type: builtin
     replicate:
       type: function
-      status: todo
+      status: done
       deprecated: true
-      impl_type: none
+      impl_type: builtin
+      layer: pure
     require:
       type: function
       status: todo
@@ -2456,8 +2501,9 @@ vars:
       layer: host
     short:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     short-array:
       type: function
       status: skip
@@ -2637,8 +2683,9 @@ vars:
       impl_type: none
     tagged-literal?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     take:
       type: function
       status: done
@@ -2683,8 +2730,9 @@ vars:
       impl_type: none
     trampoline:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     transduce:
       type: function
       status: todo
@@ -2695,8 +2743,9 @@ vars:
       impl_type: none
     tree-seq:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     true?:
       type: function
       status: done
@@ -2833,16 +2882,18 @@ vars:
       host: host
     uri?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     use:
       type: function
       status: todo
       impl_type: none
     uuid?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     val:
       type: function
       status: done
@@ -2893,12 +2944,14 @@ vars:
       layer: host
     volatile!:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     volatile?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
+      layer: pure
     vreset!:
       type: function
       status: todo

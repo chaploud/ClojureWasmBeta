@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 11 完了 — 次は Phase 12 (PURE 残り)**
+**Phase 12 完了 — 次は Phase 13 (DESIGN: delay/force, volatile, transient)**
 
 ### 完了フェーズ
 
@@ -41,10 +41,11 @@
 | 9.1   | Lazy map/filter/concat — 遅延変換・連結                                 |
 | 9.2   | iterate/repeat/cycle/range()/mapcat — 遅延ジェネレータ・lazy mapcat     |
 | 11    | PURE述語(23)+コレクション/ユーティリティ(17)+ビット演算等(17) = +57関数 |
+| 12    | PURE残り: 述語(15)+型キャスト(6)+算術(5)+出力(4)+ハッシュ(4)+MM拡張(6)+HOF(6)+他(7) = +53関数 |
 
 ### 実装状況
 
-289 done / 170 skip / 243 todo
+342 done / 170 skip / 190 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 

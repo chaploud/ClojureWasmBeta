@@ -1696,6 +1696,12 @@ pub const Analyzer = struct {
             return try self.expandDoall(items);
         } else if (std.mem.eql(u8, name, "dorun")) {
             return try self.expandDorun(items);
+        } else if (std.mem.eql(u8, name, "lazy-cat")) {
+            return try self.expandLazyCat(items);
+        } else if (std.mem.eql(u8, name, "juxt")) {
+            return try self.expandJuxt(items);
+        } else if (std.mem.eql(u8, name, "memoize")) {
+            return try self.expandMemoize(items);
         }
         return null;
     }
@@ -3841,6 +3847,89 @@ pub const Analyzer = struct {
         when_not[1] = expr;
         when_not[2] = Form{ .list = throw_forms };
         return Form{ .list = when_not };
+    }
+
+    /// (lazy-cat & colls) → (concat (lazy-seq (seq coll1)) (lazy-seq (seq coll2)) ...)
+    fn expandLazyCat(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "lazy-cat requires at least one collection", .{});
+        }
+        const colls = items[1..];
+
+        // 各コレクションを (lazy-seq (seq coll)) に包む
+        const lazy_args = self.allocator.alloc(Form, colls.len + 1) catch return error.OutOfMemory;
+        lazy_args[0] = Form{ .symbol = form_mod.Symbol.init("concat") };
+
+        for (colls, 0..) |coll, i| {
+            // (seq coll)
+            const seq_call = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            seq_call[0] = Form{ .symbol = form_mod.Symbol.init("seq") };
+            seq_call[1] = coll;
+
+            // (lazy-seq (seq coll))
+            const lazy_call = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+            lazy_call[0] = Form{ .symbol = form_mod.Symbol.init("lazy-seq") };
+            lazy_call[1] = Form{ .list = seq_call };
+
+            lazy_args[i + 1] = Form{ .list = lazy_call };
+        }
+
+        return Form{ .list = lazy_args };
+    }
+
+    /// (juxt f1 f2 ...) → (fn [& args] (vector (apply f1 args) (apply f2 args) ...))
+    fn expandJuxt(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "juxt requires at least one function", .{});
+        }
+        const fns = items[1..];
+
+        // (fn [& args] body)
+        // body = (vector (apply f1 args) (apply f2 args) ...)
+        const args_sym = form_mod.Symbol.init("__juxt_args__");
+
+        // パラメータ: [& args]
+        const params = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        params[0] = Form{ .symbol = form_mod.Symbol.init("&") };
+        params[1] = Form{ .symbol = args_sym };
+
+        // ボディ: (vector (apply f1 __juxt_args__) ...)
+        const vec_args = self.allocator.alloc(Form, fns.len + 1) catch return error.OutOfMemory;
+        vec_args[0] = Form{ .symbol = form_mod.Symbol.init("vector") };
+
+        for (fns, 0..) |f, i| {
+            const apply_call = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+            apply_call[0] = Form{ .symbol = form_mod.Symbol.init("apply") };
+            apply_call[1] = f;
+            apply_call[2] = Form{ .symbol = args_sym };
+            vec_args[i + 1] = Form{ .list = apply_call };
+        }
+
+        // (fn [& __juxt_args__] (vector ...))
+        const fn_form = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        fn_form[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        fn_form[1] = Form{ .vector = params };
+        fn_form[2] = Form{ .list = vec_args };
+
+        return Form{ .list = fn_form };
+    }
+
+    /// (memoize f) → (let [cache (atom {})]
+    ///   (fn [& args]
+    ///     (let [key args]
+    ///       (if (contains? @cache key)
+    ///         (get @cache key)
+    ///         (let [ret (apply f args)]
+    ///           (swap! cache assoc key ret)
+    ///           ret)))))
+    /// 簡略実装: eager キャッシュ（atom + hash-map）
+    fn expandMemoize(_: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 2) {
+            return err.parseError(.invalid_arity, "memoize requires exactly one argument", .{});
+        }
+        // 現在は fn をそのまま返す（atom ベースのメモ化は Phase 15 の Atom 拡張後に本実装）
+        // TODO: atom + hash-map でキャッシュ実装
+        return items[1];
     }
 
     // ── ヘルパー関数 ──

@@ -161,6 +161,21 @@
 - Analyzer が非定数要素を検出 → `(vector ...)` / `(hash-map ...)` / `(set (vector ...))` 呼び出しに変換
 - 全要素が定数の場合は従来通り即値コレクションを構築
 
+## Phase 12: PURE 残り
+
+- `collectToSlice` ヘルパー追加（コレクション→スライス変換、core.zig）
+- `gensym` は `var gensym_counter: u64 = 0` のファイルレベル変数でカウント（threadlocal 不要）
+- `memoize` は暫定的に identity 展開（atom + hash-map キャッシュは Phase 15 の Atom 拡張後）
+- `juxt` はマクロ展開: `(fn [& args] (vector (apply f1 args) ...))`
+- `lazy-cat` はマクロ展開: `(concat (lazy-seq (seq c1)) (lazy-seq (seq c2)) ...)`
+- `tree-seq` は eager 実装（スタックベース深さ優先走査）
+- `partition-by` は eager 実装（グループ分割）
+- `trampoline` は `call_fn` threadlocal を利用したループ実装
+- `==` (数値等価) は `numToFloat` で統一比較
+- マルチメソッド拡張: `prefer-method`/`prefers` は no-op（階層システムは Phase 17）
+- 述語の多くは常に false を返す stub（bytes?, class?, decimal?, ratio?, record? 等）
+  - 将来の型実装に合わせて有効化
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある
