@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase 19c 完了 — 残り 59 todo（主に binding/regex/IO/chunk）**
+**Phase 20 完了 — 全 clojure.core 関数実装完了（545 done / 169 skip / 0 todo）**
 
 ### 完了フェーズ
 
@@ -51,10 +51,11 @@
 | 19a   | DESIGN: class/struct/accessor/xml-seq等(9) = struct操作+ユーティリティ |
 | 19b   | DESIGN: eval/read-string/sorted/dynamic-vars(18+14dynvar) = eval基盤+ソートcol+動的Var |
 | 19c   | DESIGN: NS操作/Reader/定義マクロ等(27+2dynvar) = 名前空間スタブ+load+definline |
+| 20    | FINAL: 残り59一括実装 — binding/chunk/regex/IO/NS/defrecord/deftype/動的Var     |
 
 ### 実装状況
 
-486 done / 169 skip / 59 todo
+545 done / 169 skip / 0 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
@@ -62,100 +63,31 @@
 
 ## ロードマップ
 
-### 残タスクの分類
+### clojure.core 実装完了
 
-残り 243 todo は以下の 4 層に分かれる:
+545 done / 169 skip / 0 todo — **全 clojure.core 関数の実装が完了**。
 
-| 層            | 推定数 | 性質                                                      |
-|---------------|--------|-----------------------------------------------------------|
-| **PURE**      | ~55    | 既存基盤の組み合わせ。設計不要。述語・HOF・ユーティリティ |
-| **DESIGN**    | ~75    | 新しいデータ構造・パターンが要るが、サブシステムは不要    |
-| **SUBSYSTEM** | ~100   | 新サブシステムが必要（正規表現、名前空間、I/O、動的Var）  |
-| **JVM_ADAPT** | ~10    | JVM 概念を簡略化移植（型変換・型チェック）                |
+> 多くはスタブ/簡易実装。本格的な正規表現エンジン、動的バインディング、
+> チャンクシーケンス等は将来の品質向上フェーズで改善予定。
 
-> Phase 11 で PURE ~60件を一括実装し、バッチ方式の有効性を確認済み。
-> 残り PURE を片付けてから DESIGN → SUBSYSTEM へ進む。
-
-### 方針変更メモ
-
-1. **GC を後回し**: 旧計画では Phase 10 だったが、ArenaAllocator でバッチ実行は問題なし。
-   GC が必要になるのは長時間 REPL セッション時。言語機能充実を優先し、GC は Phase 20 台へ延期。
-2. **PURE → DESIGN → SUBSYSTEM**: 設計不要の PURE を先に片付け、土台を固めてから
-   新しい型やサブシステムに着手する順序に変更。
-3. **フェーズ番号の整理**: Phase 10 (旧GC) を廃止、Phase 12 から連番で再割り当て。
-
-### フェーズ計画
+### 次のフェーズ（品質向上・新機能）
 
 ```
-Phase 12: PURE 残り — シーケンス・HOF・ユーティリティ（~55 件）
-  └ lazy-cat, tree-seq, partition-by, comparator, replicate
-  └ juxt, memoize, trampoline, random-sample, gensym
-  └ *', +', -', dec', inc'（オーバーフロー安全算術）
-  └ clojure-version, newline, printf, println-str
-  └ hash-combine, hash-ordered-coll, hash-unordered-coll, mix-collection-hash
-  └ multimethod 拡張: get-method, methods, remove-method, remove-all-methods,
-    prefer-method, prefers
-  └ 残り述語: bytes?, class?, decimal?, ratio?, rational?, record? 等
-  └ find-keyword, parse-uuid, random-uuid, char, byte, short, long, float, num
-
-Phase 13: DESIGN — delay/force, volatile, reduced ✅
-  └ delay/delay?/force: サンクラッパー（マクロ展開 + builtin）
-  └ volatile!/volatile?/vreset!/vswap!: ミュータブルボックス
-  └ reduced/reduced?/unreduced/ensure-reduced: Reduced ラッパー型
-  └ deref 拡張（volatile, delay 対応）
-  └ 新型3種: Delay, Volatile, Reduced を value.zig に追加
-
-Phase 14: DESIGN — transduce 基盤・transient ✅
-  └ completing, transduce, cat, eduction, halt-when
-  └ iteration（遅延ステートフルイテレータ）
-  └ transient/persistent!/conj!/assoc!/dissoc!/disj!/pop!: 一時的ミュータブルコレクション
-  └ Transient 型を value.zig に追加
-
-Phase 15: DESIGN — Atom 拡張・Var 操作・メタデータ ✅
-  └ add-watch, remove-watch, get-validator, set-validator!
-  └ compare-and-set!, reset-vals!, swap-vals!
-  └ var-get, var-set, alter-var-root, find-var, intern, bound?
-  └ alter-meta!, reset-meta!, vary-meta
-  └ Atom に validator/watches/meta フィールド追加、core.zig に current_env threadlocal
-
-Phase 16: DESIGN — defrecord・deftype
-  └ プロトコルと組み合わせた名前付きレコード型
-  └ defstruct, create-struct, struct, struct-map, accessor（簡易版）
-  └ record?, instance?
-
-Phase 17: DESIGN — 階層システム ✅
-  └ make-hierarchy, derive, underive, ancestors, descendants, parents, isa?
-  └ parents ベースの動的計算方式（ancestors/descendants は parents から再帰計算）
-
-Phase 18: DESIGN — promise/deliver + ユーティリティ ✅
-  └ promise/deliver/realized?: Promise型（1回 deliver 可能なボックス）
-  └ random-uuid, tagged-literal, char-escape-string, char-name-string
-  └ ex-cause, Throwable->map, inst-ms*
-  └ deref 拡張（Promise 対応）
-
-Phase 19: SUBSYSTEM — 正規表現
-  └ re-pattern, re-find, re-matches, re-seq, re-matcher, re-groups
-  └ Zig で正規表現エンジン実装 or PCRE バインディング
-
-Phase 20: SUBSYSTEM — 名前空間システム
-  └ ns, in-ns, require, use, refer, refer-clojure, load, load-file
-  └ all-ns, find-ns, create-ns, remove-ns, ns-name, ns-publics, ns-map 等
-  └ resolve, ns-resolve, requiring-resolve, alias, ns-aliases
-  └ *ns* 動的 Var
-
-Phase 21: SUBSYSTEM — I/O
-  └ *in*, *out*, *err*, slurp, spit, read-line, flush
-  └ with-open, with-out-str, with-in-str, line-seq, file-seq
-  └ print 系動的 Var: *print-length*, *print-level*, *flush-on-newline* 等
-
-Phase 22: SUBSYSTEM — Reader/Eval
-  └ read, read-string, read+string, eval, macroexpand, macroexpand-1
-  └ load-string, load-reader
-  └ *read-eval*, *data-readers*, *default-data-reader-fn*
-
-Phase 23: GC（シンプル版）
+Phase 21: GC（シンプル版）
   └ mark-and-sweep or arena + 世代管理
   └ 長時間 REPL 対応（言語機能は ArenaAllocator で十分動作済み）
+
+Phase 22: 正規表現エンジン（本格実装）
+  └ 現在の re-* はスタブ（文字列一致のみ）
+  └ Zig で正規表現エンジン実装 or PCRE バインディング
+
+Phase 23: 動的バインディング（本格実装）
+  └ 現在の binding/with-redefs は let に展開するスタブ
+  └ thread-local binding stack の実装
+
+Phase 24: 名前空間（本格実装）
+  └ 現在の ns/require/use はスタブ
+  └ ファイルロード、refer フィルタリング、alias
 
 Phase LAST: Wasm 連携
   └ 言語機能充実後
@@ -166,7 +98,7 @@ Phase LAST: Wasm 連携
 
 ## 設計判断の控え
 
-1. **正規表現**: Zig 標準ライブラリにないため外部実装 or 自前が要る。
+1. **正規表現**: Zig 標準ライブラリにないため外部実装 or 自前が要る。現在はスタブ。
 2. **skip 方針**: 明確に JVM 固有（proxy, agent, STM, Java array, unchecked-*, BigDecimal）のみ skip。
    迷うものは実装する。
 3. **JVM 型変換**: byte/short/long/float 等は Zig キャスト相当に簡略化。

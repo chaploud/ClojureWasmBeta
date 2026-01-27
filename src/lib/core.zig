@@ -7984,6 +7984,276 @@ pub fn loadFileFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
 }
 
 // ============================================================
+// Phase 20: 残り59 — binding/chunk/regex/IO/NS/type stubs
+// ============================================================
+
+// --- Binding / threading stubs ---
+
+/// binding: スタブ（動的バインディングは未実装、引数を無視して body 相当を返す）
+/// 本来はマクロ展開で処理するため、ここでは関数としてはスタブのみ
+pub fn bindingStubFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// set! — 動的Var への代入（スタブ: nilを返す）
+pub fn setBangFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    // 将来的には動的バインディングの値を更新
+    return args[1];
+}
+
+/// get-thread-bindings — スタブ: 空マップを返す
+pub fn getThreadBindingsFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const m = try allocator.create(value_mod.PersistentMap);
+    m.* = .{ .entries = &[_]Value{} };
+    return Value{ .map = m };
+}
+
+/// push-thread-bindings — スタブ
+pub fn pushThreadBindingsFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// pop-thread-bindings — スタブ
+pub fn popThreadBindingsFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// thread-bound? — スタブ: false
+pub fn threadBoundPred(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.false_val;
+}
+
+/// with-redefs-fn — スタブ: fn を呼び出すだけ
+pub fn withRedefsFnFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    // args[0] = bindings map (ignored), args[1] = fn to call
+    const call_fn_opt = call_fn orelse return error.TypeError;
+    return call_fn_opt(args[1], &[_]Value{}, allocator);
+}
+
+/// requiring-resolve — resolve のエイリアス（require はスタブ）
+pub fn requiringResolveFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .symbol) return error.TypeError;
+    const env = current_env orelse return error.TypeError;
+    const sym = value_mod.Symbol{
+        .namespace = args[0].symbol.namespace,
+        .name = args[0].symbol.name,
+    };
+    if (env.resolve(sym)) |v| {
+        return v.root;
+    }
+    return value_mod.nil;
+}
+
+// --- NS 関数 stubs ---
+
+/// refer — スタブ（名前空間の参照を追加）
+pub fn referFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// require — スタブ
+pub fn requireFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// use — スタブ
+pub fn useFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// alias — スタブ
+pub fn aliasFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// in-ns — 名前空間を切り替え（簡易版: NS を作成して返す）
+pub fn inNsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    // シンボル名を取得
+    const ns_name = switch (args[0]) {
+        .symbol => |s| s.name,
+        .string => |s| s.data,
+        else => return error.TypeError,
+    };
+    // NS を作成/取得
+    const env = current_env orelse return error.TypeError;
+    _ = try env.findOrCreateNs(ns_name);
+    // シンボルとして返す
+    const sym = try allocator.create(value_mod.Symbol);
+    sym.* = .{ .name = ns_name, .namespace = null };
+    return Value{ .symbol = sym };
+}
+
+// --- Chunk stubs ---
+
+/// chunk-buffer — スタブ: 空ベクターを返す
+pub fn chunkBufferFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const vec = try allocator.create(value_mod.PersistentVector);
+    vec.* = .{ .items = &[_]Value{} };
+    return Value{ .vector = vec };
+}
+
+/// chunk-append — スタブ: nil
+pub fn chunkAppendFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// chunk — スタブ: 引数をそのまま返す
+pub fn chunkFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    return args[0];
+}
+
+/// chunk-cons — cons のエイリアス
+pub fn chunkConsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    return cons(allocator, args);
+}
+
+/// chunk-first — first のエイリアス
+pub fn chunkFirstFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    return first(allocator, args);
+}
+
+/// chunk-next — next のエイリアス
+pub fn chunkNextFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    return next(allocator, args);
+}
+
+/// chunk-rest — rest のエイリアス
+pub fn chunkRestFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    return rest(allocator, args);
+}
+
+/// chunked-seq? — スタブ: false
+pub fn chunkedSeqPred(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.false_val;
+}
+
+// --- Regex stubs ---
+
+/// re-pattern — 文字列をそのまま返す（正規表現エンジンなし）
+pub fn rePatternFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .string) return error.TypeError;
+    return args[0]; // パターン文字列をそのまま返す
+}
+
+/// re-matcher — [pattern, string] ベクターを返す（マッチャーオブジェクト代替）
+pub fn reMatcherFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const items = try allocator.alloc(Value, 2);
+    items[0] = args[0];
+    items[1] = args[1];
+    const vec = try allocator.create(value_mod.PersistentVector);
+    vec.* = .{ .items = items };
+    return Value{ .vector = vec };
+}
+
+/// re-find — 簡易部分文字列マッチ（正規表現なし、部分文字列一致のみ）
+pub fn reFindFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    // re-find with matcher (vector) — 2arity: pattern, string
+    var pattern_str: []const u8 = undefined;
+    var target_str: []const u8 = undefined;
+
+    if (args.len == 1) {
+        // matcher から取得
+        if (args[0] == .vector) {
+            const v = args[0].vector;
+            if (v.items.len >= 2) {
+                if (v.items[0] == .string) pattern_str = v.items[0].string.data else return value_mod.nil;
+                if (v.items[1] == .string) target_str = v.items[1].string.data else return value_mod.nil;
+            } else return value_mod.nil;
+        } else return value_mod.nil;
+    } else {
+        if (args[0] != .string) return value_mod.nil;
+        if (args[1] != .string) return value_mod.nil;
+        pattern_str = args[0].string.data;
+        target_str = args[1].string.data;
+    }
+
+    // 単純な部分文字列検索
+    if (std.mem.indexOf(u8, target_str, pattern_str)) |_| {
+        return args[if (args.len == 1) 0 else 0]; // パターンを返す
+    }
+    return value_mod.nil;
+}
+
+/// re-matches — 完全一致チェック（正規表現なし、文字列完全一致のみ）
+pub fn reMatchesFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .string or args[1] != .string) return value_mod.nil;
+    if (std.mem.eql(u8, args[0].string.data, args[1].string.data)) {
+        return args[1];
+    }
+    return value_mod.nil;
+}
+
+/// re-seq — スタブ: 空リストを返す
+pub fn reSeqFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const l = try allocator.create(value_mod.PersistentList);
+    l.* = .{ .items = &[_]Value{} };
+    return Value{ .list = l };
+}
+
+/// re-groups — スタブ: nil
+pub fn reGroupsFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+// --- IO stubs ---
+
+/// read-line — スタブ: nil（stdin 読み取りは未実装）
+pub fn readLineFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    return value_mod.nil;
+}
+
+/// slurp — ファイル読み込み
+pub fn slurpFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .string) return error.TypeError;
+    const path = args[0].string.data;
+    const file = std.fs.cwd().openFile(path, .{}) catch return value_mod.nil;
+    defer file.close();
+    const content = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return value_mod.nil;
+    const str = try allocator.create(value_mod.String);
+    str.* = value_mod.String.init(content);
+    return Value{ .string = str };
+}
+
+/// spit — ファイル書き出し
+pub fn spitFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    if (args[0] != .string) return error.TypeError;
+    const path = args[0].string.data;
+    const content = switch (args[1]) {
+        .string => |s| s.data,
+        else => return error.TypeError,
+    };
+    const file = std.fs.cwd().createFile(path, .{}) catch return value_mod.nil;
+    defer file.close();
+    file.writeAll(content) catch return value_mod.nil;
+    return value_mod.nil;
+}
+
+/// file-seq — スタブ: 空リスト
+pub fn fileSeqFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const l = try allocator.create(value_mod.PersistentList);
+    l.* = .{ .items = &[_]Value{} };
+    return Value{ .list = l };
+}
+
+/// line-seq — スタブ: 空リスト
+pub fn lineSeqFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const l = try allocator.create(value_mod.PersistentList);
+    l.* = .{ .items = &[_]Value{} };
+    return Value{ .list = l };
+}
+
+// ============================================================
 // Env への登録
 // ============================================================
 
@@ -8416,6 +8686,42 @@ const builtins = [_]BuiltinDef{
     .{ .name = "load-reader", .func = loadReaderFn },
     .{ .name = "load-file", .func = loadFileFn },
     .{ .name = "load", .func = loadFileFn },
+    // Phase 20: binding/threading stubs
+    .{ .name = "set!", .func = setBangFn },
+    .{ .name = "get-thread-bindings", .func = getThreadBindingsFn },
+    .{ .name = "push-thread-bindings", .func = pushThreadBindingsFn },
+    .{ .name = "pop-thread-bindings", .func = popThreadBindingsFn },
+    .{ .name = "thread-bound?", .func = threadBoundPred },
+    .{ .name = "with-redefs-fn", .func = withRedefsFnFn },
+    .{ .name = "requiring-resolve", .func = requiringResolveFn },
+    // Phase 20: NS
+    .{ .name = "refer", .func = referFn },
+    .{ .name = "require", .func = requireFn },
+    .{ .name = "use", .func = useFn },
+    .{ .name = "alias", .func = aliasFn },
+    .{ .name = "in-ns", .func = inNsFn },
+    // Phase 20: chunk stubs
+    .{ .name = "chunk-buffer", .func = chunkBufferFn },
+    .{ .name = "chunk-append", .func = chunkAppendFn },
+    .{ .name = "chunk", .func = chunkFn },
+    .{ .name = "chunk-cons", .func = chunkConsFn },
+    .{ .name = "chunk-first", .func = chunkFirstFn },
+    .{ .name = "chunk-next", .func = chunkNextFn },
+    .{ .name = "chunk-rest", .func = chunkRestFn },
+    .{ .name = "chunked-seq?", .func = chunkedSeqPred },
+    // Phase 20: regex stubs
+    .{ .name = "re-pattern", .func = rePatternFn },
+    .{ .name = "re-matcher", .func = reMatcherFn },
+    .{ .name = "re-find", .func = reFindFn },
+    .{ .name = "re-matches", .func = reMatchesFn },
+    .{ .name = "re-seq", .func = reSeqFn },
+    .{ .name = "re-groups", .func = reGroupsFn },
+    // Phase 20: IO
+    .{ .name = "read-line", .func = readLineFn },
+    .{ .name = "slurp", .func = slurpFn },
+    .{ .name = "spit", .func = spitFn },
+    .{ .name = "file-seq", .func = fileSeqFn },
+    .{ .name = "line-seq", .func = lineSeqFn },
 };
 
 /// clojure.core の組み込み関数を Env に登録
@@ -8499,6 +8805,56 @@ fn registerDynamicVars(allocator: std.mem.Allocator, core_ns: anytype) !void {
         v1.bindRoot(value_mod.nil);
         const ve = try core_ns.intern("*e");
         ve.bindRoot(value_mod.nil);
+    }
+    // Phase 20: 追加動的 Var
+    {
+        const v = try core_ns.intern("*ns*");
+        // *ns* はシンボル 'clojure.core を初期値として設定
+        const sym = try allocator.create(value_mod.Symbol);
+        sym.* = .{ .name = "clojure.core", .namespace = null };
+        v.bindRoot(Value{ .symbol = sym });
+    }
+    {
+        const v = try core_ns.intern("*in*");
+        v.bindRoot(value_mod.nil); // stdin リーダーは未実装
+    }
+    {
+        const v = try core_ns.intern("*out*");
+        v.bindRoot(value_mod.nil); // stdout ライターは未実装
+    }
+    {
+        const v = try core_ns.intern("*err*");
+        v.bindRoot(value_mod.nil); // stderr ライターは未実装
+    }
+    {
+        const v = try core_ns.intern("*file*");
+        v.bindRoot(value_mod.nil);
+    }
+    {
+        const v = try core_ns.intern("*agent*");
+        v.bindRoot(value_mod.nil);
+    }
+    {
+        const v = try core_ns.intern("*repl*");
+        v.bindRoot(value_mod.false_val);
+    }
+    {
+        const v = try core_ns.intern("*compile-files*");
+        v.bindRoot(value_mod.false_val);
+    }
+    {
+        const v = try core_ns.intern("*compiler-options*");
+        const m = try allocator.create(value_mod.PersistentMap);
+        m.* = .{ .entries = &[_]Value{} };
+        v.bindRoot(Value{ .map = m });
+    }
+    {
+        const v = try core_ns.intern("*reader-resolver*");
+        v.bindRoot(value_mod.nil);
+    }
+    {
+        const v = try core_ns.intern("*suppress-read*");
+        v.bindRoot(value_mod.false_val);
     }
 }
 

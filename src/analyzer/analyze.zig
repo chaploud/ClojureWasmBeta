@@ -1712,6 +1712,39 @@ pub const Analyzer = struct {
             return try self.expandDefinline(items);
         } else if (std.mem.eql(u8, name, "with-out-str")) {
             return try self.expandWithOutStr(items);
+        } else if (std.mem.eql(u8, name, "binding")) {
+            return try self.expandBinding(items);
+        } else if (std.mem.eql(u8, name, "bound-fn")) {
+            return try self.expandBoundFn(items);
+        } else if (std.mem.eql(u8, name, "bound-fn*")) {
+            return try self.expandBoundFnStar(items);
+        } else if (std.mem.eql(u8, name, "with-bindings")) {
+            return try self.expandDoBody(items);
+        } else if (std.mem.eql(u8, name, "with-bindings*")) {
+            return try self.expandDoBody(items);
+        } else if (std.mem.eql(u8, name, "with-local-vars")) {
+            return try self.expandWithLocalVars(items);
+        } else if (std.mem.eql(u8, name, "with-redefs")) {
+            return try self.expandWithRedefs(items);
+        } else if (std.mem.eql(u8, name, "with-open")) {
+            return try self.expandWithOpen(items);
+        } else if (std.mem.eql(u8, name, "with-in-str")) {
+            return try self.expandDoBody(items);
+        } else if (std.mem.eql(u8, name, "with-loading-context")) {
+            return try self.expandDoBody(items);
+        } else if (std.mem.eql(u8, name, "ns")) {
+            return try self.expandNs(items);
+        } else if (std.mem.eql(u8, name, "refer-clojure")) {
+            return Form.nil;
+        } else if (std.mem.eql(u8, name, "case*")) {
+            // case* は内部的に case と同等
+            return try self.expandCase(items);
+        } else if (std.mem.eql(u8, name, "var")) {
+            return try self.expandVar(items);
+        } else if (std.mem.eql(u8, name, "defrecord")) {
+            return try self.expandDefrecord(items);
+        } else if (std.mem.eql(u8, name, "deftype")) {
+            return try self.expandDeftype(items);
         }
         return null;
     }
@@ -4023,6 +4056,164 @@ pub const Analyzer = struct {
         str_forms[0] = Form{ .symbol = form_mod.Symbol.init("str") };
         str_forms[1] = Form{ .list = do_forms };
         return Form{ .list = str_forms };
+    }
+
+    // ── Phase 20: 追加マクロ展開 ──
+
+    /// (binding [var val ...] & body) → (let [var val ...] & body) スタブ
+    /// 本来は動的バインディングだが、簡易版として let に展開
+    fn expandBinding(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "binding requires bindings vector and body", .{});
+        }
+        // (let [bindings] body...)
+        const let_forms = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
+        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        for (items[1..], 0..) |item, i| {
+            let_forms[i + 1] = item;
+        }
+        return Form{ .list = let_forms };
+    }
+
+    /// (bound-fn [args] body) → (fn [args] body) スタブ
+    fn expandBoundFn(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "bound-fn requires args and body", .{});
+        }
+        const fn_forms = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
+        fn_forms[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
+        for (items[1..], 0..) |item, i| {
+            fn_forms[i + 1] = item;
+        }
+        return Form{ .list = fn_forms };
+    }
+
+    /// (bound-fn* f) → f スタブ
+    fn expandBoundFnStar(_: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "bound-fn* requires a function argument", .{});
+        }
+        return items[1]; // 関数をそのまま返す
+    }
+
+    /// 汎用: (macro-name arg1 & body) → (do & body)
+    /// with-bindings, with-bindings*, with-in-str, with-loading-context 用
+    fn expandDoBody(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 2) {
+            return Form.nil;
+        }
+        if (items.len == 2) return items[1]; // body が1つなら直接返す
+        // (do body1 body2 ...)
+        const do_forms = self.allocator.alloc(Form, items.len - 1) catch return error.OutOfMemory;
+        do_forms[0] = Form{ .symbol = form_mod.Symbol.init("do") };
+        for (items[2..], 0..) |item, i| {
+            do_forms[i + 1] = item;
+        }
+        return Form{ .list = do_forms };
+    }
+
+    /// (with-local-vars [name val ...] & body) → (let [name val ...] & body) スタブ
+    fn expandWithLocalVars(self: *Analyzer, items: []const Form) err.Error!Form {
+        return self.expandBinding(items);
+    }
+
+    /// (with-redefs [name val ...] & body) → (let [name val ...] & body) スタブ
+    fn expandWithRedefs(self: *Analyzer, items: []const Form) err.Error!Form {
+        return self.expandBinding(items);
+    }
+
+    /// (with-open [name val ...] & body) → (let [name val ...] & body) スタブ
+    fn expandWithOpen(self: *Analyzer, items: []const Form) err.Error!Form {
+        return self.expandBinding(items);
+    }
+
+    /// (ns name & clauses) → (in-ns 'name) スタブ
+    fn expandNs(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "ns requires a name", .{});
+        }
+        // (in-ns 'name)
+        const forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        forms[0] = Form{ .symbol = form_mod.Symbol.init("in-ns") };
+        // quote name
+        const quote_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        quote_forms[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
+        quote_forms[1] = items[1];
+        forms[1] = Form{ .list = quote_forms };
+        // nil（残りの clauses は無視）
+        forms[2] = Form.nil;
+        // (do (in-ns 'name) nil) → 簡略化して (in-ns 'name) だけ
+        const in_ns_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        in_ns_forms[0] = Form{ .symbol = form_mod.Symbol.init("in-ns") };
+        in_ns_forms[1] = forms[1];
+        return Form{ .list = in_ns_forms };
+    }
+
+    /// (var x) → (resolve 'x) スタブ
+    fn expandVar(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 2) {
+            return err.parseError(.invalid_arity, "var requires a symbol", .{});
+        }
+        // (resolve 'x)
+        const quote_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        quote_forms[0] = Form{ .symbol = form_mod.Symbol.init("quote") };
+        quote_forms[1] = items[1];
+        const resolve_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        resolve_forms[0] = Form{ .symbol = form_mod.Symbol.init("resolve") };
+        resolve_forms[1] = Form{ .list = quote_forms };
+        return Form{ .list = resolve_forms };
+    }
+
+    /// (defrecord Name [fields] & body) → (do (defn ->Name [fields] (hash-map ...)) nil) スタブ
+    fn expandDefrecord(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len < 3) {
+            return err.parseError(.invalid_arity, "defrecord requires name and fields", .{});
+        }
+        // name と fields を取得
+        const name_form = items[1];
+        const fields_form = items[2];
+        const name_str = switch (name_form) {
+            .symbol => |s| s.name,
+            else => return err.parseError(.invalid_binding, "defrecord name must be a symbol", .{}),
+        };
+        // ->Name コンストラクタ名を生成
+        const ctor_name = self.allocator.alloc(u8, name_str.len + 2) catch return error.OutOfMemory;
+        ctor_name[0] = '-';
+        ctor_name[1] = '>';
+        @memcpy(ctor_name[2..], name_str);
+
+        // (defn ->Name [fields] (hash-map :field1 field1 ...))
+        // fields はベクター
+        const field_items = switch (fields_form) {
+            .vector => |v| v,
+            else => return err.parseError(.invalid_binding, "defrecord fields must be a vector", .{}),
+        };
+
+        // hash-map 引数を構築: :field field :field field ...
+        const hm_args_len = 1 + field_items.len * 2;
+        const hm_forms = self.allocator.alloc(Form, hm_args_len) catch return error.OutOfMemory;
+        hm_forms[0] = Form{ .symbol = form_mod.Symbol.init("hash-map") };
+        for (field_items, 0..) |field, i| {
+            const field_name = switch (field) {
+                .symbol => |s| s.name,
+                else => continue,
+            };
+            hm_forms[1 + i * 2] = Form{ .keyword = form_mod.Symbol.init(field_name) };
+            hm_forms[2 + i * 2] = field;
+        }
+
+        // (defn ->Name [fields] (hash-map ...))
+        const defn_forms = self.allocator.alloc(Form, 4) catch return error.OutOfMemory;
+        defn_forms[0] = Form{ .symbol = form_mod.Symbol.init("defn") };
+        defn_forms[1] = Form{ .symbol = form_mod.Symbol.init(ctor_name) };
+        defn_forms[2] = fields_form;
+        defn_forms[3] = Form{ .list = hm_forms };
+        return Form{ .list = defn_forms };
+    }
+
+    /// (deftype Name [fields] & body) → defrecord と同様のスタブ
+    fn expandDeftype(self: *Analyzer, items: []const Form) err.Error!Form {
+        return self.expandDefrecord(items);
     }
 
     // ── ヘルパー関数 ──

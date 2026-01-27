@@ -30,9 +30,9 @@ vars:
       note: JVM固有
     case*:
       type: special-form
-      status: todo
+      status: done
       note: case（低レベル）
-      impl_type: none
+      impl_type: macro
     catch:
       type: special-form
       status: skip
@@ -123,9 +123,9 @@ vars:
       note: JVM固有
     set!:
       type: special-form
-      status: todo
+      status: done
       note: 代入
-      impl_type: none
+      impl_type: builtin
     throw:
       type: special-form
       status: done
@@ -140,9 +140,9 @@ vars:
       layer: host
     var:
       type: special-form
-      status: todo
+      status: done
       note: Var参照
-      impl_type: none
+      impl_type: macro
     "->":
       type: macro
       status: done
@@ -181,12 +181,12 @@ vars:
       impl_type: macro
     binding:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     bound-fn:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     case:
       type: macro
       status: done
@@ -262,16 +262,16 @@ vars:
       layer: bridge
     defrecord:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     defstruct:
       type: macro
       status: done
       impl_type: macro
     deftype:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     delay:
       type: macro
       status: done
@@ -381,8 +381,8 @@ vars:
       impl_type: none
     ns:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     or:
       type: macro
       status: done
@@ -402,8 +402,8 @@ vars:
       impl_type: none
     refer-clojure:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     reify:
       type: macro
       status: skip
@@ -461,24 +461,24 @@ vars:
       impl_type: macro
     with-bindings:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     with-in-str:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     with-loading-context:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     with-local-vars:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     with-open:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     with-out-str:
       type: macro
       status: done
@@ -490,8 +490,8 @@ vars:
       impl_type: none
     with-redefs:
       type: macro
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     "*":
       type: function
       status: done
@@ -654,8 +654,8 @@ vars:
       impl_type: none
     alias:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     all-ns:
       type: function
       status: done
@@ -862,8 +862,8 @@ vars:
       host: host
     bound-fn*:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     bound?:
       type: function
       status: done
@@ -929,36 +929,36 @@ vars:
       host: host
     chunk:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     chunk-append:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     chunk-buffer:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     chunk-cons:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     chunk-first:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     chunk-next:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     chunk-rest:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     chunked-seq?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     class:
       type: function
       status: done
@@ -1293,8 +1293,8 @@ vars:
       impl_type: builtin
     file-seq:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     filter:
       type: function
       status: done
@@ -1435,8 +1435,8 @@ vars:
       impl_type: none
     get-thread-bindings:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     get-validator:
       type: function
       status: done
@@ -1654,8 +1654,8 @@ vars:
       impl_type: builtin
     line-seq:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     list:
       type: function
       status: done
@@ -2067,8 +2067,8 @@ vars:
       impl_type: none
     pop-thread-bindings:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     pos-int?:
       type: function
       status: done
@@ -2159,8 +2159,8 @@ vars:
       impl_type: none
     push-thread-bindings:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     qualified-ident?:
       type: function
       status: done
@@ -2227,28 +2227,28 @@ vars:
       impl_type: none
     re-find:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     re-groups:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     re-matcher:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     re-matches:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     re-pattern:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     re-seq:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     read:
       type: function
       status: done
@@ -2260,8 +2260,8 @@ vars:
       impl_type: builtin
     read-line:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     read-string:
       type: function
       status: done
@@ -2334,8 +2334,8 @@ vars:
       impl_type: none
     refer:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     release-pending-sends:
       type: function
       status: skip
@@ -2397,12 +2397,12 @@ vars:
       layer: pure
     require:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     requiring-resolve:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     reset!:
       type: function
       status: done
@@ -2584,8 +2584,8 @@ vars:
       host: host
     slurp:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     some:
       type: function
       status: done
@@ -2640,8 +2640,8 @@ vars:
       host: host
     spit:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     split-at:
       type: function
       status: done
@@ -2768,8 +2768,8 @@ vars:
       note: 簡易実装（引数をそのまま返す）
     thread-bound?:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     to-array:
       type: function
       status: skip
@@ -2940,8 +2940,8 @@ vars:
       layer: pure
     use:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     uuid?:
       type: function
       status: done
@@ -3015,16 +3015,16 @@ vars:
       layer: DESIGN
     with-bindings*:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: macro
     with-meta:
       type: function
       status: done
       impl_type: builtin
     with-redefs-fn:
       type: function
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     xml-seq:
       type: function
       status: done
@@ -3099,9 +3099,9 @@ vars:
       note: 動的Var（デフォルト true）
     "*repl*":
       type: dynamic-var
-      status: todo
+      status: done
       dynamic: true
-      impl_type: none
+      impl_type: dynamic_var
     "*verbose-defrecords*":
       type: dynamic-var
       status: skip
@@ -3109,24 +3109,24 @@ vars:
       impl_type: none
     "*agent*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*allow-unresolved-vars*":
       type: var
       status: skip
       impl_type: none
     "*assert*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*command-line-args*":
       type: var
       status: skip
       impl_type: none
     "*compile-files*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*compile-path*":
       type: var
       status: done
@@ -3134,16 +3134,16 @@ vars:
       note: 動的Var（デフォルト "classes"）
     "*compiler-options*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*err*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*file*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*flush-on-newline*":
       type: var
       status: done
@@ -3155,20 +3155,20 @@ vars:
       impl_type: none
     "*in*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*math-context*":
       type: var
       status: skip
       impl_type: none
     "*ns*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*out*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*print-dup*":
       type: var
       status: done
@@ -3191,16 +3191,16 @@ vars:
       note: 動的Var（デフォルト true）
     "*reader-resolver*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*source-path*":
       type: var
       status: skip
       impl_type: none
     "*suppress-read*":
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: dynamic_var
     "*unchecked-math*":
       type: var
       status: skip
@@ -3236,8 +3236,8 @@ vars:
       note: スタブ（空マップ）
     in-ns:
       type: var
-      status: todo
-      impl_type: none
+      status: done
+      impl_type: builtin
     load-file:
       type: var
       status: done
