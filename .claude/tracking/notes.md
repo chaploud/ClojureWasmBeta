@@ -334,6 +334,54 @@ Lazy (5): map, filter, take-while, drop-while, map-indexed
 map, filter, mapcat に加えて take_while, drop_while, map_indexed を追加。
 Transform に index フィールド追加 (map-indexed 用)。
 
+### 完了 (Q1a-Q1c)
+
+**Q1a** (eager 7関数): core.zig に 7 builtin 関数追加、analyzeList の 7 分岐削除。
+**Q1b** (lazy 5関数): TransformKind 拡張、forceTransformOneStep の nil 要素バグ修正。
+**Q1c**: 12 Node型/Opcode/emitXxx/executeXxx を一括削除 (-1,400行)。
+
+## letfn 相互再帰バグ (Phase Q4b)
+
+**症状**: `(letfn [(f [x] (g x)) (g [x] x)] (f 5))` → UndefinedSymbol
+
+**根本原因**: `analyzeLetfn` Phase 2 で `(fn f [x] body)` のように fn に名前を渡すと、
+`analyzeFn` が自己参照用にローカルインデックスを 1 つ追加する。これにより、
+パラメータ `x` のインデックスがずれ、ランタイムのバインディング配列の範囲外になる。
+
+letfn スコープが既に全関数名を相互参照可能に登録しているため、
+fn レベルの自己参照ローカルは不要。
+
+**修正**: analyzeLetfn Phase 2 で fn に名前を渡さない (匿名 fn として解析)。
+evaluator の runLetfn で `Fn.name` を手動セット (デバッグ表示用)。
+
+## with-out-str 実装 (Phase Q5a)
+
+**方式**: threadlocal `output_capture` バッファ
+
+```zig
+pub threadlocal var output_capture: ?*std.ArrayListUnmanaged(u8) = null;
+pub threadlocal var output_capture_allocator: ?std.mem.Allocator = null;
+```
+
+全 print 系関数 (println/print/pr/prn/newline/printf) を
+`output_capture` が non-null なら バッファに追記、null なら stdout に出力するよう修正。
+
+**マクロ展開**:
+```clojure
+(with-out-str body...)
+→ (let [__cap (__begin-capture)]
+    (do body... (__end-capture __cap)))
+```
+
+**ネスト対応**: `__begin-capture` は前のキャプチャ状態をポインタとして int Value に保存。
+`__end-capture` で復元。内側キャプチャの出力は外側に漏れない。
+
+## `!` 表示問題
+
+**結論**: コードバグではなくシェル環境の問題。
+bash/zsh の history expansion (`!` が特殊文字) が原因。
+ファイル経由 (load-file) で実行すれば正常に `!` を含む文字列が出力される。
+
 ## REPL (Phase 25)
 
 - **起動**: 引数なしで `./ClojureWasmBeta` を実行

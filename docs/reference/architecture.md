@@ -131,27 +131,11 @@ src/
 | 25       | REPL (対話型シェル)                                                                                                       |
 | 26       | Reader Conditionals + 外部ライブラリ統合テスト (medley v1.4.0)                                                            |
 | T1-T4    | テストフレームワーク + sci テストスイート移植 (678 pass)                                                                   |
+| Q1a-Q5a  | Wasm前品質修正 — 正規化/コンパイラ修正/letfn/with-out-str (729 pass)                                                       |
 
 > 詳細な完了フェーズ履歴: `.claude/tracking/memo.md`
 
 ### 今後のフェーズ
-
-#### Phase Q: Wasm 前品質修正 (進行中)
-
-テスト移植 (Phase T4) で発見された問題を Wasm 連携前に全て解消する。
-
-| Sub   | 内容                                         | 複雑度 |
-|-------|----------------------------------------------|--------|
-| Q3    | Var システム修正 (def返値, #'var, var-set等)  | 低     |
-| Q4a   | VM reduced 対応                              | 低     |
-| Q2b   | fn-level recur 修正                          | 中     |
-| Q1a   | Special Form 正規化 — eager 7関数            | 高     |
-| Q1b   | Special Form 正規化 — lazy 5関数             | 高     |
-| Q2a   | Map/Set リテラルの関数内コンパイル修正       | 中     |
-| Q4b   | letfn 相互再帰修正                           | 中     |
-| Q1c   | 死コード削除 (12 Node/Opcode)                | 中     |
-| Q5    | with-out-str + 文字列表示                    | 高     |
-| Q6    | ドキュメント整備 + ベンチマーク基盤          | 低     |
 
 #### Phase LAST: Wasm 連携
 

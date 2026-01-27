@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase Q 進行中 — Wasm 前品質修正**
+**Phase Q 完了 — Phase LAST (Wasm 連携) 準備完了**
 
 ### 完了フェーズ
 
@@ -201,28 +201,31 @@ deftest body 内 (= defn body 内) で使えない構文:
 
 - sets-as-functions 未対応 (`#{:a :b}` を関数として使用不可)
 - フル medley の `compare-and-set!`/`deref-swap!`/`deref-reset!` 未実装
-- 文字列表示で `!` がエスケープされる (Phase 25 以前からの問題)
+- ~~文字列表示で `!` がエスケープされる~~ → シェル環境の問題 (コードバグではない)
 - VM での `with-redefs` 後のユーザー関数呼び出しクラッシュ (Phase 23 由来)
 
 ---
 
 ## ロードマップ
 
-### 次のフェーズ (Phase Q → Phase LAST)
+### Phase Q: Wasm 前品質修正 — 完了
 
 ```
-Phase Q: Wasm 前品質修正 (進行中)
   Q3  ✅ Var システム修正
   Q4a ✅ VM reduced 対応
   Q2b ✅ fn-level recur 修正
   Q1a ✅ Special Form 正規化 (eager 7関数)
   Q1b ✅ Special Form 正規化 (lazy 5関数)
   Q2a ✅ Map/Set リテラル in マクロ展開修正
-  Q4b letfn 相互再帰修正
+  Q4b ✅ letfn 相互再帰修正
   Q1c ✅ 死コード削除 (12 Node/Opcode, -1400行)
-  Q5  with-out-str + 文字列表示
-  Q6  ドキュメント整備 + ベンチマーク基盤
+  Q5a ✅ with-out-str 実装 (threadlocal output capture)
+  Q6  ✅ ドキュメント整備
+```
 
+### 次のフェーズ
+
+```
 Phase LAST: Wasm 連携
   └ Component Model 対応、.wasm ロード・呼び出し、型マッピング
 ```
