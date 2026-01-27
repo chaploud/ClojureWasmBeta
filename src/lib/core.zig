@@ -26,6 +26,7 @@ const regex_matcher = @import("../regex/matcher.zig");
 const wasm_loader = @import("../wasm/loader.zig");
 const wasm_runtime = @import("../wasm/runtime.zig");
 const wasm_interop = @import("../wasm/interop.zig");
+const wasm_wasi = @import("../wasm/wasi.zig");
 
 /// 組み込み関数の型（value.zig との循環依存を避けるためここで定義）
 pub const BuiltinFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
@@ -10202,6 +10203,19 @@ fn wasmMemorySize(_: std.mem.Allocator, args: []const Value) anyerror!Value {
     return Value{ .int = @intCast(size_bytes) };
 }
 
+/// wasm/load-wasi: WASI モジュールをロード
+fn wasmLoadWasi(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const path = switch (args[0]) {
+        .string => |s| s.data,
+        else => return error.TypeError,
+    };
+    const wm = wasm_wasi.loadWasiModule(allocator, path) catch {
+        return error.WasmLoadError;
+    };
+    return Value{ .wasm_module = wm };
+}
+
 // ============================================================
 // Env への登録
 // ============================================================
@@ -10703,6 +10717,8 @@ const wasm_builtins = [_]BuiltinDef{
     .{ .name = "memory-read", .func = wasmMemoryRead },
     .{ .name = "memory-write", .func = wasmMemoryWrite },
     .{ .name = "memory-size", .func = wasmMemorySize },
+    // Phase Ld
+    .{ .name = "load-wasi", .func = wasmLoadWasi },
 };
 
 /// clojure.core の組み込み関数を Env に登録

@@ -15,7 +15,7 @@
 | La    | zware 導入 + load + invoke (数値) | ✅ 完了      |
 | Lb    | メモリ操作 + 文字列 interop       | ✅ 完了      |
 | Lc    | ホスト関数注入 (Clojure→Wasm)     | ✅ 完了      |
-| Ld    | WASI 基本サポート                 | 未着手       |
+| Ld    | WASI 基本サポート                 | ✅ 完了      |
 | Le    | エラー改善 + GC + ドキュメント    | 未着手       |
 
 ### 完了フェーズ
@@ -94,7 +94,7 @@
 
 ### テスト全体結果
 
-**753 pass, 1 fail(意図的), 0 error** (total: 754)
+**757 pass, 1 fail(意図的), 0 error** (total: 758)
 
 ### sci テストスイート移植
 
@@ -128,7 +128,8 @@
 | `test/compat/wasm_basic.clj`             | 12           | PASS |
 | `test/compat/wasm_memory.clj`            | 7            | PASS |
 | `test/compat/wasm_host.clj`              | 5            | PASS |
-| **compat 合計**                          | **557**      |      |
+| `test/compat/wasm_wasi.clj`              | 4            | PASS |
+| **compat 合計**                          | **561**      |      |
 
 ### テスト基盤
 
@@ -244,7 +245,7 @@ Phase LAST: Wasm 連携 (zware pure Zig runtime)
   La ✅ zware 導入 + load + invoke (数値のみ)
   Lb ✅ メモリ操作 + 文字列 interop
   Lc ✅ ホスト関数注入 (Clojure→Wasm)
-  Ld    WASI 基本サポート
+  Ld ✅ WASI 基本サポート
   Le    エラー改善 + GC + ドキュメント
 ```
 
