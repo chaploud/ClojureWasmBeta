@@ -733,7 +733,7 @@ vars:
       layer: host
     assoc!:
       type: function
-      status: todo
+      status: done
       impl_type: none
     assoc-in:
       type: function
@@ -1028,7 +1028,7 @@ vars:
       layer: host
     conj!:
       type: function
-      status: todo
+      status: done
       impl_type: none
     cons:
       type: function
@@ -1128,7 +1128,7 @@ vars:
       impl_type: builtin
     disj!:
       type: function
-      status: todo
+      status: done
       impl_type: none
     dissoc:
       type: function
@@ -1137,7 +1137,7 @@ vars:
       layer: host
     dissoc!:
       type: function
-      status: todo
+      status: done
       impl_type: none
     distinct:
       type: function
@@ -2030,7 +2030,7 @@ vars:
       impl_type: builtin
     persistent!:
       type: function
-      status: todo
+      status: done
       impl_type: none
     pmap:
       type: function
@@ -2042,7 +2042,7 @@ vars:
       impl_type: builtin
     pop!:
       type: function
-      status: todo
+      status: done
       impl_type: none
     pop-thread-bindings:
       type: function

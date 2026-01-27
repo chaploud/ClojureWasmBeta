@@ -51,7 +51,7 @@
 
 ### 実装状況
 
-404 done / 170 skip / 140 todo
+410 done / 170 skip / 134 todo
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 
