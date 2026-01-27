@@ -196,34 +196,10 @@ pub const Analyzer = struct {
                 return self.analyzeRecur(items);
             } else if (std.mem.eql(u8, sym_name, "defmacro")) {
                 return self.analyzeDefmacro(items);
-            } else if (std.mem.eql(u8, sym_name, "apply")) {
-                return self.analyzeApply(items);
-            } else if (std.mem.eql(u8, sym_name, "partial")) {
-                return self.analyzePartial(items);
-            } else if (std.mem.eql(u8, sym_name, "comp")) {
-                return self.analyzeComp(items);
-            } else if (std.mem.eql(u8, sym_name, "reduce")) {
-                return self.analyzeReduce(items);
-            } else if (std.mem.eql(u8, sym_name, "map")) {
-                return self.analyzeMap2(items);
-            } else if (std.mem.eql(u8, sym_name, "filter")) {
-                return self.analyzeFilter(items);
-            } else if (std.mem.eql(u8, sym_name, "take-while")) {
-                return self.analyzeTakeWhile(items);
-            } else if (std.mem.eql(u8, sym_name, "drop-while")) {
-                return self.analyzeDropWhile(items);
-            } else if (std.mem.eql(u8, sym_name, "map-indexed")) {
-                return self.analyzeMapIndexed(items);
-            } else if (std.mem.eql(u8, sym_name, "sort-by")) {
-                return self.analyzeSortBy(items);
-            } else if (std.mem.eql(u8, sym_name, "group-by")) {
-                return self.analyzeGroupBy(items);
             } else if (std.mem.eql(u8, sym_name, "throw")) {
                 return self.analyzeThrow(items);
             } else if (std.mem.eql(u8, sym_name, "try")) {
                 return self.analyzeTry(items);
-            } else if (std.mem.eql(u8, sym_name, "swap!")) {
-                return self.analyzeSwap(items);
             } else if (std.mem.eql(u8, sym_name, "defmulti")) {
                 return self.analyzeDefmulti(items);
             } else if (std.mem.eql(u8, sym_name, "defmethod")) {
@@ -506,11 +482,12 @@ pub const Analyzer = struct {
             const bf_items = bf.list;
             const name = bf_items[0].symbol.name;
 
-            // (name [params] body...) を (fn name [params] body...) として解析
-            // analyzeFn は items[0] = "fn" を想定するので、先頭に fn シンボルを追加
-            var fn_items = self.allocator.alloc(Form, bf_items.len + 1) catch return error.OutOfMemory;
+            // (name [params] body...) を (fn [params] body...) として解析
+            // 名前を省略: letfn スコープが既に相互参照を提供するため、
+            // analyzeFn の自己参照ローカル追加を回避する (インデックスずれ防止)
+            var fn_items = self.allocator.alloc(Form, bf_items.len) catch return error.OutOfMemory;
             fn_items[0] = .{ .symbol = FormSymbol.init("fn") };
-            @memcpy(fn_items[1..], bf_items);
+            @memcpy(fn_items[1..], bf_items[1..]); // bf_items[0] (名前) をスキップ
 
             const fn_node = try self.analyzeFn(fn_items);
             bindings[i] = .{
@@ -1302,276 +1279,6 @@ pub const Analyzer = struct {
         return node;
     }
 
-    fn analyzeApply(self: *Analyzer, items: []const Form) err.Error!*Node {
-        // (apply f args) または (apply f x y z args)
-        // 最低2引数（関数とシーケンス）
-        if (items.len < 3) {
-            return err.parseError(.invalid_arity, "apply requires at least 2 arguments", .{});
-        }
-
-        // 関数を解析
-        const fn_node = try self.analyze(items[1]);
-
-        // 中間引数（最後の1つを除く）
-        const middle_count = items.len - 3; // items[0]=apply, items[1]=fn, items[-1]=seq
-        var middle_args = self.allocator.alloc(*Node, middle_count) catch return error.OutOfMemory;
-        for (0..middle_count) |i| {
-            middle_args[i] = try self.analyze(items[2 + i]);
-        }
-
-        // シーケンス引数（最後の引数）
-        const seq_node = try self.analyze(items[items.len - 1]);
-
-        const apply_data = self.allocator.create(node_mod.ApplyNode) catch return error.OutOfMemory;
-        apply_data.* = .{
-            .fn_node = fn_node,
-            .args = middle_args,
-            .seq_node = seq_node,
-            .stack = .{},
-        };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .apply_node = apply_data };
-        return node;
-    }
-
-    fn analyzePartial(self: *Analyzer, items: []const Form) err.Error!*Node {
-        // (partial f arg1 arg2 ...)
-        // 最低2引数（関数と1つ以上の引数）
-        if (items.len < 3) {
-            return err.parseError(.invalid_arity, "partial requires at least 2 arguments", .{});
-        }
-
-        // 関数を解析
-        const fn_node = try self.analyze(items[1]);
-
-        // 部分適用する引数
-        var args = self.allocator.alloc(*Node, items.len - 2) catch return error.OutOfMemory;
-        for (items[2..], 0..) |item, i| {
-            args[i] = try self.analyze(item);
-        }
-
-        const partial_data = self.allocator.create(node_mod.PartialNode) catch return error.OutOfMemory;
-        partial_data.* = .{
-            .fn_node = fn_node,
-            .args = args,
-            .stack = .{},
-        };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .partial_node = partial_data };
-        return node;
-    }
-
-    fn analyzeComp(self: *Analyzer, items: []const Form) err.Error!*Node {
-        // (comp) => identity
-        // (comp f) => f
-        // (comp f g h ...) => 関数合成
-
-        // 関数を解析
-        var fns = self.allocator.alloc(*Node, items.len - 1) catch return error.OutOfMemory;
-        for (items[1..], 0..) |item, i| {
-            fns[i] = try self.analyze(item);
-        }
-
-        const comp_data = self.allocator.create(node_mod.CompNode) catch return error.OutOfMemory;
-        comp_data.* = .{
-            .fns = fns,
-            .stack = .{},
-        };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .comp_node = comp_data };
-        return node;
-    }
-
-    fn analyzeReduce(self: *Analyzer, items: []const Form) err.Error!*Node {
-        // (reduce f coll) または (reduce f init coll)
-        if (items.len < 3 or items.len > 4) {
-            return err.parseError(.invalid_arity, "reduce requires 2 or 3 arguments", .{});
-        }
-
-        const fn_node = try self.analyze(items[1]);
-
-        var init_node: ?*Node = null;
-        var coll_node: *Node = undefined;
-
-        if (items.len == 3) {
-            // (reduce f coll) - 初期値なし
-            coll_node = try self.analyze(items[2]);
-        } else {
-            // (reduce f init coll)
-            init_node = try self.analyze(items[2]);
-            coll_node = try self.analyze(items[3]);
-        }
-
-        const reduce_data = self.allocator.create(node_mod.ReduceNode) catch return error.OutOfMemory;
-        reduce_data.* = .{
-            .fn_node = fn_node,
-            .init_node = init_node,
-            .coll_node = coll_node,
-            .stack = .{},
-        };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .reduce_node = reduce_data };
-        return node;
-    }
-
-    /// (map f coll) の解析
-    fn analyzeMap2(self: *Analyzer, items: []const Form) err.Error!*Node {
-        if (items.len != 3) {
-            return err.parseError(.invalid_arity, "map requires 2 arguments (map f coll)", .{});
-        }
-
-        const fn_node = try self.analyze(items[1]);
-        const coll_node = try self.analyze(items[2]);
-
-        const map_data = self.allocator.create(node_mod.MapNode) catch return error.OutOfMemory;
-        map_data.* = .{
-            .fn_node = fn_node,
-            .coll_node = coll_node,
-            .stack = .{},
-        };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .map_node = map_data };
-        return node;
-    }
-
-    /// (filter pred coll) の解析
-    fn analyzeFilter(self: *Analyzer, items: []const Form) err.Error!*Node {
-        if (items.len != 3) {
-            return err.parseError(.invalid_arity, "filter requires 2 arguments (filter pred coll)", .{});
-        }
-
-        const fn_node = try self.analyze(items[1]);
-        const coll_node = try self.analyze(items[2]);
-
-        const filter_data = self.allocator.create(node_mod.FilterNode) catch return error.OutOfMemory;
-        filter_data.* = .{
-            .fn_node = fn_node,
-            .coll_node = coll_node,
-            .stack = .{},
-        };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .filter_node = filter_data };
-        return node;
-    }
-
-    /// (take-while pred coll) の解析
-    fn analyzeTakeWhile(self: *Analyzer, items: []const Form) err.Error!*Node {
-        if (items.len != 3) {
-            return err.parseError(.invalid_arity, "take-while requires 2 arguments (take-while pred coll)", .{});
-        }
-
-        const fn_node = try self.analyze(items[1]);
-        const coll_node = try self.analyze(items[2]);
-
-        const data = self.allocator.create(node_mod.TakeWhileNode) catch return error.OutOfMemory;
-        data.* = .{ .fn_node = fn_node, .coll_node = coll_node, .stack = .{} };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .take_while_node = data };
-        return node;
-    }
-
-    /// (drop-while pred coll) の解析
-    fn analyzeDropWhile(self: *Analyzer, items: []const Form) err.Error!*Node {
-        if (items.len != 3) {
-            return err.parseError(.invalid_arity, "drop-while requires 2 arguments (drop-while pred coll)", .{});
-        }
-
-        const fn_node = try self.analyze(items[1]);
-        const coll_node = try self.analyze(items[2]);
-
-        const data = self.allocator.create(node_mod.DropWhileNode) catch return error.OutOfMemory;
-        data.* = .{ .fn_node = fn_node, .coll_node = coll_node, .stack = .{} };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .drop_while_node = data };
-        return node;
-    }
-
-    /// (map-indexed f coll) の解析
-    fn analyzeMapIndexed(self: *Analyzer, items: []const Form) err.Error!*Node {
-        if (items.len != 3) {
-            return err.parseError(.invalid_arity, "map-indexed requires 2 arguments (map-indexed f coll)", .{});
-        }
-
-        const fn_node = try self.analyze(items[1]);
-        const coll_node = try self.analyze(items[2]);
-
-        const data = self.allocator.create(node_mod.MapIndexedNode) catch return error.OutOfMemory;
-        data.* = .{ .fn_node = fn_node, .coll_node = coll_node, .stack = .{} };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .map_indexed_node = data };
-        return node;
-    }
-
-    /// (sort-by keyfn coll) の解析
-    fn analyzeSortBy(self: *Analyzer, items: []const Form) err.Error!*Node {
-        if (items.len != 3) {
-            return err.parseError(.invalid_arity, "sort-by requires 2 arguments (sort-by keyfn coll)", .{});
-        }
-        const fn_node = try self.analyze(items[1]);
-        const coll_node = try self.analyze(items[2]);
-        const data = self.allocator.create(node_mod.SortByNode) catch return error.OutOfMemory;
-        data.* = .{ .fn_node = fn_node, .coll_node = coll_node, .stack = .{} };
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .sort_by_node = data };
-        return node;
-    }
-
-    /// (group-by f coll) の解析
-    fn analyzeGroupBy(self: *Analyzer, items: []const Form) err.Error!*Node {
-        if (items.len != 3) {
-            return err.parseError(.invalid_arity, "group-by requires 2 arguments (group-by f coll)", .{});
-        }
-        const fn_node = try self.analyze(items[1]);
-        const coll_node = try self.analyze(items[2]);
-        const data = self.allocator.create(node_mod.GroupByNode) catch return error.OutOfMemory;
-        data.* = .{ .fn_node = fn_node, .coll_node = coll_node, .stack = .{} };
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .group_by_node = data };
-        return node;
-    }
-
-    // ============================================================
-    // Atom 操作
-    // ============================================================
-
-    /// (swap! atom f) または (swap! atom f x y ...) の解析
-    fn analyzeSwap(self: *Analyzer, items: []const Form) err.Error!*Node {
-        // 最低3引数: swap!, atom, fn
-        if (items.len < 3) {
-            return err.parseError(.invalid_arity, "swap! requires at least 2 arguments (swap! atom f)", .{});
-        }
-
-        const atom_node = try self.analyze(items[1]);
-        const fn_node = try self.analyze(items[2]);
-
-        // 追加引数（0個以上）
-        const extra_count = items.len - 3;
-        var extra_args = self.allocator.alloc(*Node, extra_count) catch return error.OutOfMemory;
-        for (0..extra_count) |i| {
-            extra_args[i] = try self.analyze(items[3 + i]);
-        }
-
-        const swap_data = self.allocator.create(node_mod.SwapNode) catch return error.OutOfMemory;
-        swap_data.* = .{
-            .atom_node = atom_node,
-            .fn_node = fn_node,
-            .args = extra_args,
-            .stack = .{},
-        };
-
-        const node = self.allocator.create(Node) catch return error.OutOfMemory;
-        node.* = .{ .swap_node = swap_data };
-        return node;
-    }
 
     // ============================================================
     // 例外処理
@@ -4394,23 +4101,47 @@ pub const Analyzer = struct {
         return Form{ .list = defn_forms };
     }
 
-    /// (with-out-str & body) → (str (do & body))
-    /// 簡易実装: body を do でラップして str に渡す
+    /// (with-out-str & body) →
+    /// (let [__cap (__begin-capture)]
+    ///   (do body... (__end-capture __cap)))
     fn expandWithOutStr(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
             return err.parseError(.invalid_arity, "with-out-str requires at least one expression", .{});
         }
-        // (do & body)
-        const do_forms = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
+        const a = self.allocator;
+
+        // (__begin-capture)
+        const begin_forms = a.alloc(Form, 1) catch return error.OutOfMemory;
+        begin_forms[0] = Form{ .symbol = form_mod.Symbol.init("__begin-capture") };
+        const begin_call = Form{ .list = begin_forms };
+
+        // バインディングベクター [__cap (__begin-capture)]
+        const bind_vec = a.alloc(Form, 2) catch return error.OutOfMemory;
+        bind_vec[0] = Form{ .symbol = form_mod.Symbol.init("__cap") };
+        bind_vec[1] = begin_call;
+
+        // (__end-capture __cap)
+        const end_forms = a.alloc(Form, 2) catch return error.OutOfMemory;
+        end_forms[0] = Form{ .symbol = form_mod.Symbol.init("__end-capture") };
+        end_forms[1] = Form{ .symbol = form_mod.Symbol.init("__cap") };
+        const end_call = Form{ .list = end_forms };
+
+        // (do body... (__end-capture __cap))
+        const body_count = items.len - 1; // items[1..] = body
+        const do_forms = a.alloc(Form, 1 + body_count + 1) catch return error.OutOfMemory;
         do_forms[0] = Form{ .symbol = form_mod.Symbol.init("do") };
         for (items[1..], 0..) |item, i| {
-            do_forms[i + 1] = item;
+            do_forms[1 + i] = item;
         }
-        // (str (do & body))
-        const str_forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
-        str_forms[0] = Form{ .symbol = form_mod.Symbol.init("str") };
-        str_forms[1] = Form{ .list = do_forms };
-        return Form{ .list = str_forms };
+        do_forms[1 + body_count] = end_call;
+        const do_expr = Form{ .list = do_forms };
+
+        // (let [__cap (__begin-capture)] (do body... (__end-capture __cap)))
+        const let_forms = a.alloc(Form, 3) catch return error.OutOfMemory;
+        let_forms[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        let_forms[1] = Form{ .vector = bind_vec };
+        let_forms[2] = do_expr;
+        return Form{ .list = let_forms };
     }
 
     // ── Phase 20: 追加マクロ展開 ──
@@ -4939,7 +4670,21 @@ pub const Analyzer = struct {
                 break :blk Form{ .vector = forms };
             },
             .regex => |pat| Form{ .regex = pat.source },
-            .char_val, .map, .set, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq, .delay_val, .volatile_val, .reduced_val, .transient, .promise, .matcher => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .map => |m| blk: {
+                var forms = self.allocator.alloc(Form, m.entries.len) catch return error.OutOfMemory;
+                for (m.entries, 0..) |item, i| {
+                    forms[i] = try self.valueToForm(item);
+                }
+                break :blk Form{ .map = forms };
+            },
+            .set => |s| blk: {
+                var forms = self.allocator.alloc(Form, s.items.len) catch return error.OutOfMemory;
+                for (s.items, 0..) |item, i| {
+                    forms[i] = try self.valueToForm(item);
+                }
+                break :blk Form{ .set = forms };
+            },
+            .char_val, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq, .delay_val, .volatile_val, .reduced_val, .transient, .promise, .matcher => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
         };
     }
 };

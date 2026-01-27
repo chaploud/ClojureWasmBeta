@@ -109,6 +109,71 @@
 (test-is (= nil (assert true)) "assert true")
 (test-throws (assert false "bad") "assert false throws")
 
+;; === letfn ===
+;; 基本: letfn 内関数呼び出し
+(test-eq 10 (letfn [(f [x] (* x 2))] (f 5)) "letfn basic call")
+
+;; 自己再帰
+(test-eq 120
+         (letfn [(fact [n acc]
+                   (if (zero? n) acc (fact (dec n) (* acc n))))]
+           (fact 5 1))
+         "letfn self-recursion")
+
+;; 相互再帰 (f → g, g → f)
+(test-eq :done
+         (letfn [(f [x] (if (zero? x) :done (g (dec x))))
+                 (g [x] (if (zero? x) :done (f (dec x))))]
+           (f 5))
+         "letfn mutual recursion f->g")
+
+(test-eq :done
+         (letfn [(f [x] (if (zero? x) :done (g (dec x))))
+                 (g [x] (if (zero? x) :done (f (dec x))))]
+           (g 3))
+         "letfn mutual recursion g->f")
+
+;; 前方参照 (f が g を呼ぶ、g は f の後に定義)
+(test-eq 10
+         (letfn [(f [x] (g x))
+                 (g [x] (* x 2))]
+           (f 5))
+         "letfn forward reference")
+
+;; 複数引数
+(test-eq 7
+         (letfn [(add [a b] (+ a b))]
+           (add 3 4))
+         "letfn multi-arg")
+
+;; letfn 内で let を使用
+(test-eq 15
+         (letfn [(f [x] (let [y (* x 3)] y))]
+           (f 5))
+         "letfn with let")
+
+;; 3 関数の相互参照
+(test-eq :c
+         (letfn [(a [x] (if (zero? x) :a (b (dec x))))
+                 (b [x] (if (zero? x) :b (c (dec x))))
+                 (c [x] (if (zero? x) :c (a (dec x))))]
+           (c 0))
+         "letfn three-way c(0)")
+
+(test-eq :c
+         (letfn [(a [x] (if (zero? x) :a (b (dec x))))
+                 (b [x] (if (zero? x) :b (c (dec x))))
+                 (c [x] (if (zero? x) :c (a (dec x))))]
+           (a 2))
+         "letfn three-way a(2)->b(1)->c(0)=:c")
+
+;; letfn 関数がクロージャとして外部変数を参照
+(let [multiplier 3]
+  (test-eq 15
+           (letfn [(f [x] (* x multiplier))]
+             (f 5))
+           "letfn closure over let"))
+
 ;; === レポート ===
 (println "[control_flow]")
 (test-report)

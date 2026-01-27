@@ -283,11 +283,12 @@ pub const LazySeq = struct {
     /// 遅延ジェネレータ: 無限シーケンス生成器
     generator: ?Generator,
 
-    pub const TransformKind = enum { map, filter, mapcat };
+    pub const TransformKind = enum { map, filter, mapcat, take_while, drop_while, map_indexed };
     pub const Transform = struct {
         kind: TransformKind,
         fn_val: Value,    // 変換関数（map の f、filter の pred）
         source: Value,    // 変換元シーケンス（lazy-seq or list/vector）
+        index: usize,     // map_indexed 用の現在インデックス
     };
 
     /// 遅延ジェネレータ: iterate, repeat, cycle, range 等の無限シーケンス
@@ -324,7 +325,14 @@ pub const LazySeq = struct {
     /// 遅延変換の LazySeq を作成（lazy map/filter）
     pub fn initTransform(kind: TransformKind, fn_val: Value, source: Value) LazySeq {
         var ls = empty_fields;
-        ls.transform = .{ .kind = kind, .fn_val = fn_val, .source = source };
+        ls.transform = .{ .kind = kind, .fn_val = fn_val, .source = source, .index = 0 };
+        return ls;
+    }
+
+    /// map-indexed 用: インデックス付き Transform 作成
+    pub fn initTransformIndexed(fn_val: Value, source: Value, start_index: usize) LazySeq {
+        var ls = empty_fields;
+        ls.transform = .{ .kind = .map_indexed, .fn_val = fn_val, .source = source, .index = start_index };
         return ls;
     }
 
@@ -1097,6 +1105,7 @@ pub const Value = union(enum) {
                         .kind = t.kind,
                         .fn_val = try t.fn_val.deepClone(allocator),
                         .source = try t.source.deepClone(allocator),
+                        .index = t.index,
                     } else null,
                     .concat_sources = if (ls.concat_sources) |cs| try deepCloneValues(allocator, cs) else null,
                     .generator = if (ls.generator) |g| LazySeq.Generator{

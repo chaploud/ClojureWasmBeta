@@ -40,6 +40,12 @@ pub threadlocal var call_fn: ?CallFn = null;
 /// 現在の Env（find-var, intern 等で使用）
 pub threadlocal var current_env: ?*Env = null;
 
+/// with-out-str 用: stdout キャプチャバッファ
+/// non-null のとき、print/println/pr/prn/printf/newline の出力をここに蓄積する
+pub threadlocal var output_capture: ?*std.ArrayListUnmanaged(u8) = null;
+/// output_capture 用アロケータ
+pub threadlocal var output_capture_allocator: ?std.mem.Allocator = null;
+
 /// ロード済みライブラリ管理
 const LoadedLibsSet = std.StringHashMapUnmanaged(void);
 var loaded_libs: LoadedLibsSet = .empty;
@@ -180,14 +186,14 @@ fn forceTransformOneStep(
 
     switch (t.kind) {
         .map => {
-            // source の first を取得
-            const src_first = try seqFirst(allocator, t.source);
-            if (src_first == .nil) {
-                // source が空 → 結果も空
+            // source が空かどうかチェック (nil 要素と区別)
+            if (try isSourceExhausted(allocator, t.source)) {
                 ls.transform = null;
                 ls.realized = value_mod.nil;
                 return;
             }
+            // source の first を取得
+            const src_first = try seqFirst(allocator, t.source);
             // f(first) を計算
             const mapped = try call(t.fn_val, &[_]Value{src_first}, allocator);
             // rest(source) を取得
@@ -208,13 +214,12 @@ fn forceTransformOneStep(
             // source を走査して pred が真の要素を見つける
             var current = t.source;
             while (true) {
-                const elem = try seqFirst(allocator, current);
-                if (elem == .nil) {
-                    // source を使い切った → 結果も空
+                if (try isSourceExhausted(allocator, current)) {
                     ls.transform = null;
                     ls.realized = value_mod.nil;
                     return;
                 }
+                const elem = try seqFirst(allocator, current);
                 // pred(elem)
                 const pred_result = try call(t.fn_val, &[_]Value{elem}, allocator);
                 const rest_val = try seqRest(allocator, current);
@@ -239,13 +244,12 @@ fn forceTransformOneStep(
             // source を走査して非空のサブコレクションを見つける
             var current = t.source;
             while (true) {
-                const src_elem = try seqFirst(allocator, current);
-                if (src_elem == .nil) {
-                    // source 終了 → 空
+                if (try isSourceExhausted(allocator, current)) {
                     ls.transform = null;
                     ls.realized = value_mod.nil;
                     return;
                 }
+                const src_elem = try seqFirst(allocator, current);
                 // f(elem) → サブコレクション
                 const sub_coll = try call(t.fn_val, &[_]Value{src_elem}, allocator);
                 const src_rest = try seqRest(allocator, current);
@@ -283,6 +287,76 @@ fn forceTransformOneStep(
                     ls.cons_tail = Value{ .lazy_seq = concat_ls };
                 }
                 return;
+            }
+        },
+        .take_while => {
+            // source の先頭要素に pred を適用 → truthy なら cons、falsy なら停止
+            if (try isSourceExhausted(allocator, t.source)) {
+                ls.transform = null;
+                ls.realized = value_mod.nil;
+                return;
+            }
+            const elem = try seqFirst(allocator, t.source);
+            const pred_result = try call(t.fn_val, &[_]Value{elem}, allocator);
+            if (!pred_result.isTruthy()) {
+                // pred が偽 → 停止（空シーケンス）
+                ls.transform = null;
+                ls.realized = value_mod.nil;
+                return;
+            }
+            // cons(elem, lazy-take-while(pred, rest))
+            const src_rest = try seqRest(allocator, t.source);
+            ls.transform = null;
+            ls.cons_head = elem;
+            if (isSeqEmpty(src_rest)) {
+                ls.cons_tail = value_mod.nil;
+            } else {
+                const tail_ls = try allocator.create(value_mod.LazySeq);
+                tail_ls.* = value_mod.LazySeq.initTransform(.take_while, t.fn_val, src_rest);
+                ls.cons_tail = Value{ .lazy_seq = tail_ls };
+            }
+        },
+        .drop_while => {
+            // pred が truthy な間スキップ → 最初の falsy 要素から全て返す
+            var current = t.source;
+            while (true) {
+                if (try isSourceExhausted(allocator, current)) {
+                    ls.transform = null;
+                    ls.realized = value_mod.nil;
+                    return;
+                }
+                const elem = try seqFirst(allocator, current);
+                const pred_result = try call(t.fn_val, &[_]Value{elem}, allocator);
+                if (!pred_result.isTruthy()) {
+                    // 最初の falsy 要素 → cons(elem, rest) をそのまま返す
+                    const rest_val = try seqRest(allocator, current);
+                    ls.transform = null;
+                    ls.cons_head = elem;
+                    ls.cons_tail = if (isSeqEmpty(rest_val)) value_mod.nil else rest_val;
+                    return;
+                }
+                current = try seqRest(allocator, current);
+            }
+        },
+        .map_indexed => {
+            // source の先頭要素に (f index elem) を適用
+            if (try isSourceExhausted(allocator, t.source)) {
+                ls.transform = null;
+                ls.realized = value_mod.nil;
+                return;
+            }
+            const elem = try seqFirst(allocator, t.source);
+            const idx_val = value_mod.intVal(@intCast(t.index));
+            const mapped = try call(t.fn_val, &[_]Value{ idx_val, elem }, allocator);
+            const src_rest = try seqRest(allocator, t.source);
+            ls.transform = null;
+            ls.cons_head = mapped;
+            if (isSeqEmpty(src_rest)) {
+                ls.cons_tail = value_mod.nil;
+            } else {
+                const tail_ls = try allocator.create(value_mod.LazySeq);
+                tail_ls.* = value_mod.LazySeq.initTransformIndexed(t.fn_val, src_rest, t.index + 1);
+                ls.cons_tail = Value{ .lazy_seq = tail_ls };
             }
         },
     }
@@ -437,13 +511,39 @@ fn seqRest(allocator: std.mem.Allocator, val: Value) anyerror!Value {
     };
 }
 
-/// シーケンスが空かどうか
+/// シーケンスが空かどうか (確定的に判定できる場合のみ)
 fn isSeqEmpty(val: Value) bool {
     return switch (val) {
         .nil => true,
         .list => |l| l.items.len == 0,
         .vector => |v| v.items.len == 0,
         else => false, // lazy-seq は空かわからない
+    };
+}
+
+/// シーケンスが空かどうか (lazy-seq も force して判定)
+fn isSourceExhausted(allocator: std.mem.Allocator, val: Value) anyerror!bool {
+    return switch (val) {
+        .nil => true,
+        .list => |l| l.items.len == 0,
+        .vector => |v| v.items.len == 0,
+        .lazy_seq => |ls_ptr| {
+            // 1ステップ force して判定
+            try forceLazySeqOneStep(allocator, ls_ptr);
+            if (ls_ptr.cons_head != null) return false; // 要素あり
+            if (ls_ptr.realized) |r| {
+                return switch (r) {
+                    .nil => true,
+                    .list => |l| l.items.len == 0,
+                    .vector => |v| v.items.len == 0,
+                    else => false,
+                };
+            }
+            // transform/concat/generator がまだあれば非空
+            if (ls_ptr.transform != null or ls_ptr.concat_sources != null or ls_ptr.generator != null) return false;
+            return true;
+        },
+        else => false,
     };
 }
 
@@ -1450,22 +1550,84 @@ pub fn nth(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 // 出力
 // ============================================================
 
+/// 出力先にバイト列を書き出す (output_capture 対応)
+/// capture 中は output_capture バッファに追記、それ以外は stdout へ
+fn writeToOutput(data: []const u8) void {
+    if (output_capture) |cap| {
+        if (output_capture_allocator) |alloc| {
+            cap.appendSlice(alloc, data) catch {};
+        }
+    } else {
+        const stdout = std.fs.File.stdout();
+        var buf: [4096]u8 = undefined;
+        var file_writer = stdout.writer(&buf);
+        const writer = &file_writer.interface;
+        writer.writeAll(data) catch {};
+        writer.flush() catch {};
+    }
+}
+
+/// 出力先に 1 バイトを書き出す
+fn writeByteToOutput(byte: u8) void {
+    if (output_capture) |cap| {
+        if (output_capture_allocator) |alloc| {
+            cap.append(alloc, byte) catch {};
+        }
+    } else {
+        const stdout = std.fs.File.stdout();
+        var buf: [4096]u8 = undefined;
+        var file_writer = stdout.writer(&buf);
+        const writer = &file_writer.interface;
+        writer.writeByte(byte) catch {};
+        writer.flush() catch {};
+    }
+}
+
+/// 値をフォーマットして出力先に書き出す (print/println 用: 文字列クォートなし)
+fn outputValueForPrint(_: std.mem.Allocator, val: Value) void {
+    if (output_capture) |cap| {
+        if (output_capture_allocator) |alloc| {
+            // バッファに書き出す
+            switch (val) {
+                .string => |s| cap.appendSlice(alloc, s.data) catch {},
+                else => {
+                    printValueToBuf(alloc, cap, val) catch {};
+                },
+            }
+        }
+    } else {
+        const stdout = std.fs.File.stdout();
+        var buf: [4096]u8 = undefined;
+        var file_writer = stdout.writer(&buf);
+        const writer = &file_writer.interface;
+        printValueForPrint(writer, val) catch {};
+        writer.flush() catch {};
+    }
+}
+
+/// 値をフォーマットして出力先に書き出す (pr/prn 用: 文字列クォート付き)
+fn outputValueForPr(_: std.mem.Allocator, val: Value) void {
+    if (output_capture) |cap| {
+        if (output_capture_allocator) |alloc| {
+            printValueToBuf(alloc, cap, val) catch {};
+        }
+    } else {
+        const stdout = std.fs.File.stdout();
+        var buf: [4096]u8 = undefined;
+        var file_writer = stdout.writer(&buf);
+        const writer = &file_writer.interface;
+        printValue(writer, val) catch {};
+        writer.flush() catch {};
+    }
+}
+
 /// println : 改行付き出力（文字列はクォートなし）
 pub fn println_fn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
-    const stdout = std.fs.File.stdout();
-    var buf: [4096]u8 = undefined;
-    var file_writer = stdout.writer(&buf);
-    const writer = &file_writer.interface;
-
     for (args, 0..) |arg, i| {
-        if (i > 0) writer.writeByte(' ') catch {};
-        printValueForPrint(writer, arg) catch {};
+        if (i > 0) writeByteToOutput(' ');
+        outputValueForPrint(allocator, arg);
     }
-    writer.writeByte('\n') catch {};
-    // flush via interface
-    writer.flush() catch {};
-
+    writeByteToOutput('\n');
     return value_mod.nil;
 }
 
@@ -2227,7 +2389,8 @@ pub fn into(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// reverse : コレクションを逆順に
 pub fn reverseFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1) return error.ArityError;
-    const items = getItems(args[0]) orelse return error.TypeError;
+    // lazy-seq 対応: collectToSlice で全要素を取得
+    const items = collectToSlice(allocator, args[0]) catch return error.TypeError;
 
     const new_items = try allocator.alloc(Value, items.len);
     for (items, 0..) |item, i| {
@@ -5259,50 +5422,29 @@ pub fn formatFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
 
 /// pr : 値を印字（改行なし、readably）
 pub fn prFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
-    const stdout = std.fs.File.stdout();
-    var buf: [4096]u8 = undefined;
-    var file_writer = stdout.writer(&buf);
-    const writer = &file_writer.interface;
-
     for (args, 0..) |arg, i| {
-        if (i > 0) writer.writeByte(' ') catch {};
-        printValue(writer, arg) catch {};
+        if (i > 0) writeByteToOutput(' ');
+        outputValueForPr(allocator, arg);
     }
-    writer.flush() catch {};
     return value_mod.nil;
 }
 
 /// print : 値を印字（改行なし、文字列はクォートなし）
 pub fn printFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
-    const stdout = std.fs.File.stdout();
-    var buf: [4096]u8 = undefined;
-    var file_writer = stdout.writer(&buf);
-    const writer = &file_writer.interface;
-
     for (args, 0..) |arg, i| {
-        if (i > 0) writer.writeByte(' ') catch {};
-        printValueForPrint(writer, arg) catch {};
+        if (i > 0) writeByteToOutput(' ');
+        outputValueForPrint(allocator, arg);
     }
-    writer.flush() catch {};
     return value_mod.nil;
 }
 
 /// prn : pr + 改行
 pub fn prnFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
-    const stdout = std.fs.File.stdout();
-    var buf: [4096]u8 = undefined;
-    var file_writer = stdout.writer(&buf);
-    const writer = &file_writer.interface;
-
     for (args, 0..) |arg, i| {
-        if (i > 0) writer.writeByte(' ') catch {};
-        printValue(writer, arg) catch {};
+        if (i > 0) writeByteToOutput(' ');
+        outputValueForPr(allocator, arg);
     }
-    writer.writeByte('\n') catch {};
-    writer.flush() catch {};
+    writeByteToOutput('\n');
     return value_mod.nil;
 }
 
@@ -5804,12 +5946,7 @@ pub fn clojureVersion(allocator: std.mem.Allocator, args: []const Value) anyerro
 pub fn newlineFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     _ = args;
-    const stdout = std.fs.File.stdout();
-    var buf: [4096]u8 = undefined;
-    var file_writer = stdout.writer(&buf);
-    const writer = &file_writer.interface;
-    writer.writeAll("\n") catch {};
-    writer.flush() catch {};
+    writeByteToOutput('\n');
     return value_mod.nil;
 }
 
@@ -5838,13 +5975,59 @@ pub fn printfFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
         .string => |str| str.data,
         else => return error.TypeError,
     };
-    const stdout = std.fs.File.stdout();
-    var buf: [4096]u8 = undefined;
-    var file_writer = stdout.writer(&buf);
-    const writer = &file_writer.interface;
-    writer.writeAll(s) catch {};
-    writer.flush() catch {};
+    writeToOutput(s);
     return value_mod.nil;
+}
+
+// --- with-out-str サポート ---
+
+/// __begin-capture : output_capture を開始し、キャプチャ前の状態を返す
+/// 戻り値: 以前のキャプチャバッファ (nil = なし、int = ポインタ)
+pub fn beginCaptureFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = args;
+    // 新しいキャプチャバッファを作成
+    const cap = try allocator.create(std.ArrayListUnmanaged(u8));
+    cap.* = .empty;
+    // 前のキャプチャ状態を保存
+    const prev_cap = output_capture;
+    const prev_alloc = output_capture_allocator;
+    // 新しいキャプチャを設定
+    output_capture = cap;
+    output_capture_allocator = allocator;
+    // 前の状態を Value として返す (ネスト対応)
+    // int の上位ビットにキャプチャポインタ、下位に allocator は同じなので不要
+    if (prev_cap) |p| {
+        return value_mod.intVal(@intCast(@intFromPtr(p)));
+    }
+    _ = prev_alloc;
+    return value_mod.nil;
+}
+
+/// __end-capture : キャプチャを終了し、バッファ内容を文字列として返す
+/// 引数: 0=以前の状態 (beginCapture の戻り値)
+pub fn endCaptureFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+    const prev_state = args[0];
+
+    // 現在のキャプチャバッファを取得
+    const cap = output_capture orelse return Value{ .string = try allocator.create(value_mod.String) };
+    const result_data = cap.toOwnedSlice(allocator) catch return error.OutOfMemory;
+    allocator.destroy(cap);
+
+    // 前の状態を復元
+    if (prev_state == .int) {
+        const ptr_val: usize = @intCast(prev_state.int);
+        output_capture = @ptrFromInt(ptr_val);
+        // allocator は同じ (threadlocal)
+    } else {
+        output_capture = null;
+        output_capture_allocator = null;
+    }
+
+    // キャプチャした内容を文字列として返す
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = value_mod.String.init(result_data);
+    return Value{ .string = str_obj };
 }
 
 // --- ハッシュユーティリティ ---
@@ -6375,6 +6558,359 @@ pub fn vswapBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Val
     const new_val = try call(args[1], call_args.items, allocator);
     v.value = new_val;
     return new_val;
+}
+
+// ============================================================
+// Phase Q1a: 特殊形式 → 通常 builtin 移行 (7 関数)
+// ============================================================
+
+/// apply : (apply f args) (apply f x y args)
+/// 最終引数をシーケンスとして展開し、中間引数と結合して関数を呼び出す
+pub fn applyFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const call = call_fn orelse return error.TypeError;
+
+    const fn_val = args[0];
+    // 最終引数（シーケンス）
+    const last_arg = args[args.len - 1];
+    const seq_items: []const Value = switch (last_arg) {
+        .list => |l| l.items,
+        .vector => |v| v.items,
+        .nil => &[_]Value{},
+        .lazy_seq => try collectToSlice(allocator, last_arg),
+        else => return error.TypeError,
+    };
+
+    // 中間引数 (args[1..len-1])
+    const middle = args[1 .. args.len - 1];
+    const total_len = middle.len + seq_items.len;
+    const all_args = try allocator.alloc(Value, total_len);
+    @memcpy(all_args[0..middle.len], middle);
+    @memcpy(all_args[middle.len..], seq_items);
+
+    return call(fn_val, all_args, allocator);
+}
+
+/// partial : (partial f arg1 arg2 ...) → 部分適用関数
+pub fn partialFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.ArityError;
+
+    const fn_val = args[0];
+    const partial_args = try allocator.alloc(Value, args.len - 1);
+    @memcpy(partial_args, args[1..]);
+
+    const pf = try allocator.create(value_mod.PartialFn);
+    pf.* = .{
+        .fn_val = fn_val,
+        .args = partial_args,
+    };
+
+    return Value{ .partial_fn = pf };
+}
+
+/// comp : (comp) → identity, (comp f) → f, (comp f g ...) → 合成関数
+pub fn compFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    // (comp) → identity を返す
+    if (args.len == 0) {
+        // identity 関数を返す (builtin)
+        const fn_obj = try allocator.create(Fn);
+        fn_obj.* = Fn.initBuiltin("identity", identity);
+        return Value{ .fn_val = fn_obj };
+    }
+
+    // (comp f) → f をそのまま返す
+    if (args.len == 1) {
+        return args[0];
+    }
+
+    // (comp f g h ...) → CompFn を作成
+    const fns = try allocator.alloc(Value, args.len);
+    @memcpy(fns, args);
+
+    const cf = try allocator.create(value_mod.CompFn);
+    cf.* = .{ .fns = fns };
+
+    return Value{ .comp_fn = cf };
+}
+
+/// reduce : (reduce f coll) (reduce f init coll)
+pub fn reduceFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+    const call = call_fn orelse return error.TypeError;
+
+    const fn_val = args[0];
+
+    // コレクションと初期値を決定
+    var acc: Value = undefined;
+    var start_idx: usize = 0;
+    var items: []const Value = undefined;
+
+    if (args.len == 3) {
+        // (reduce f init coll)
+        acc = args[1];
+        items = try collectToSlice(allocator, args[2]);
+    } else {
+        // (reduce f coll)
+        items = try collectToSlice(allocator, args[1]);
+        if (items.len == 0) {
+            // 空コレクションで初期値なし → (f) を呼び出す
+            return call(fn_val, &[_]Value{}, allocator);
+        }
+        acc = items[0];
+        start_idx = 1;
+    }
+
+    // 畳み込み
+    for (items[start_idx..]) |item| {
+        const call_args = try allocator.alloc(Value, 2);
+        call_args[0] = acc;
+        call_args[1] = item;
+        acc = try call(fn_val, call_args, allocator);
+        // reduced による早期終了
+        if (acc == .reduced_val) {
+            return acc.reduced_val.value;
+        }
+    }
+
+    return acc;
+}
+
+/// 値の比較（sort-by 用内部ヘルパー）
+fn sortValueCompare(a: Value, b: Value) std.math.Order {
+    if (a == .int and b == .int) {
+        return std.math.order(a.int, b.int);
+    }
+    if (a == .float and b == .float) {
+        return std.math.order(a.float, b.float);
+    }
+    if (a == .int and b == .float) {
+        return std.math.order(@as(f64, @floatFromInt(a.int)), b.float);
+    }
+    if (a == .float and b == .int) {
+        return std.math.order(a.float, @as(f64, @floatFromInt(b.int)));
+    }
+    if (a == .string and b == .string) {
+        return std.mem.order(u8, a.string.data, b.string.data);
+    }
+    if (a == .keyword and b == .keyword) {
+        return std.mem.order(u8, a.keyword.name, b.keyword.name);
+    }
+    return .eq;
+}
+
+/// sort-by : (sort-by keyfn coll)
+pub fn sortByFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const call = call_fn orelse return error.TypeError;
+
+    const fn_val = args[0];
+    const items = try collectToSlice(allocator, args[1]);
+
+    if (items.len == 0) {
+        const result = try allocator.create(value_mod.PersistentList);
+        result.* = .{ .items = &[_]Value{} };
+        return Value{ .list = result };
+    }
+
+    // 各要素のキーを計算
+    const sort_keys = try allocator.alloc(Value, items.len);
+    for (items, 0..) |item, i| {
+        const call_args = try allocator.alloc(Value, 1);
+        call_args[0] = item;
+        sort_keys[i] = try call(fn_val, call_args, allocator);
+    }
+
+    // insertion sort（安定ソート）
+    var sorted = try allocator.dupe(Value, items);
+    var sorted_keys = try allocator.dupe(Value, sort_keys);
+    for (1..sorted.len) |i| {
+        const val_i = sorted[i];
+        const key_i = sorted_keys[i];
+        var j: usize = i;
+        while (j > 0 and sortValueCompare(sorted_keys[j - 1], key_i) == .gt) {
+            sorted[j] = sorted[j - 1];
+            sorted_keys[j] = sorted_keys[j - 1];
+            j -= 1;
+        }
+        sorted[j] = val_i;
+        sorted_keys[j] = key_i;
+    }
+
+    const result = try allocator.create(value_mod.PersistentList);
+    result.* = .{ .items = sorted };
+    return Value{ .list = result };
+}
+
+/// group-by : (group-by f coll)
+pub fn groupByFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const call = call_fn orelse return error.TypeError;
+
+    const fn_val = args[0];
+    const items = try collectToSlice(allocator, args[1]);
+
+    // キーごとにグループ化
+    var group_keys: std.ArrayListUnmanaged(Value) = .empty;
+    var group_vals: std.ArrayListUnmanaged(std.ArrayListUnmanaged(Value)) = .empty;
+
+    for (items) |item| {
+        const call_args = try allocator.alloc(Value, 1);
+        call_args[0] = item;
+        const key = try call(fn_val, call_args, allocator);
+
+        // 既存キーを探す
+        var found = false;
+        for (group_keys.items, 0..) |gk, i| {
+            if (key.eql(gk)) {
+                try group_vals.items[i].append(allocator, item);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            try group_keys.append(allocator, key);
+            var new_list: std.ArrayListUnmanaged(Value) = .empty;
+            try new_list.append(allocator, item);
+            try group_vals.append(allocator, new_list);
+        }
+    }
+
+    // マップに変換: {key1 [v1 v2], key2 [v3] ...}
+    const entries = try allocator.alloc(Value, group_keys.items.len * 2);
+    for (group_keys.items, 0..) |key, i| {
+        entries[i * 2] = key;
+        const vec_items = try group_vals.items[i].toOwnedSlice(allocator);
+        const vec = try allocator.create(value_mod.PersistentVector);
+        vec.* = .{ .items = vec_items };
+        entries[i * 2 + 1] = Value{ .vector = vec };
+    }
+
+    const result = try allocator.create(value_mod.PersistentMap);
+    result.* = .{ .entries = entries };
+    return Value{ .map = result };
+}
+
+/// swap! : (swap! atom f) (swap! atom f x y ...)
+pub fn swapBangFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 2) return error.ArityError;
+    const call = call_fn orelse return error.TypeError;
+
+    const atom_ptr = switch (args[0]) {
+        .atom => |a| a,
+        else => return error.TypeError,
+    };
+
+    const fn_val = args[1];
+
+    // (f current-val extra-args...) の引数を構築
+    const extra = args[2..];
+    const total = 1 + extra.len;
+    const call_args = try allocator.alloc(Value, total);
+    call_args[0] = atom_ptr.value; // 現在の値
+    @memcpy(call_args[1..], extra);
+
+    // 関数を適用
+    const new_val = try call(fn_val, call_args, allocator);
+
+    // scratch 参照を排除するためディープクローン
+    const cloned = try new_val.deepClone(allocator);
+
+    // Atom を更新
+    atom_ptr.value = cloned;
+    return cloned;
+}
+
+// ============================================================
+// Phase Q1b: 遅延特殊形式 → builtin 移行 (5 関数)
+// ============================================================
+
+/// map : (map f coll) → 遅延シーケンス
+/// 全入力型に対して Transform ベースの LazySeq を返す
+pub fn mapFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const fn_val = args[0];
+    const coll = args[1];
+
+    // nil → 空リスト
+    if (coll == .nil) {
+        const result = try allocator.create(value_mod.PersistentList);
+        result.* = .{ .items = &[_]Value{} };
+        return Value{ .list = result };
+    }
+
+    // 全入力型に対して遅延 Transform を返す
+    const ls = try allocator.create(value_mod.LazySeq);
+    ls.* = value_mod.LazySeq.initTransform(.map, fn_val, coll);
+    return Value{ .lazy_seq = ls };
+}
+
+/// filter : (filter pred coll) → 遅延シーケンス
+pub fn filterFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const fn_val = args[0];
+    const coll = args[1];
+
+    if (coll == .nil) {
+        const result = try allocator.create(value_mod.PersistentList);
+        result.* = .{ .items = &[_]Value{} };
+        return Value{ .list = result };
+    }
+
+    const ls = try allocator.create(value_mod.LazySeq);
+    ls.* = value_mod.LazySeq.initTransform(.filter, fn_val, coll);
+    return Value{ .lazy_seq = ls };
+}
+
+/// take-while : (take-while pred coll) → 遅延シーケンス
+pub fn takeWhileFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const fn_val = args[0];
+    const coll = args[1];
+
+    if (coll == .nil) {
+        const result = try allocator.create(value_mod.PersistentList);
+        result.* = .{ .items = &[_]Value{} };
+        return Value{ .list = result };
+    }
+
+    const ls = try allocator.create(value_mod.LazySeq);
+    ls.* = value_mod.LazySeq.initTransform(.take_while, fn_val, coll);
+    return Value{ .lazy_seq = ls };
+}
+
+/// drop-while : (drop-while pred coll) → 遅延シーケンス
+pub fn dropWhileFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const fn_val = args[0];
+    const coll = args[1];
+
+    if (coll == .nil) {
+        const result = try allocator.create(value_mod.PersistentList);
+        result.* = .{ .items = &[_]Value{} };
+        return Value{ .list = result };
+    }
+
+    const ls = try allocator.create(value_mod.LazySeq);
+    ls.* = value_mod.LazySeq.initTransform(.drop_while, fn_val, coll);
+    return Value{ .lazy_seq = ls };
+}
+
+/// map-indexed : (map-indexed f coll) → 遅延シーケンス
+/// f は (f index element) の 2 引数
+pub fn mapIndexedFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const fn_val = args[0];
+    const coll = args[1];
+
+    if (coll == .nil) {
+        const result = try allocator.create(value_mod.PersistentList);
+        result.* = .{ .items = &[_]Value{} };
+        return Value{ .list = result };
+    }
+
+    const ls = try allocator.create(value_mod.LazySeq);
+    ls.* = value_mod.LazySeq.initTransformIndexed(fn_val, coll, 0);
+    return Value{ .lazy_seq = ls };
 }
 
 /// reduced : 値を Reduced でラップ（reduce の早期終了用）
@@ -9915,6 +10451,9 @@ const builtins = [_]BuiltinDef{
     .{ .name = "print-simple", .func = printMethodFn },
     .{ .name = "print-dup", .func = printMethodFn },
     .{ .name = "flush", .func = flushFn },
+    // with-out-str サポート
+    .{ .name = "__begin-capture", .func = beginCaptureFn },
+    .{ .name = "__end-capture", .func = endCaptureFn },
     // Phase 19c: 名前空間・Reader・ユーティリティ
     .{ .name = "find-ns", .func = findNsFn },
     .{ .name = "create-ns", .func = createNsFn },
@@ -9977,6 +10516,20 @@ const builtins = [_]BuiltinDef{
     .{ .name = "spit", .func = spitFn },
     .{ .name = "file-seq", .func = fileSeqFn },
     .{ .name = "line-seq", .func = lineSeqFn },
+    // Phase Q1a: 特殊形式 → builtin 移行
+    .{ .name = "apply", .func = applyFn },
+    .{ .name = "partial", .func = partialFn },
+    .{ .name = "comp", .func = compFn },
+    .{ .name = "reduce", .func = reduceFn },
+    .{ .name = "sort-by", .func = sortByFn },
+    .{ .name = "group-by", .func = groupByFn },
+    .{ .name = "swap!", .func = swapBangFn },
+    // Phase Q1b: 遅延特殊形式 → builtin 移行
+    .{ .name = "map", .func = mapFn },
+    .{ .name = "filter", .func = filterFn },
+    .{ .name = "take-while", .func = takeWhileFn },
+    .{ .name = "drop-while", .func = dropWhileFn },
+    .{ .name = "map-indexed", .func = mapIndexedFn },
 };
 
 /// clojure.core の組み込み関数を Env に登録

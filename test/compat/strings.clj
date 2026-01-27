@@ -82,6 +82,29 @@
 (test-eq 'hello (symbol "hello") "symbol from string")
 (test-eq :ns/name (keyword "ns" "name") "keyword with ns")
 
+;; === with-out-str ===
+(test-eq "hello\n" (with-out-str (println "hello")) "with-out-str println")
+(test-eq "12" (with-out-str (print 1) (print 2)) "with-out-str multi print")
+(test-eq "" (with-out-str 42) "with-out-str no output")
+(test-eq ":a 1\n" (with-out-str (prn :a 1)) "with-out-str prn")
+(test-eq "42" (with-out-str (pr 42)) "with-out-str pr")
+(test-eq "\n" (with-out-str (newline)) "with-out-str newline")
+(test-eq "hello world" (with-out-str (print "hello") (print " ") (print "world")) "with-out-str concat")
+
+;; ネストした with-out-str
+(test-eq "inner"
+         (with-out-str
+           (print "inner")
+           (with-out-str (print "hidden"))) ;; hidden は内側のキャプチャに入り、外に漏れない
+         "with-out-str nested: inner captures")
+
+;; 外側は内側キャプチャの結果を含まない
+(let [outer (with-out-str
+              (print "A")
+              (let [inner (with-out-str (print "B"))]
+                (print inner)))]
+  (test-eq "AB" outer "with-out-str nested: outer gets inner result"))
+
 ;; === レポート ===
 (println "[strings]")
 (test-report)

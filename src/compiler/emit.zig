@@ -96,18 +96,6 @@ pub const Compiler = struct {
             .quote_node => |node| try self.emitQuote(node),
             .throw_node => |node| try self.emitThrow(node),
             .try_node => |node| try self.emitTry(node),
-            .apply_node => |node| try self.emitApply(node),
-            .partial_node => |node| try self.emitPartial(node),
-            .comp_node => |node| try self.emitComp(node),
-            .reduce_node => |node| try self.emitReduce(node),
-            .map_node => |node| try self.emitMap(node),
-            .filter_node => |node| try self.emitFilter(node),
-            .swap_node => |node| try self.emitSwap(node),
-            .take_while_node => |node| try self.emitTakeWhile(node),
-            .drop_while_node => |node| try self.emitDropWhile(node),
-            .map_indexed_node => |node| try self.emitMapIndexed(node),
-            .sort_by_node => |node| try self.emitSortBy(node),
-            .group_by_node => |node| try self.emitGroupBy(node),
             .defmulti_node => |node| try self.emitDefmulti(node),
             .defmethod_node => |node| try self.emitDefmethod(node),
             .defprotocol_node => |node| try self.emitDefprotocol(node),
@@ -606,128 +594,6 @@ pub const Compiler = struct {
         try self.emitConstant(node.form);
     }
 
-    /// apply
-    /// (apply f args) または (apply f x y z args)
-    fn emitApply(self: *Compiler, node: *const node_mod.ApplyNode) CompileError!void {
-        // 関数をコンパイル
-        try self.compile(node.fn_node);
-
-        // 中間引数をコンパイル
-        for (node.args) |arg| {
-            try self.compile(arg);
-        }
-
-        // シーケンス引数をコンパイル
-        try self.compile(node.seq_node);
-
-        // apply 命令（fn + N中間引数 + seq をポップ、結果プッシュ → net -(N+1)）
-        try self.chunk.emit(.apply, @intCast(node.args.len));
-        self.sp_depth -= @as(u16, @intCast(node.args.len)) + 1;
-    }
-
-    fn emitPartial(self: *Compiler, node: *const node_mod.PartialNode) CompileError!void {
-        // 関数をコンパイル
-        try self.compile(node.fn_node);
-
-        // 部分適用する引数をコンパイル
-        for (node.args) |arg| {
-            try self.compile(arg);
-        }
-
-        // partial 命令（fn + N引数をポップ、結果プッシュ → net -N）
-        try self.chunk.emit(.partial, @intCast(node.args.len));
-        self.sp_depth -= @intCast(node.args.len);
-    }
-
-    fn emitComp(self: *Compiler, node: *const node_mod.CompNode) CompileError!void {
-        // 関数をコンパイル（左から右の順）
-        for (node.fns) |fn_node| {
-            try self.compile(fn_node);
-        }
-
-        // comp 命令（N個ポップ、1個プッシュ → net -(N-1)）
-        try self.chunk.emit(.comp, @intCast(node.fns.len));
-        if (node.fns.len > 1) {
-            self.sp_depth -= @as(u16, @intCast(node.fns.len)) - 1;
-        }
-    }
-
-    fn emitReduce(self: *Compiler, node: *const node_mod.ReduceNode) CompileError!void {
-        // 関数をコンパイル
-        try self.compile(node.fn_node);
-
-        // 初期値がある場合はコンパイル
-        const has_init: u16 = if (node.init_node) |init_n| blk: {
-            try self.compile(init_n);
-            break :blk 1;
-        } else 0;
-
-        // コレクションをコンパイル
-        try self.compile(node.coll_node);
-
-        // reduce 命令（fn + init? + coll をポップ、結果プッシュ → net -(1+has_init)）
-        try self.chunk.emit(.reduce, has_init);
-        self.sp_depth -= 1 + has_init;
-    }
-
-    /// map コンパイル: (map f coll)
-    fn emitMap(self: *Compiler, node: *const node_mod.MapNode) CompileError!void {
-        try self.compile(node.fn_node);
-        try self.compile(node.coll_node);
-        // fn + coll をポップ、結果プッシュ → net -1
-        try self.chunk.emit(.map_seq, 0);
-        self.sp_depth -= 1;
-    }
-
-    /// filter コンパイル: (filter pred coll)
-    fn emitFilter(self: *Compiler, node: *const node_mod.FilterNode) CompileError!void {
-        try self.compile(node.fn_node);
-        try self.compile(node.coll_node);
-        // fn + coll をポップ、結果プッシュ → net -1
-        try self.chunk.emit(.filter_seq, 0);
-        self.sp_depth -= 1;
-    }
-
-    /// take-while コンパイル: (take-while pred coll)
-    fn emitTakeWhile(self: *Compiler, node: *const node_mod.TakeWhileNode) CompileError!void {
-        try self.compile(node.fn_node);
-        try self.compile(node.coll_node);
-        try self.chunk.emit(.take_while_seq, 0);
-        self.sp_depth -= 1;
-    }
-
-    /// drop-while コンパイル: (drop-while pred coll)
-    fn emitDropWhile(self: *Compiler, node: *const node_mod.DropWhileNode) CompileError!void {
-        try self.compile(node.fn_node);
-        try self.compile(node.coll_node);
-        try self.chunk.emit(.drop_while_seq, 0);
-        self.sp_depth -= 1;
-    }
-
-    /// map-indexed コンパイル: (map-indexed f coll)
-    fn emitMapIndexed(self: *Compiler, node: *const node_mod.MapIndexedNode) CompileError!void {
-        try self.compile(node.fn_node);
-        try self.compile(node.coll_node);
-        try self.chunk.emit(.map_indexed_seq, 0);
-        self.sp_depth -= 1;
-    }
-
-    /// sort-by コンパイル: (sort-by f coll)
-    fn emitSortBy(self: *Compiler, node: *const node_mod.SortByNode) CompileError!void {
-        try self.compile(node.fn_node);
-        try self.compile(node.coll_node);
-        try self.chunk.emit(.sort_by_seq, 0);
-        self.sp_depth -= 1;
-    }
-
-    /// group-by コンパイル: (group-by f coll)
-    fn emitGroupBy(self: *Compiler, node: *const node_mod.GroupByNode) CompileError!void {
-        try self.compile(node.fn_node);
-        try self.compile(node.coll_node);
-        try self.chunk.emit(.group_by_seq, 0);
-        self.sp_depth -= 1;
-    }
-
     // === 遅延シーケンス ===
 
     /// lazy-seq コンパイル: (lazy-seq body)
@@ -748,23 +614,6 @@ pub const Compiler = struct {
         // lazy_seq 命令でサンクから LazySeq を作成
         try self.chunk.emitOp(.lazy_seq);
         // スタック効果: fn をポップして lazy_seq をプッシュ（差引0）
-    }
-
-    // === Atom 操作 ===
-
-    /// swap! コンパイル: (swap! atom f arg1 arg2 ...)
-    fn emitSwap(self: *Compiler, node: *const node_mod.SwapNode) CompileError!void {
-        // atom 式をコンパイル
-        try self.compile(node.atom_node);
-        // 関数をコンパイル
-        try self.compile(node.fn_node);
-        // 追加引数をコンパイル
-        for (node.args) |arg| {
-            try self.compile(arg);
-        }
-        // swap_atom 命令（atom + fn + N引数をポップ、結果プッシュ → net -(N+1)）
-        try self.chunk.emit(.swap_atom, @intCast(node.args.len));
-        self.sp_depth -= @as(u16, @intCast(node.args.len)) + 1;
     }
 
     // === 例外処理 ===

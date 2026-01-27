@@ -62,6 +62,15 @@
 | T2    | sci 関数カバレッジ監査 + コアテスト (372/390 pass = 95%)                                      |
 | T3    | 最小 clojure.test 実装 (deftest/is/testing/run-tests)                                         |
 | T4    | sci テストスイート移植                                                                        |
+| Q3    | Var システム修正 (def返値, #'var呼出, var-set, alter-var-root, defonce)                       |
+| Q4a   | VM reduced 対応                                                                               |
+| Q2b   | fn-level recur 修正                                                                           |
+| Q1a   | Special Form 正規化 eager 7関数 (apply/partial/comp/reduce/sort-by/group-by/swap!)            |
+| Q1b   | Special Form 正規化 lazy 5関数 (map/filter/take-while/drop-while/map-indexed)                 |
+| Q1c   | 死コード削除 (12 Node/Opcode, -1,400行)                                                      |
+| Q2a   | Map/Set リテラル in マクロ展開修正 (valueToForm に map/set 追加)                              |
+| Q4b   | letfn 相互再帰修正 (fn名省略でインデックスずれ解消)                                          |
+| Q5a   | with-out-str 実装 (threadlocal output capture)                                               |
 
 ### 実装状況
 
@@ -75,7 +84,7 @@
 
 ### テスト全体結果
 
-**691 pass, 1 fail(意図的), 0 error** (total: 692)
+**729 pass, 1 fail(意図的), 0 error** (total: 730)
 
 ### sci テストスイート移植
 
@@ -94,7 +103,7 @@
 |------------------------------------------|--------------|------|
 | `test/compat/atoms.clj`                  | 33           | PASS |
 | `test/compat/collections.clj`            | 76           | PASS |
-| `test/compat/control_flow.clj`           | 43           | PASS |
+| `test/compat/control_flow.clj`           | 53           | PASS |
 | `test/compat/core_basic.clj`             | 54           | PASS |
 | `test/compat/dynamic_binding.clj`        | 15           | PASS |
 | `test/compat/higher_order.clj`           | 33           | PASS |
@@ -103,7 +112,7 @@
 | `test/compat/predicates.clj`             | 91           | PASS |
 | `test/compat/regex.clj`                  | 17           | PASS |
 | `test/compat/sequences.clj`              | 48           | PASS |
-| `test/compat/strings.clj`                | 45           | PASS |
+| `test/compat/strings.clj`                | 54           | PASS |
 | `test/compat/test_framework_test.clj`    | 8+1 fail     | PASS(意図的1fail) |
 | **compat 合計**                          | **520**      |      |
 
@@ -118,51 +127,78 @@
 ### テスト移植時の制限回避ルール
 
 deftest body 内 (= defn body 内) で使えない構文:
-- マップリテラル `{...}` → `(hash-map ...)` または外部ヘルパー関数
-- セットリテラル `#{...}` → `(hash-set ...)` または外部ヘルパー関数
+- ~~マップリテラル `{...}`~~ → Q2a で修正済み
+- ~~セットリテラル `#{...}`~~ → Q2a で修正済み
 - マップ分配束縛 `{:keys [...]}` → 外部ヘルパー関数
 - `def ^:dynamic` / `defmacro` → 外部ヘルパー関数
 - `(def name "docstring" value)` (3-arg def) → スキップ
 
 ### 新規発見バグ一覧
 
-| バグ                               | 影響         | 回避策                         | 修正Phase |
-|------------------------------------|--------------|--------------------------------|-----------|
-| map/set リテラル in macro body     | load-file 時 | hash-map/hash-set              | Q2a       |
-| fn-level recur returns nil         | defn+recur   | loop+recur を使用              | Q2b       |
-| vector-list equality broken        | = [1] '(1)   | 修正済み (eql で sequential 比較) | 済        |
-| map-as-fn 2-arity                  | ({:a 1} k d) | get with default               | —         |
-| symbol-as-fn                       | ('a map)     | get                            | —         |
-| defonce not preventing redef       | defonce      | スキップ                       | Q3e       |
-| letfn mutual recursion             | letfn f→g    | スキップ                       | Q4b       |
-| #'var as callable                  | (#'foo)      | スキップ                       | Q3b       |
-| (str (def x 1)) returns ""         | def-returns  | スキップ                       | Q3a       |
-| ^:const not respected              | const        | スキップ                       | —         |
-| var-set no effect                  | var-set      | スキップ                       | Q3c       |
-| alter-var-root uses thread-local   | avr+binding  | スキップ                       | Q3d       |
-| with-local-vars not implemented    | wlv          | スキップ                       | —         |
-| add-watch on var not implemented   | add-watch    | スキップ                       | —         |
-| thread-bound? 1-arity only         | thread-bound | 1引数で使用                    | —         |
-| defmacro inside defn → Undefined   | defmacro     | トップレベルで定義             | —         |
-| with-out-str 未実装 (出力未キャプチャ) | io           | str(do body) に展開、空文字列  | Q5        |
-| VM reduced 未対応                  | reduce early | TreeWalk のみ                  | Q4a       |
+| バグ                                   | 影響         | 回避策                            | 修正Phase |
+|----------------------------------------|--------------|-----------------------------------|-----------|
+| map/set リテラル in macro body         | load-file 時 | hash-map/hash-set                 | Q2a ✅    |
+| fn-level recur returns nil             | defn+recur   | loop+recur を使用                 | Q2b ✅    |
+| vector-list equality broken            | = [1] '(1)   | 修正済み (eql で sequential 比較) | 済        |
+| map-as-fn 2-arity                      | ({:a 1} k d) | get with default                  | —         |
+| symbol-as-fn                           | ('a map)     | get                               | —         |
+| defonce not preventing redef           | defonce      | スキップ                          | Q3e ✅    |
+| letfn mutual recursion                 | letfn f→g    | スキップ                          | Q4b ✅    |
+| #'var as callable                      | (#'foo)      | スキップ                          | Q3b ✅    |
+| (str (def x 1)) returns ""             | def-returns  | スキップ                          | Q3a ✅    |
+| ^:const not respected                  | const        | スキップ                          | —         |
+| var-set no effect                      | var-set      | スキップ                          | Q3c ✅    |
+| alter-var-root uses thread-local       | avr+binding  | スキップ                          | Q3d ✅    |
+| with-local-vars not implemented        | wlv          | スキップ                          | —         |
+| add-watch on var not implemented       | add-watch    | スキップ                          | —         |
+| thread-bound? 1-arity only             | thread-bound | 1引数で使用                       | —         |
+| defmacro inside defn → Undefined       | defmacro     | トップレベルで定義                | —         |
+| with-out-str 未実装 (出力未キャプチャ) | io           | str(do body) に展開、空文字列     | Q5a ✅    |
+| VM reduced 未対応                      | reduce early | TreeWalk のみ                     | Q4a ✅    |
 
 ### 本セッションで実装した機能
 
-- **keyword 2-arity**: `(keyword "ns" "name")` → `:ns/name`
-- **lazy-seq 等価比較**: `=` で lazy-seq を実体化して比較
-- **vec from lazy-seq**: `(vec (mapcat ...))` が動作
-- **memoize 本実装**: atom + hash-map キャッシュ (マクロ展開)
-- **identical? キーワード**: 名前比較でキーワード同一性判定 (intern 相当)
-- **テスト修正**: keep-indexed / juxt / sort の期待値誤り修正
+- **Q3**: Var システム修正 (def返値→Var, #'var呼出, var-set thread binding, alter-var-root root, defonce)
+- **Q4a**: VM reduced 対応 (executeReduce に reduced_val チェック追加)
+- **Q2b**: fn-level recur (callWithArgs にリカーループ追加)
+- **Q1a**: Special Form 正規化 eager 7関数 → builtin 移行 (apply/partial/comp/reduce/sort-by/group-by/swap!)
+  - analyzeList の 7 分岐削除、core.zig に 7 builtin 関数追加
+- **Q1b**: Special Form 正規化 lazy 5関数 → builtin 移行 (map/filter/take-while/drop-while/map-indexed)
+  - TransformKind 拡張 (take_while/drop_while/map_indexed)
+  - forceTransformOneStep の nil要素バグ修正 (isSourceExhausted 導入)
+  - reverse の lazy-seq 対応修正
+  - 第一級関数テスト 19 assertions
+  - 全テスト 710 pass 維持
+- **Q1c**: 死コード削除 (-1,400行)
+  - node.zig: 12 struct定義 + 12 union variant + switch cases 削除
+  - emit.zig: 12 emitXxx 関数 + dispatch cases 削除
+  - bytecode.zig: 12 opcode 削除 (apply/partial/comp/reduce/map_seq/filter_seq 等)
+  - vm.zig: executeXxx 関数 + WithExceptionHandling ラッパー + vmValueCompare 削除
+  - analyze.zig: 12 analyzeXxx 関数削除
+- **Q2a**: Map/Set リテラル in マクロ展開修正
+  - valueToForm() に .map/.set ケース追加 (formToValue と対称化)
+  - deftest body 内で {:a 1}, #{x} が使用可能に
+- **Q4b**: letfn 相互再帰修正
+  - 根本原因: analyzeLetfn で fn に名前を渡すと analyzeFn が自己参照ローカルを追加し、
+    ローカルインデックスがずれる (余分なスロット → パラメータが範囲外に)
+  - 修正: letfn Phase 2 で fn 名を省略 (自己参照は letfn スコープで提供済み)
+  - evaluator で Fn.name をセット (デバッグ表示用)
+  - letfn テスト 10 assertions 追加 (基本/自己再帰/相互再帰/前方参照/3-way 等)
+  - 全テスト 720 pass 維持
+- **Q5a**: with-out-str 実装
+  - threadlocal output_capture バッファによる stdout キャプチャ
+  - 全 print 系関数 (println/print/pr/prn/newline/printf) を output_capture 対応に修正
+  - __begin-capture / __end-capture builtin 関数追加
+  - with-out-str マクロ展開を let + do + capture に変更
+  - ネスト対応 (内側キャプチャが外側に漏れない)
+  - with-out-str テスト 9 assertions 追加
+  - 全テスト 729 pass 維持
 
 前セッション:
-- isa? ベクタ比較 / isa? マルチメソッドディスパッチ / prefer-method / MultiFn.prefer_table
-- conj for sets/maps / into for maps / vector-list equality / int-float equality
+- keyword 2-arity / lazy-seq 等価比較 / memoize 本実装 / identical? キーワード
 
 ### 既知の制限 (Phase 26 から引き継ぎ)
 
-- VM で `reduced` 未対応 (TreeWalk のみ)
 - sets-as-functions 未対応 (`#{:a :b}` を関数として使用不可)
 - フル medley の `compare-and-set!`/`deref-swap!`/`deref-reset!` 未実装
 - 文字列表示で `!` がエスケープされる (Phase 25 以前からの問題)
@@ -176,14 +212,14 @@ deftest body 内 (= defn body 内) で使えない構文:
 
 ```
 Phase Q: Wasm 前品質修正 (進行中)
-  Q3  Var システム修正 (def返値, #'var呼出, var-set, alter-var-root, defonce)
-  Q4a VM reduced 対応
-  Q2b fn-level recur 修正
-  Q1a Special Form 正規化 (eager 7関数)
-  Q1b Special Form 正規化 (lazy 5関数)
-  Q2a Map/Set リテラルの関数内コンパイル調査・修正
+  Q3  ✅ Var システム修正
+  Q4a ✅ VM reduced 対応
+  Q2b ✅ fn-level recur 修正
+  Q1a ✅ Special Form 正規化 (eager 7関数)
+  Q1b ✅ Special Form 正規化 (lazy 5関数)
+  Q2a ✅ Map/Set リテラル in マクロ展開修正
   Q4b letfn 相互再帰修正
-  Q1c 死コード削除 (12 Node/Opcode)
+  Q1c ✅ 死コード削除 (12 Node/Opcode, -1400行)
   Q5  with-out-str + 文字列表示
   Q6  ドキュメント整備 + ベンチマーク基盤
 

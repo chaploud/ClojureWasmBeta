@@ -147,63 +147,6 @@ pub const TryNode = struct {
     stack: SourceInfo,
 };
 
-/// apply ノード
-/// (apply f args) または (apply f x y z args)
-pub const ApplyNode = struct {
-    fn_node: *Node, // 関数
-    args: []const *Node, // 中間引数（0個以上）
-    seq_node: *Node, // 最後のシーケンス引数
-    stack: SourceInfo,
-};
-
-/// partial ノード
-/// (partial f args...)
-pub const PartialNode = struct {
-    fn_node: *Node, // 関数
-    args: []const *Node, // 部分適用する引数
-    stack: SourceInfo,
-};
-
-/// comp ノード
-/// (comp f g h ...)
-pub const CompNode = struct {
-    fns: []const *Node, // 合成する関数（左から右の順、実行は右から左）
-    stack: SourceInfo,
-};
-
-/// reduce ノード
-/// (reduce f coll) または (reduce f init coll)
-pub const ReduceNode = struct {
-    fn_node: *Node, // 畳み込み関数
-    init_node: ?*Node, // 初期値（nilの場合はcollの最初の要素を使用）
-    coll_node: *Node, // コレクション
-    stack: SourceInfo,
-};
-
-/// map ノード
-/// (map f coll)
-pub const MapNode = struct {
-    fn_node: *Node, // 変換関数
-    coll_node: *Node, // コレクション
-    stack: SourceInfo,
-};
-
-/// filter ノード
-/// (filter pred coll)
-pub const FilterNode = struct {
-    fn_node: *Node, // 述語関数
-    coll_node: *Node, // コレクション
-    stack: SourceInfo,
-};
-
-/// swap! ノード
-/// (swap! atom f) または (swap! atom f x y ...)
-pub const SwapNode = struct {
-    atom_node: *Node, // Atom 式
-    fn_node: *Node, // 適用する関数
-    args: []const *Node, // 追加引数（0個以上）
-    stack: SourceInfo,
-};
 
 /// defmulti ノード
 /// (defmulti name dispatch-fn)
@@ -222,45 +165,6 @@ pub const DefmethodNode = struct {
     stack: SourceInfo,
 };
 
-/// take-while ノード
-/// (take-while pred coll)
-pub const TakeWhileNode = struct {
-    fn_node: *Node, // 述語関数
-    coll_node: *Node, // コレクション
-    stack: SourceInfo,
-};
-
-/// drop-while ノード
-/// (drop-while pred coll)
-pub const DropWhileNode = struct {
-    fn_node: *Node, // 述語関数
-    coll_node: *Node, // コレクション
-    stack: SourceInfo,
-};
-
-/// map-indexed ノード
-/// (map-indexed f coll)
-pub const MapIndexedNode = struct {
-    fn_node: *Node, // 変換関数 (fn [index item])
-    coll_node: *Node, // コレクション
-    stack: SourceInfo,
-};
-
-/// sort-by ノード
-/// (sort-by keyfn coll)
-pub const SortByNode = struct {
-    fn_node: *Node, // キー関数
-    coll_node: *Node, // コレクション
-    stack: SourceInfo,
-};
-
-/// group-by ノード
-/// (group-by f coll)
-pub const GroupByNode = struct {
-    fn_node: *Node, // グループ化関数
-    coll_node: *Node, // コレクション
-    stack: SourceInfo,
-};
 
 /// lazy-seq ノード
 /// (lazy-seq body)
@@ -334,26 +238,6 @@ pub const Node = union(enum) {
     throw_node: *ThrowNode,
     try_node: *TryNode,
 
-    // 高階関数
-    apply_node: *ApplyNode,
-    partial_node: *PartialNode,
-    comp_node: *CompNode,
-    reduce_node: *ReduceNode,
-    map_node: *MapNode,
-    filter_node: *FilterNode,
-
-    // Atom
-    swap_node: *SwapNode,
-
-    // HOF 追加（Phase 8.16）
-    take_while_node: *TakeWhileNode,
-    drop_while_node: *DropWhileNode,
-    map_indexed_node: *MapIndexedNode,
-
-    // HOF 追加（Phase 8.19）
-    sort_by_node: *SortByNode,
-    group_by_node: *GroupByNode,
-
     // マルチメソッド
     defmulti_node: *DefmultiNode,
     defmethod_node: *DefmethodNode,
@@ -383,18 +267,6 @@ pub const Node = union(enum) {
             .quote_node => |n| n.stack,
             .throw_node => |n| n.stack,
             .try_node => |n| n.stack,
-            .apply_node => |n| n.stack,
-            .partial_node => |n| n.stack,
-            .comp_node => |n| n.stack,
-            .reduce_node => |n| n.stack,
-            .map_node => |n| n.stack,
-            .filter_node => |n| n.stack,
-            .swap_node => |n| n.stack,
-            .take_while_node => |n| n.stack,
-            .drop_while_node => |n| n.stack,
-            .map_indexed_node => |n| n.stack,
-            .sort_by_node => |n| n.stack,
-            .group_by_node => |n| n.stack,
             .defmulti_node => |n| n.stack,
             .defmethod_node => |n| n.stack,
             .defprotocol_node => |n| n.stack,
@@ -421,18 +293,6 @@ pub const Node = union(enum) {
             .quote_node => "quote",
             .throw_node => "throw",
             .try_node => "try",
-            .apply_node => "apply",
-            .partial_node => "partial",
-            .comp_node => "comp",
-            .reduce_node => "reduce",
-            .map_node => "map",
-            .filter_node => "filter",
-            .swap_node => "swap!",
-            .take_while_node => "take-while",
-            .drop_while_node => "drop-while",
-            .map_indexed_node => "map-indexed",
-            .sort_by_node => "sort-by",
-            .group_by_node => "group-by",
             .defmulti_node => "defmulti",
             .defmethod_node => "defmethod",
             .defprotocol_node => "defprotocol",
@@ -561,113 +421,6 @@ pub const Node = union(enum) {
                     .stack = n.stack,
                 };
                 break :blk .{ .try_node = d };
-            },
-            .apply_node => |n| blk: {
-                const d = try allocator.create(ApplyNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .args = try cloneNodeSlice(allocator, n.args),
-                    .seq_node = try n.seq_node.deepClone(allocator),
-                    .stack = n.stack,
-                };
-                break :blk .{ .apply_node = d };
-            },
-            .partial_node => |n| blk: {
-                const d = try allocator.create(PartialNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .args = try cloneNodeSlice(allocator, n.args),
-                    .stack = n.stack,
-                };
-                break :blk .{ .partial_node = d };
-            },
-            .comp_node => |n| blk: {
-                const d = try allocator.create(CompNode);
-                d.* = .{ .fns = try cloneNodeSlice(allocator, n.fns), .stack = n.stack };
-                break :blk .{ .comp_node = d };
-            },
-            .reduce_node => |n| blk: {
-                const d = try allocator.create(ReduceNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .init_node = if (n.init_node) |init| try init.deepClone(allocator) else null,
-                    .coll_node = try n.coll_node.deepClone(allocator),
-                    .stack = n.stack,
-                };
-                break :blk .{ .reduce_node = d };
-            },
-            .map_node => |n| blk: {
-                const d = try allocator.create(MapNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .coll_node = try n.coll_node.deepClone(allocator),
-                    .stack = n.stack,
-                };
-                break :blk .{ .map_node = d };
-            },
-            .filter_node => |n| blk: {
-                const d = try allocator.create(FilterNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .coll_node = try n.coll_node.deepClone(allocator),
-                    .stack = n.stack,
-                };
-                break :blk .{ .filter_node = d };
-            },
-            .swap_node => |n| blk: {
-                const d = try allocator.create(SwapNode);
-                d.* = .{
-                    .atom_node = try n.atom_node.deepClone(allocator),
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .args = try cloneNodeSlice(allocator, n.args),
-                    .stack = n.stack,
-                };
-                break :blk .{ .swap_node = d };
-            },
-            .take_while_node => |n| blk: {
-                const d = try allocator.create(TakeWhileNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .coll_node = try n.coll_node.deepClone(allocator),
-                    .stack = n.stack,
-                };
-                break :blk .{ .take_while_node = d };
-            },
-            .drop_while_node => |n| blk: {
-                const d = try allocator.create(DropWhileNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .coll_node = try n.coll_node.deepClone(allocator),
-                    .stack = n.stack,
-                };
-                break :blk .{ .drop_while_node = d };
-            },
-            .map_indexed_node => |n| blk: {
-                const d = try allocator.create(MapIndexedNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .coll_node = try n.coll_node.deepClone(allocator),
-                    .stack = n.stack,
-                };
-                break :blk .{ .map_indexed_node = d };
-            },
-            .sort_by_node => |n| blk: {
-                const d = try allocator.create(SortByNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .coll_node = try n.coll_node.deepClone(allocator),
-                    .stack = n.stack,
-                };
-                break :blk .{ .sort_by_node = d };
-            },
-            .group_by_node => |n| blk: {
-                const d = try allocator.create(GroupByNode);
-                d.* = .{
-                    .fn_node = try n.fn_node.deepClone(allocator),
-                    .coll_node = try n.coll_node.deepClone(allocator),
-                    .stack = n.stack,
-                };
-                break :blk .{ .group_by_node = d };
             },
             .defmulti_node => |n| blk: {
                 const d = try allocator.create(DefmultiNode);
