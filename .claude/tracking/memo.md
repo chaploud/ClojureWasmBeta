@@ -194,11 +194,33 @@ babashka / SandboxClojureWasm の実際の出力を調査し、フォーマッ�
 - analyze.zig: UndefinedSymbol にシンボル名を含める
 - 全テスト維持 (760/1 compat, 270/274 zig)
 
-残作業 (U2b 以降): ソース位置表示、スタックトレース、try/catch の ex-info マップへの反映
+残作業 (U2c 以降): スタックトレース、try/catch の ex-info マップへの反映
+
+### U2b: ソース位置表示 — 完了
+
+エラーメッセージに file:line:column を表示。全レイヤーでソース位置を伝播。
+
+- **Reader**: `source_file` フィールド追加、`readLocated()` メソッド追加 (Form + 位置情報を返す)
+- **Analyzer**: `source_file`/`source_line`/`source_column` フィールド追加
+  - `currentSourceInfo()` → 全 Node の `.stack` に自動設定 (31 箇所)
+  - `analysisError()` / `analysisErrorFmt()` ラッパーで全エラー報告に位置付与 (157+ 箇所)
+- **Evaluator**: `setSourceLocationFromNode()` で runCall エラー時に Node.stack を伝播
+- **error.zig**: `setErrorLocation()` / `parseErrorFmtLoc()` 追加
+- **helpers.zig**: `loadFileContentWithPath()` 追加 — ファイルパスをReader/Analyzerに伝播
+- **namespaces.zig**: `loadFileFn`/`tryLoadFile` がファイルパスを伝播
+- **main.zig**: `readLocated()` 使用に更新 (runWithBackend/runCompare/evalForRepl)
+- エラー表示例:
+  ```
+  ----- Error --------------------------------------------------------------------
+  Type:     type_error
+  Message:  Expected number, got string
+  Location: /tmp/example.clj:3:0
+  ```
+- 全テスト維持 (760/1 compat, 270/274 zig)
 
 ### 推奨次回タスク
 
-1. **U2b: ソース位置表示** — SourceLocation を error Info に伝播
+1. **U2c: スタックトレース** — 関数名 + ソース位置のコールスタック表示
 2. **G1: GC 改善** — 世代別 GC or MemoryPool
 3. **R3 残項目**: MultiArrayList / MemoryPool / switch exhaustiveness / エラー伝播改善
 
