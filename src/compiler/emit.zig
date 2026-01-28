@@ -50,6 +50,9 @@ pub const Compiler = struct {
     /// このコンパイラの locals[0] の開始位置。
     /// fn_compiler が親スコープ変数と自スコープ変数を区別するために使用。
     locals_offset: u32,
+    /// 継承クロージャバインディング数（親から受け継いだキャプチャの深さ）
+    /// 子 fn が capture_count を計算するために使用。
+    inherited_captures: u16,
 
     /// 初期化
     pub fn init(allocator: std.mem.Allocator) Compiler {
@@ -62,6 +65,7 @@ pub const Compiler = struct {
             .loop_locals_base = 0,
             .sp_depth = 0,
             .locals_offset = 0,
+            .inherited_captures = 0,
         };
     }
 
@@ -410,10 +414,12 @@ pub const Compiler = struct {
 
         // 引数をローカルとして追加
         // クロージャバインディングがスタック先頭に配置されるため、
-        // パラメータの sp_depth は capture_count 分オフセット
+        // パラメータの sp_depth は (継承キャプチャ + 親ローカル) 分オフセット
         fn_compiler.scope_depth = 1;
-        const capture_count = self.locals.items.len;
-        fn_compiler.sp_depth = @intCast(capture_count); // クロージャバインディング分
+        // 子 fn がキャプチャする範囲: 親の継承キャプチャ + 親の宣言済みローカル
+        const capture_count: u16 = self.inherited_captures + @as(u16, @intCast(self.locals.items.len));
+        fn_compiler.sp_depth = capture_count; // クロージャバインディング分
+        fn_compiler.inherited_captures = capture_count; // 子孫 fn 用に記録
         for (arity.params) |param| {
             fn_compiler.sp_depth += 1; // パラメータがスタック上に存在
             try fn_compiler.addLocal(param);
@@ -427,13 +433,10 @@ pub const Compiler = struct {
         const proto = self.allocator.create(FnProto) catch return error.OutOfMemory;
         var fn_chunk = fn_compiler.takeChunk();
         // 親スコープのローカル変数情報を記録
-        // capture_count: キャプチャするローカル数
-        // capture_offset: 最初のローカルのスロット位置（スタック上の先行値をスキップ）
-        const cap_count: u16 = @intCast(self.locals.items.len);
-        const cap_offset: u16 = if (cap_count > 0)
-            self.locals.items[0].slot
-        else
-            0;
+        // capture_count: キャプチャするローカル数（継承キャプチャ + 宣言済みローカル）
+        // capture_offset: スタック上のキャプチャ開始位置（常に 0 = frame.base から）
+        const cap_count: u16 = capture_count;
+        const cap_offset: u16 = 0;
         proto.* = .{
             .name = name,
             .arity = @intCast(arity.params.len),
