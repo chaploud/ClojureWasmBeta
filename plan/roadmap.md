@@ -28,19 +28,31 @@
 
 ---
 
-## 未着手・将来の計画
+## 実行計画
 
-### Phase U4 残項目: 既知バグ
+**実行順序は `plan/memo.md` を参照。** セッション開始時は memo.md の「実行計画」テーブルを確認し、未完了の最初のタスクから着手すること。
 
-| バグ                   | 優先度 | 難易度 |
-|------------------------|--------|--------|
-| ^:const 未対応         | 低     | 中     |
-| with-local-vars 未実装 | 低     | 中     |
-| defmacro inside defn   | 低     | 高     |
+---
 
-### Phase G2: 世代別 GC
+## タスク詳細
 
-Young (bump allocator) + Old (Mark-Sweep) 方式。Write barrier (card marking) が必要。
+### U4: 既知バグ
+
+| バグ                   | 難易度 |
+|------------------------|--------|
+| ^:const 未対応         | 中     |
+| with-local-vars 未実装 | 中     |
+| defmacro inside defn   | 高     |
+
+### S1: clojure.pprint
+
+本家互換の pretty-print 実装。`pprint`, `cl-format`, `print-table` 等。
+
+### P3: NaN boxing
+
+Value を 64bit に収める。int/float/nil/bool をインライン化し、ポインタは下位ビットでタグ付け。
+
+### G2: 世代別 GC
 
 | ステップ | 内容                                     |
 |----------|------------------------------------------|
@@ -50,25 +62,24 @@ Young (bump allocator) + Old (Mark-Sweep) 方式。Write barrier (card marking) 
 | G2d      | write barrier (card marking)             |
 | G2e      | チューニング (閾値、promote 回数)        |
 
-### Phase P3: VM 最適化 (高インパクト候補)
+### P3: inline caching
 
-| 最適化           | 期待効果 | 難易度 | 備考                 |
-|------------------|----------|--------|----------------------|
-| NaN boxing       | 高       | 高     | Value サイズ縮小     |
-| 定数畳み込み     | 中       | 中     | Compiler 側          |
-| inline caching   | 高       | 高     | 関数呼び出し高速化   |
-| tail call dispatch | 中     | 中     | computed goto 相当   |
+関数呼び出しサイトに前回の解決結果をキャッシュ。monomorphic/polymorphic 対応。
 
-### Phase S2: セルフホスト化 (pure 関数の .clj 移行)
+### P3: 定数畳み込み
 
-候補: juxt, comp, partial, keep, keep-indexed, mapcat, for, tree-seq, partition-by。
-性能トレードオフあり (Zig builtin → Clojure 関数呼び出し)。ベンチマーク後に判断。
+Compiler 側で `(+ 1 2)` → `3` 等の定数式を事前評価。
 
-### Phase S1 追加候補: 新規標準名前空間
+### P3: tail call dispatch
 
-- clojure.pprint
-- clojure.core.protocols
-- clojure.java.io (ファイル I/O のサブセット)
+computed goto 相当の最適化。末尾呼び出しをジャンプに変換。
+
+---
+
+## スコープ外 (将来検討)
+
+- **S2**: セルフホスト化 (pure 関数の .clj 移行)
+- **S1**: clojure.core.protocols, clojure.java.io サブセット
 
 ---
 

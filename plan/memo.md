@@ -25,15 +25,30 @@
 
 ### 直近の完了
 
-- **R3 (R7)**: Zig イディオム改善 — WasmModule anyopaque → zware 具体型, valueHash switch 改善
+- **R7**: Zig イディオム改善 — WasmModule anyopaque → zware 具体型, valueHash switch 改善
 - **D1-D3**: ドキュメント — presentation.md, getting_started.md, developer_guide.md
-- **ベンチマーク**: bench/ に fib(38) 全言語比較基盤を構築
+- **Bench**: bench/ に fib(38) 全言語比較基盤を構築
 
-### 推奨次回タスク
+---
 
-1. **P3**: VM 最適化 (NaN boxing が最有力、ベンチマーク駆動)
-2. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
-3. **新規 S1 候補**: clojure.pprint 等
+## 実行計画 (対応順)
+
+以下の順序でタスクを実行する。セッション開始時はここを参照し、未完了の最初のタスクから着手すること。
+
+| #   | Phase | タスク                | 状態     | 備考                                      |
+|-----|-------|----------------------|----------|-------------------------------------------|
+| 1   | U4    | 既知バグ修正         | 未着手   | ^:const, with-local-vars, defmacro in defn |
+| 2   | S1    | clojure.pprint       | 未着手   | 実用上重要な標準 NS                        |
+| 3   | P3    | NaN boxing           | 未着手   | Value サイズ縮小、高速化の要               |
+| 4   | G2    | 世代別 GC            | 未着手   | Young bump allocator + minor GC           |
+| 5   | P3    | inline caching       | 未着手   | 関数呼び出し高速化                         |
+| 6   | P3    | 定数畳み込み         | 未着手   | Compiler 側最適化                          |
+| 7   | P3    | tail call dispatch   | 未着手   | computed goto 相当                         |
+
+### スコープ外 (将来検討)
+
+- **S2**: セルフホスト化 (pure 関数の .clj 移行)
+- **S1**: clojure.core.protocols, clojure.java.io サブセット
 
 ---
 
