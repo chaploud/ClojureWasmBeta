@@ -38,6 +38,9 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 | `docs/reference/architecture.md` | 全体設計・完了フェーズ履歴        | 設計確認時                 |
 | `docs/reference/type_design.md`  | 3フェーズ型設計 (Form→Node→Value) | 必要時のみ                 |
 | `docs/reference/zig_guide.md`    | Zig 0.15.2 の落とし穴・パターン   | 必要時のみ                 |
+| `docs/reference/vm_design.md`    | VM設計・スタック・クロージャ契約  | VM/コンパイラ変更時        |
+| `docs/reference/gc_design.md`    | GC設計・セミスペース・fixup       | GC/メモリ変更時            |
+| `docs/reference/lessons_learned.md` | バグ教訓集・横断的設計知見     | 設計判断時                 |
 | `status/vars.yaml`               | 実装状況（yq で照会）             | 関数追加時                 |
 | `status/README.md`               | status/ のスキーマ定義            | status/ 編集時             |
 
