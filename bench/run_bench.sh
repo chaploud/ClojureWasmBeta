@@ -48,7 +48,7 @@ fi
 
 # ベンチマーク定義
 BENCHMARKS=(fib30 sum_range map_filter string_ops data_transform)
-OTHER_LANGS=(c cpp zig java ruby python)
+OTHER_LANGS=(c cpp zig java clojure ruby python)
 
 # ═══════════════════════════════════════════════════════════════════
 # 計測関数
@@ -151,6 +151,11 @@ get_cmd() {
             py=$(ls "$dir"/*.py 2>/dev/null | head -1)
             echo "python3 $py"
             ;;
+        clojure)
+            local clj
+            clj=$(ls "$dir"/*.clj 2>/dev/null | head -1)
+            echo "clojure -M $clj"
+            ;;
         ruby)
             local rb
             rb=$(ls "$dir"/*.rb 2>/dev/null | head -1)
@@ -197,7 +202,7 @@ for bench in "${BENCHMARKS[@]}"; do
     if ! $QUICK_MODE; then
         for lang in "${OTHER_LANGS[@]}"; do
             cmd=$(get_cmd "$bench" "$lang")
-            if [[ -n "$cmd" ]] && [[ -x "${cmd%% *}" || "$lang" == "python" || "$lang" == "ruby" || "$lang" == "java" ]]; then
+            if [[ -n "$cmd" ]] && [[ -x "${cmd%% *}" || "$lang" == "python" || "$lang" == "ruby" || "$lang" == "java" || "$lang" == "clojure" ]]; then
                 t=$(measure "$cmd")
                 m=$(measure_mem "$cmd")
                 if $HYPERFINE_MODE; then

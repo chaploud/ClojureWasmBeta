@@ -73,6 +73,16 @@ baseline:
       map_filter: {time_s: 0.02, mem_mb: 14.4}
       string_ops: {time_s: 0.02, mem_mb: 15.1}
       data_transform: {time_s: 0.02, mem_mb: 17.0}
+    # JVM Clojure: 同じ .clj ファイルを clojure -M で実行
+    # 0.3-0.4s の大部分は JVM 起動 + Clojure ランタイムロード
+    # 長期稼働 (JIT warm-up 後) では計算部分が大幅に高速化される
+    clojure:
+      version: "1.12.4 (Clojure CLI 1.12.4.1582, OpenJDK 21)"
+      fib30: {time_s: 0.38, mem_mb: 115.0}
+      sum_range: {time_s: 0.31, mem_mb: 108.5}
+      map_filter: {time_s: 0.38, mem_mb: 114.3}
+      string_ops: {time_s: 0.31, mem_mb: 108.7}
+      data_transform: {time_s: 0.39, mem_mb: 114.3}
 # ClojureWasmBeta 履歴
 history:
   - date: 2026-01-28

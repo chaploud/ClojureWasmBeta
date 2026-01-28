@@ -103,13 +103,15 @@ Source Code
 
 ### 全言語比較 (最適化後)
 
-| ベンチマーク     | C/Zig   | Java    | Python  | Ruby    | ClojureWasmBeta |
-|------------------|---------|---------|---------|---------|-----------------|
-| fib30            | 0.01s   | 0.03s   | 0.07s   | 0.16s   | 0.07s           |
-| sum_range        | 0.00s   | 0.04s   | 0.02s   | 0.10s   | 0.01s           |
-| map_filter       | 0.00s   | 0.05s   | 0.02s   | 0.10s   | 0.00s           |
-| string_ops       | 0.00s   | 0.05s   | 0.02s   | 0.10s   | 0.01s           |
-| data_transform   | 0.00s   | 0.04s   | 0.02s   | 0.10s   | 0.01s           |
+| ベンチマーク     | C/Zig   | Java    | JVM Clojure | Python  | Ruby    | ClojureWasmBeta |
+|------------------|---------|---------|-------------|---------|---------|-----------------|
+| fib30            | 0.01s   | 0.03s   | 0.38s       | 0.07s   | 0.16s   | 0.07s           |
+| sum_range        | 0.00s   | 0.04s   | 0.31s       | 0.02s   | 0.10s   | 0.01s           |
+| map_filter       | 0.00s   | 0.05s   | 0.38s       | 0.02s   | 0.10s   | 0.00s           |
+| string_ops       | 0.00s   | 0.05s   | 0.31s       | 0.02s   | 0.10s   | 0.01s           |
+| data_transform   | 0.00s   | 0.04s   | 0.39s       | 0.02s   | 0.10s   | 0.01s           |
+
+※ JVM Clojure は同じ .clj ファイルを `clojure -M` で実行。0.3-0.4s の大部分は JVM 起動 + Clojure ランタイムロード。長期稼働 (JIT warm-up 後) では計算部分が大幅に高速化される。
 
 ### 最適化前後の改善
 
@@ -132,10 +134,11 @@ Source Code
 
 ### 分析
 
-- fib30 以外で **Java (JIT) より高速**
-- fib30 は Python と同等、Java の 2.3x 遅 (JIT の壁)
-- メモリは全ベンチで Java より少ない
-- 動的言語インタプリタ VM としては十分な性能
+- **全5ベンチで JVM Clojure より速度・メモリとも上位** (短期実行ベンチ限定)
+- fib30 以外で **純 Java (JIT) よりも高速**
+- fib30 は Python と同等、純 Java の 2.3x 遅 (JIT の壁)
+- メモリは全ベンチで Java / JVM Clojure より少ない
+- JVM Clojure との差の大部分は JVM 起動コスト。長期稼働 JIT warm-up 後は逆転の可能性あり
 
 ---
 
