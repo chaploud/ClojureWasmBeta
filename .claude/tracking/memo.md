@@ -252,9 +252,32 @@ map, set, symbol を Clojure 同様に関数として呼び出し可能に。
   ```
 - 全テスト維持 (760/1 compat, 270/274 zig)
 
+### U2d: 周辺ソースコード表示 — 完了
+
+エラー発生時にソースコードの前後2行を表示。babashka 風フォーマット。
+
+- **error.zig**: `source_text` threadlocal + `setSourceText()`/`getSourceText()` 追加
+  - `-e` 引数や REPL 入力のソーステキストを保持
+- **main.zig**: `showSourceContext()` 関数追加
+  - ファイルパスがあればファイルを読み込み (最大 64KB)
+  - なければ threadlocal のソーステキストをフォールバック使用
+  - エラー行の前後2行を行番号付きで表示
+  - エラーカラム位置に `^--- error here` ポインタ表示
+- **main.zig**: `main()`/`runRepl()` でソーステキストを設定・クリア
+- 表示例:
+  ```
+    5 |   (str "Goodbye, " name "!"))
+    6 |
+    7 | (defn process [x]
+        ^--- error here
+    8 |   (+ x "world"))
+    9 |
+  ```
+- 全テスト維持 (760/1 compat, 270/274 zig)
+
 ### 推奨次回タスク
 
-1. **U2d: 周辺ソースコード表示** — エラー位置の前後数行を表示
+1. **U3: doc/dir/apropos** — REPL ドキュメント閲覧機能
 2. **G1: GC 改善** — 世代別 GC or MemoryPool
 3. **R3 残項目**: MultiArrayList / MemoryPool / switch exhaustiveness / エラー伝播改善
 

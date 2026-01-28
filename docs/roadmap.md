@@ -285,7 +285,7 @@ user/-main    - user.clj:50:3
 | U2a      | "Expected X, got Y" 形式のエラーメッセージ    | なし | ✅ 完了   |
 | U2b      | ソース位置の表示 (SourceInfo 活用)             | U2a  | ✅ 完了   |
 | U2c      | スタックトレース (関数名 + ソース位置)         | U2b  | ✅ 完了   |
-| U2d      | 周辺ソースコード表示                           | U2c  |           |
+| U2d      | 周辺ソースコード表示                           | U2c  | ✅ 完了   |
 
 **参考ドキュメント**: `docs/reference/error_design.md` (設計済み、未実装)
 
