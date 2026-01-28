@@ -108,11 +108,10 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 - ✅ テスト実行スクリプト (`run_tests.sh`) のエラーレポート改善 (-v/--verbose)
 - ✅ clj-kondo 警告への対応 (.clj-kondo/config.edn で unresolved-symbol 抑制)
 
-### R5: 不要ファイル・死コードクリーンアップ
+### R5: 不要ファイル・死コードクリーンアップ — ✅ 完了
 
-- 未使用の実験ファイル削除
-- 未参照のエクスポート関数の特定・削除
-- `getDiagnostics` + `xref-find-references` で未使用シンボル検出
+- ✅ スタブファイル 4 件削除 (arena.zig, optimize.zig, ops.zig, stack.zig = -185 行)
+- wasm/types.zig の未使用変換関数は将来の Wasm 型拡張で必要なため残留
 
 ### R6: Wasm ローダー重複排除
 

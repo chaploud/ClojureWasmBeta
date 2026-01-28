@@ -162,11 +162,22 @@ hot path のエラー分岐に `@branchHint(.cold)` を適用。
 - `run_tests.sh` に `-v/--verbose` オプション追加 (クラッシュ時の出力全体表示)
 - `.clj-kondo/config.edn` 追加 (test_runner マクロの unresolved-symbol 抑制)
 
+### R5: 不要ファイル・死コードクリーンアップ — 完了
+
+スタブファイル 4 件を削除 (-185 行):
+- `gc/arena.zig`: GcAllocator に置き換え済み
+- `compiler/optimize.zig`: 未実装プレースホルダー
+- `vm/ops.zig`: vm.zig にインライン実装済み
+- `vm/stack.zig`: vm.zig にインライン実装済み
+
+wasm/types.zig の未使用関数 (wasmI64ToValue, wasmF32ToValue, wasmF64ToValue) は
+将来の Wasm 型拡張で必要になるため残留。
+
 ### 推奨次回タスク
 
-1. **G1: GC 改善** — 世代別 GC or MemoryPool
+1. **R6: Wasm ローダー重複排除** — loadModule 系関数の共通部分抽出
 2. **U2: エラーメッセージ改善** — "Expected X, got Y" 形式
-3. **R5: 不要ファイル・死コードクリーンアップ**
+3. **G1: GC 改善** — 世代別 GC or MemoryPool
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
