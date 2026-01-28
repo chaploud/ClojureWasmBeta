@@ -1,8 +1,9 @@
 #!/bin/bash
 # run_tests.sh — Clojure 互換性テストランナー
-# 使い方: bash test/run_tests.sh [テストファイル...]
+# 使い方: bash test/run_tests.sh [オプション] [テストファイル...]
 #   引数なし: test/compat/**/*.clj を全実行
 #   引数あり: 指定ファイルのみ実行
+#   -v, --verbose: クラッシュ時に出力全体を表示
 #
 # 出力フォーマット対応:
 #   test_runner.clj: "PASS: N, FAIL: M, ERROR: K"
@@ -10,6 +11,8 @@
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
+
+VERBOSE=0
 
 BIN="./zig-out/bin/ClojureWasmBeta"
 TOTAL_PASS=0
@@ -26,6 +29,22 @@ if [ ! -f "$BIN" ]; then
     exit 1
   fi
 fi
+
+# オプション解析
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -v|--verbose)
+      VERBOSE=1
+      shift
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
 
 # テストファイル収集
 if [ $# -gt 0 ]; then
@@ -100,6 +119,11 @@ for f in "${TEST_FILES[@]}"; do
     # レポート行なし = クラッシュ
     ERROR_MSG=$(echo "$OUTPUT" | grep -E "^Error:" | head -1 || true)
     echo "  [$NAME] CRASH: ${ERROR_MSG:-unknown error}"
+    if [ "$VERBOSE" -eq 1 ]; then
+      echo "    --- output ---"
+      echo "$OUTPUT" | sed 's/^/    /'
+      echo "    --- end ---"
+    fi
     TOTAL_ERROR=$((TOTAL_ERROR + 1))
     FAILED_FILES+=("$f")
   fi

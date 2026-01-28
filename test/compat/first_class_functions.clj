@@ -1,5 +1,5 @@
-;; Phase Q1a: 第一級関数テスト
-;; 特殊形式 → builtin 移行後、変数経由・apply 経由で呼べることを確認
+;; 第一級関数テスト
+;; builtin 関数を変数経由・apply 経由で呼べることを確認
 (load-file "test/lib/test_runner.clj")
 (reset-counters!)
 
