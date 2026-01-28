@@ -3371,106 +3371,107 @@ vars:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     capitalize:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     ends-with?:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     escape:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     includes?:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     index-of:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     join:
       type: function
       status: done
       impl_type: builtin
-      note: string-join ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     last-index-of:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     lower-case:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     re-quote-replacement:
       type: function
       status: done
       impl_type: builtin
+      note: Zig builtin (clojure.string NS 直接登録)
     replace:
       type: function
       status: done
       impl_type: builtin
-      note: string-replace builtin + clojure.string NS ラッパー
+      note: Zig builtin (clojure.string NS 直接登録)
     replace-first:
       type: function
       status: done
       impl_type: builtin
-      note: string-replace-first builtin + clojure.string NS ラッパー
+      note: Zig builtin (clojure.string NS 直接登録)
     reverse:
       type: function
       status: done
       impl_type: builtin
-      note: string-reverse ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     split:
       type: function
       status: done
       impl_type: builtin
-      note: string-split として実装（regex/string 両対応）
+      note: Zig builtin (clojure.string NS 直接登録)
     split-lines:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     starts-with?:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     trim:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     trim-newline:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     triml:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     trimr:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
     upper-case:
       type: function
       status: done
       impl_type: builtin
-      note: clojure.string NS ラッパー経由
+      note: Zig builtin (clojure.string NS 直接登録)
   clojure_set:
     difference:
       type: function
@@ -4231,7 +4232,6 @@ vars:
       type: var
       status: done
       note: clojure.math NS (Math/PI 定数)
-
   # Phase LAST: Wasm 連携 (独自拡張)
   wasm:
     load-module:
