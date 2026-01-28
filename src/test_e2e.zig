@@ -46,6 +46,10 @@ fn evalWithBackend(allocator: std.mem.Allocator, env: *Env, source: []const u8, 
     return eng.run(node);
 }
 
+/// VM 厳格モード: true なら VM が nil でも一致検証をスキップしない
+/// VM バグ修正が完了したら true に変更する
+const strict_vm_check: bool = true; // 診断用に一時的に有効化
+
 /// 両バックエンドで評価して一致を検証
 fn evalBothAndCompare(allocator: std.mem.Allocator, env: *Env, source: []const u8) !Value {
     // Reader
@@ -59,9 +63,15 @@ fn evalBothAndCompare(allocator: std.mem.Allocator, env: *Env, source: []const u
     // 両バックエンドで実行
     const out = try engine_mod.runAndCompare(allocator, env, node, null);
 
-    // 一致を検証（VM が動作する場合のみ）
-    if (out.result.vm != .nil or out.result.tree_walk == .nil) {
+    // 一致を検証
+    if (strict_vm_check) {
+        // 厳格モード: 常に一致を検証 (VM エラーも検出)
         try std.testing.expect(out.result.match);
+    } else {
+        // 通常モード: VM が動作する場合のみ検証 (後方互換)
+        if (out.result.vm != .nil or out.result.tree_walk == .nil) {
+            try std.testing.expect(out.result.match);
+        }
     }
 
     return out.result.tree_walk;

@@ -32,6 +32,10 @@ const Local = struct {
     slot: u16, // frame.base からの実際のスタック位置
 };
 
+/// 名前付き fn のコンテキストフラグ
+/// 親スコープ参照時に +1 オフセットが必要
+threadlocal var named_fn_offset: u16 = 0;
+
 /// コンパイラ状態
 pub const Compiler = struct {
     allocator: std.mem.Allocator,
@@ -161,11 +165,14 @@ pub const Compiler = struct {
         //   ref.idx < locals_offset → 親スコープ → idx をそのまま slot として使用
         //     （closure_bindings がフレーム先頭に配置されるため、
         //      親スコープ変数の idx がそのまま正しい slot になる）
+        //
+        // 名前付き fn 内では親スコープ参照に named_fn_offset を加算
+        // (VM の createClosure が closure_bindings[0] に self を挿入するため)
         const slot = if (ref.idx >= self.locals_offset and
             ref.idx - self.locals_offset < self.locals.items.len)
             self.locals.items[ref.idx - self.locals_offset].slot
         else
-            @as(u16, @intCast(ref.idx));
+            @as(u16, @intCast(ref.idx)) + named_fn_offset;
         try self.chunk.emit(.local_load, slot);
         self.sp_depth += 1;
     }
@@ -416,16 +423,39 @@ pub const Compiler = struct {
         // クロージャバインディングがスタック先頭に配置されるため、
         // パラメータの sp_depth は (継承キャプチャ + 親ローカル) 分オフセット
         fn_compiler.scope_depth = 1;
-        // 子 fn がキャプチャする範囲: 親の継承キャプチャ + 親の宣言済みローカル
-        const capture_count: u16 = self.inherited_captures + @as(u16, @intCast(self.locals.items.len));
-        fn_compiler.sp_depth = capture_count; // クロージャバインディング分
-        fn_compiler.inherited_captures = capture_count; // 子孫 fn 用に記録
+        // proto.capture_count: スタックからキャプチャする数（VM で使用）
+        // スロット数: capture_count + 1 (名前付き fn の場合、self が追加される)
+        const stack_capture_count: u16 = self.inherited_captures + @as(u16, @intCast(self.locals.items.len));
+        // 名前付き fn の場合、VM が self を closure_bindings[0] に追加するため
+        // sp_depth と inherited_captures には +1 が必要（スロット計算用）
+        const total_slots: u16 = if (name != null) stack_capture_count + 1 else stack_capture_count;
+        fn_compiler.sp_depth = total_slots; // クロージャバインディング分 (self 含む)
+        fn_compiler.inherited_captures = total_slots; // 子孫 fn 用に記録 (self 含む)
+        // 名前付き fn の場合、自己参照をローカルとして追加 (Analyzer と対応)
+        // VM の createClosure で self が closure_bindings[0] に追加されるため、
+        // self のスロットは 0、親キャプチャは +1 シフト
+        if (name) |fn_name| {
+            // self 参照は closure_bindings[0] に配置される (VM で追加)
+            // よって slot = 0
+            fn_compiler.locals.append(fn_compiler.allocator, .{
+                .name = fn_name,
+                .depth = 1,
+                .slot = 0, // VM で closure_bindings[0] に配置される
+            }) catch return error.OutOfMemory;
+        }
         for (arity.params) |param| {
             fn_compiler.sp_depth += 1; // パラメータがスタック上に存在
             try fn_compiler.addLocal(param);
         }
 
         // ボディをコンパイル
+        // 名前付き fn の場合、親スコープ参照は +1 オフセットが必要
+        // (VM が closure_bindings[0] に self を挿入するため)
+        const prev_offset = named_fn_offset;
+        if (name != null) {
+            named_fn_offset = 1;
+        }
+        defer named_fn_offset = prev_offset;
         try fn_compiler.compile(arity.body);
         try fn_compiler.chunk.emitOp(.ret);
 
@@ -433,16 +463,15 @@ pub const Compiler = struct {
         const proto = self.allocator.create(FnProto) catch return error.OutOfMemory;
         var fn_chunk = fn_compiler.takeChunk();
         // 親スコープのローカル変数情報を記録
-        // capture_count: キャプチャするローカル数（継承キャプチャ + 宣言済みローカル）
+        // stack_capture_count: スタックからキャプチャする数（self は VM が追加するので含まない）
         // capture_offset: スタック上のキャプチャ開始位置（常に 0 = frame.base から）
-        const cap_count: u16 = capture_count;
         const cap_offset: u16 = 0;
         proto.* = .{
             .name = name,
             .arity = @intCast(arity.params.len),
             .variadic = arity.variadic,
             .local_count = @intCast(fn_compiler.locals.items.len),
-            .capture_count = cap_count,
+            .capture_count = stack_capture_count,
             .capture_offset = cap_offset,
             .code = fn_chunk.code.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
             .constants = fn_chunk.constants.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
@@ -517,7 +546,7 @@ pub const Compiler = struct {
                 '+' => .add,
                 '-' => .sub,
                 '*' => .mul,
-                '/' => .div,
+                // '/' (div) は例外処理 (DivisionByZero) が必要なため opcode 化しない
                 '<' => .lt,
                 '>' => .gt,
                 else => .none,
