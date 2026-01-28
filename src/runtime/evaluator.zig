@@ -251,9 +251,10 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
         args[i] = try run(arg, ctx);
     }
 
-    // 関数を呼び出し（エラー時にソース位置を付与）
+    // 関数を呼び出し（エラー時にソース位置とコールスタックを付与）
     return callWithArgs(fn_val, args, ctx) catch |e| {
         setSourceLocationFromNode(node.stack);
+        attachCallstack();
         return e;
     };
 }
@@ -266,6 +267,44 @@ fn setSourceLocationFromNode(stack: node_mod.SourceInfo) void {
             .line = stack.line,
             .column = stack.column,
         });
+    }
+}
+
+/// TreeWalk 用コールスタック（スタックトレース用）
+const MAX_CALLSTACK: usize = 64;
+threadlocal var callstack: [MAX_CALLSTACK]err.StackFrame = undefined;
+threadlocal var callstack_depth: usize = 0;
+
+/// コールスタックにフレームを追加
+fn pushCallFrame(name: []const u8, is_builtin: bool) void {
+    if (callstack_depth < MAX_CALLSTACK) {
+        callstack[callstack_depth] = .{
+            .name = name,
+            .is_builtin = is_builtin,
+        };
+        callstack_depth += 1;
+    }
+}
+
+/// コールスタックからフレームを削除
+fn popCallFrame() void {
+    if (callstack_depth > 0) {
+        callstack_depth -= 1;
+    }
+}
+
+/// 現在のコールスタックを last_error に設定し、スタックをリセット
+fn attachCallstack() void {
+    if (callstack_depth > 0) {
+        // 逆順でコピー（最新フレームを先頭に）
+        var reversed: [err.MAX_CALLSTACK_DEPTH]err.StackFrame = undefined;
+        const n = @min(callstack_depth, err.MAX_CALLSTACK_DEPTH);
+        for (0..n) |i| {
+            reversed[i] = callstack[callstack_depth - 1 - i];
+        }
+        err.setCallstack(reversed[0..n]);
+        // スタックをリセット（エラーハンドリング後）
+        callstack_depth = 0;
     }
 }
 
@@ -302,12 +341,16 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
 
     return switch (fn_val) {
         .fn_val => |f| blk: {
+            const fn_name = if (f.name) |n| n.name else "<anonymous>";
+
             // 組み込み関数
             if (f.builtin) |builtin_ptr| {
                 // anyopaque から BuiltinFn にキャスト
                 const builtin: core.BuiltinFn = @ptrCast(@alignCast(builtin_ptr));
-                break :blk builtin(ctx.allocator, args) catch |e| {
+                pushCallFrame(fn_name, true);
+                const result = builtin(ctx.allocator, args) catch |e| {
                     @branchHint(.cold);
+                    // エラー時はフレームを残す（attachCallstack で収集）
                     return switch (e) {
                         error.ArityError => error.ArityError,
                         error.DivisionByZero => error.DivisionByZero,
@@ -316,12 +359,15 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
                         else => error.TypeError,
                     };
                 };
+                popCallFrame();
+                break :blk result;
             }
 
             // ユーザー定義関数
+            pushCallFrame(fn_name, false);
             const arity = f.findArity(args.len) orelse {
                 @branchHint(.cold);
-                const fn_name = if (f.name) |n| n.name else "<anonymous>";
+                // エラー時はフレームを残す
                 err.setArityError(args.len, fn_name);
                 return error.ArityError;
             };
@@ -366,7 +412,10 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
 
             while (true) {
                 fn_ctx.clearRecur();
-                const result = try run(body, &fn_ctx);
+                const result = run(body, &fn_ctx) catch |e| {
+                    // エラー時はフレームを残す（attachCallstack で収集）
+                    return e;
+                };
 
                 if (fn_ctx.hasRecur()) {
                     // recur の値でパラメータバインディングをインプレース更新
@@ -377,6 +426,7 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
                     continue;
                 }
 
+                popCallFrame();
                 break :blk result;
             }
         },
@@ -555,7 +605,10 @@ fn runTry(node: *const node_mod.TryNode, ctx: *Context) EvalError!Value {
     }
 
     if (body_err) |the_err| {
-        // エラー発生: catch 節をチェック
+        // エラー発生: コールスタックをリセット（try/catch でエラー回復）
+        callstack_depth = 0;
+
+        // catch 節をチェック
         if (node.catch_clause) |clause| {
             // 例外値を取得
             var exception_val: Value = value_mod.nil;

@@ -236,6 +236,19 @@ pub fn evalError(kind: Kind, message: []const u8) Error {
 /// 動的メッセージ用の threadlocal バッファ
 threadlocal var msg_buf: [512]u8 = undefined;
 
+/// スタックトレース用の threadlocal バッファ
+pub const MAX_CALLSTACK_DEPTH: usize = 32;
+threadlocal var callstack_buf: [MAX_CALLSTACK_DEPTH]StackFrame = undefined;
+
+/// last_error にスタックトレースを設定
+pub fn setCallstack(frames: []const StackFrame) void {
+    if (last_error) |*info| {
+        const n = @min(frames.len, MAX_CALLSTACK_DEPTH);
+        @memcpy(callstack_buf[0..n], frames[0..n]);
+        info.callstack = callstack_buf[0..n];
+    }
+}
+
 /// フォーマット付き Eval エラー
 pub fn evalErrorFmt(kind: Kind, comptime fmt: []const u8, args: anytype) Error {
     const msg = std.fmt.bufPrint(&msg_buf, fmt, args) catch "error message too long";

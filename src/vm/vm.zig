@@ -148,7 +148,39 @@ pub const VM = struct {
         };
         self.frame_count = 1;
 
-        return self.execute(chunk.code.items, chunk.constants.items);
+        return self.execute(chunk.code.items, chunk.constants.items) catch |e| {
+            // エラー発生時にコールスタックを収集
+            self.collectCallstack();
+            return e;
+        };
+    }
+
+    /// 現在のフレームスタックからコールスタックを収集し、last_error に設定
+    fn collectCallstack(self: *VM) void {
+        const base_error = @import("../base/error.zig");
+        if (base_error.last_error == null) return;
+
+        var stack_frames: [base_error.MAX_CALLSTACK_DEPTH]base_error.StackFrame = undefined;
+        var count: usize = 0;
+
+        // フレームを逆順（最新→古い）で収集
+        var i: usize = self.frame_count;
+        while (i > 0 and count < base_error.MAX_CALLSTACK_DEPTH) {
+            i -= 1;
+            const f = &self.frames[i];
+            if (f.proto) |proto| {
+                stack_frames[count] = .{
+                    .name = proto.name orelse "<anonymous>",
+                    .is_builtin = false,
+                };
+                count += 1;
+            }
+            // proto == null はトップレベルフレーム（スキップ）
+        }
+
+        if (count > 0) {
+            base_error.setCallstack(stack_frames[0..count]);
+        }
     }
 
     /// 命令を実行

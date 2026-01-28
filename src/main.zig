@@ -654,6 +654,17 @@ fn reportError(err: anyerror, writer: *std.Io.Writer) void {
             const file = info.location.file orelse "NO_SOURCE_PATH";
             writer.print("{s}:{d}:{d}\n", .{ file, info.location.line, info.location.column }) catch {};
         }
+        // スタックトレース
+        if (info.callstack) |frames| {
+            writer.writeAll("----- Stack Trace --------------------------------------------------------------\n") catch {};
+            for (frames) |frame| {
+                if (frame.is_builtin) {
+                    writer.print("  {s} (builtin)\n", .{frame.name}) catch {};
+                } else {
+                    writer.print("  {s}\n", .{frame.name}) catch {};
+                }
+            }
+        }
     } else {
         // 詳細なし — Zig エラー名をフォールバック表示
         writer.print("Error: {s}\n", .{@errorName(err)}) catch {};
