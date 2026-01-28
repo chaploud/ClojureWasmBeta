@@ -69,19 +69,18 @@ D1-D3 (ドキュメント)      ←── 各フェーズ完了後に随時
 全テスト 760 pass 維持。Zig 0.15.2 では `pub usingnamespace` が廃止されたため、
 threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 
-### R2: value.zig の分割
+### R2: value.zig の分割 — ✅ 完了
 
-**現状**: 1,308 行。PersistentMap/PersistentVector/LazySeq 等が混在。
+1,308 行の value.zig を facade + 3 サブモジュールに分割完了。
+外部ファイルの import 変更不要 (facade が全型を re-export)。
+全テスト 760 pass 維持。
 
-**方針**: 型ごとにファイル分割。
-
-| 分割先ファイル               | 内容                                     |
-|------------------------------|------------------------------------------|
-| `runtime/value.zig`          | Value union 本体 + 基本メソッド (残留)   |
-| `runtime/persistent_map.zig` | PersistentMap 実装                       |
-| `runtime/persistent_vec.zig` | PersistentVector 実装                    |
-| `runtime/lazy_seq.zig`       | LazySeq + Transform + force 系           |
-| `runtime/types.zig`          | Atom, Delay, Volatile, Reduced 等の構造体 |
+| 分割先ファイル             | 行数 | 内容                                     |
+|----------------------------|------|------------------------------------------|
+| `runtime/value.zig`        | 726  | Value union + eql/format/deepClone (facade) |
+| `runtime/value/types.zig`  | 349  | Symbol, Keyword, String, 関数型, 参照型  |
+| `runtime/value/collections.zig` | 172 | PersistentList/Vector/Map/Set           |
+| `runtime/value/lazy_seq.zig` | 121 | LazySeq + Transform + Generator         |
 
 ### R3: Zig 0.15.2 イディオム再点検
 

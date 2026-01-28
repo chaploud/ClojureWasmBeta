@@ -67,10 +67,23 @@ threadlocal 変数は inline アクセサ関数 (get/set) で提供。
 - `src/main.zig` の `runRepl` を LineEditor に統合
   - 複数行入力 (括弧バランス) は従来通り動作
 
+### R2: value.zig 分割 — 完了
+
+1,308 行の `src/runtime/value.zig` を facade + 3 サブモジュールに分割。
+外部ファイルの変更不要 (facade が全型を re-export)。
+全テスト (760 pass) 回帰なし。
+
+| ファイル               | 行数 | 内容                                    |
+|------------------------|------|-----------------------------------------|
+| value.zig (facade)     | 726  | Value union + eql/format/deepClone + テスト |
+| value/types.zig        | 349  | Symbol, Keyword, String, 関数型, 参照型 |
+| value/collections.zig  | 172  | 永続コレクション 4 型                   |
+| value/lazy_seq.zig     | 121  | LazySeq + Transform + Generator         |
+
 ### 推奨次回タスク
 
 1. **P2: VM 最適化** — ベンチマーク基盤を使って計測しながら
-2. **R2: value.zig 分割** — PersistentMap/Vector/LazySeq を分離
+2. **R3: Zig イディオム再点検** — MultiArrayList, MemoryPool 等
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
