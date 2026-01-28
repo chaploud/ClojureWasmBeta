@@ -47,7 +47,8 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 | `docs/reference/lessons_learned.md` | バグ教訓集・横断的設計知見           | 設計判断時             |
 | `docs/changelog.md`                 | 完了フェーズ履歴                     | 参照用（普段読まない） |
 | `status/vars.yaml`                  | 実装状況（yq で照会）                | 関数追加時             |
-| `status/bench.yaml`                 | ベンチマーク履歴（自動追記）         | パフォーマンス改善時   |
+| `status/bench.yaml`                 | ベンチマーク現在値 (hyperfine)       | パフォーマンス改善時   |
+| `status/bench_improvement.yaml`     | ベンチマーク改善履歴 (--record 追記) | パフォーマンス改善時   |
 | `status/README.md`                  | status/ のスキーマ定義               | status/ 編集時         |
 
 ## コーディング規約
@@ -122,7 +123,8 @@ bash bench/run_bench.sh --quick --hyperfine
 | string_ops     | upper-case + 結合 ×10000   | 文字列処理                  |
 | data_transform | マップ作成・変換 ×10000    | データ構造                  |
 
-履歴は `status/bench.yaml` に蓄積される。`yq '.history' status/bench.yaml` で参照可能。
+現在値は `status/bench.yaml` (hyperfine)。改善履歴は `status/bench_improvement.yaml`。
+`yq '.history' status/bench_improvement.yaml` で改善経過を参照可能。
 
 ## Zig 0.15.2 ガイド
 

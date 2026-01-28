@@ -1,0 +1,205 @@
+# ベンチマーク結果
+#
+# 全言語で同一ベンチマークを実行し、時間 (秒) とメモリ (MB) を記録。
+# ClojureWasmBeta のみ履歴を蓄積。他言語は baseline として一度だけ記録。
+
+# 計測環境
+env:
+  cpu: Apple M4 Pro
+  ram: 48 GB
+  os: Darwin 25.2.0 (arm64)
+  zig: 0.15.2
+# ベンチマーク定義
+benchmarks:
+  fib30:
+    description: "再帰フィボナッチ fib(30) — 関数呼び出しオーバーヘッド"
+    expected_result: 832040
+  sum_range:
+    description: "range(1000000) + sum — 数値シーケンス処理"
+    expected_result: 499999500000
+  map_filter:
+    description: "filter odd / map square / take 10000 / sum — HOF チェイン"
+    expected_result: 1333333330000
+  string_ops:
+    description: "10000回の upper-case + 文字列結合"
+    expected_result: 88890
+  data_transform:
+    description: "10000個のマップ/構造体を作成・変換"
+    expected_result: 10000
+# 他言語ベースライン (一度だけ記録)
+# 各ベンチは { time_s: 秒, mem_mb: MB } の形式
+baseline:
+  date: 2026-01-28
+  languages:
+    c:
+      version: "Apple clang 17.0.0"
+      fib30: {time_s: 0.00, mem_mb: 1.8}
+      sum_range: {time_s: 0.00, mem_mb: 1.8}
+      map_filter: {time_s: 0.00, mem_mb: 1.8}
+      string_ops: {time_s: 0.00, mem_mb: 1.8}
+      data_transform: {time_s: 0.00, mem_mb: 1.8}
+    cpp:
+      version: "Apple clang 17.0.0"
+      fib30: {time_s: 0.00, mem_mb: 1.8}
+      sum_range: {time_s: 0.00, mem_mb: 1.8}
+      map_filter: {time_s: 0.01, mem_mb: 1.8}
+      string_ops: {time_s: 0.00, mem_mb: 1.8}
+      data_transform: {time_s: 0.00, mem_mb: 1.8}
+    zig:
+      version: "0.15.2"
+      fib30: {time_s: 0.01, mem_mb: 1.8}
+      sum_range: {time_s: 0.00, mem_mb: 1.8}
+      map_filter: {time_s: 0.00, mem_mb: 1.8}
+      string_ops: {time_s: 0.00, mem_mb: 1.8}
+      data_transform: {time_s: 0.00, mem_mb: 1.8}
+    java:
+      version: "OpenJDK 21.0.9"
+      fib30: {time_s: 0.04, mem_mb: 40.8}
+      sum_range: {time_s: 0.04, mem_mb: 42.1}
+      map_filter: {time_s: 0.05, mem_mb: 42.8}
+      string_ops: {time_s: 0.05, mem_mb: 44.0}
+      data_transform: {time_s: 0.05, mem_mb: 42.2}
+    ruby:
+      version: "3.3.6 (YJIT)"
+      fib30: {time_s: 0.11, mem_mb: 17.0}
+      sum_range: {time_s: 0.11, mem_mb: 17.2}
+      map_filter: {time_s: 0.11, mem_mb: 17.4}
+      string_ops: {time_s: 0.11, mem_mb: 18.0}
+      data_transform: {time_s: 0.11, mem_mb: 18.7}
+    python:
+      version: "3.14.2"
+      fib30: {time_s: 0.08, mem_mb: 14.3}
+      sum_range: {time_s: 0.02, mem_mb: 14.4}
+      map_filter: {time_s: 0.02, mem_mb: 14.4}
+      string_ops: {time_s: 0.02, mem_mb: 15.1}
+      data_transform: {time_s: 0.02, mem_mb: 17.0}
+    # JVM Clojure (cold): 同じ .clj ファイルを clojure -M で実行
+    # 0.3-0.4s の大部分は JVM 起動 + Clojure ランタイムロード
+    clojure_cold:
+      version: "1.12.4 (Clojure CLI 1.12.4.1582, OpenJDK 21)"
+      fib30: {time_s: 0.38, mem_mb: 117.6}
+      sum_range: {time_s: 0.30, mem_mb: 115.1}
+      map_filter: {time_s: 0.38, mem_mb: 113.7}
+      string_ops: {time_s: 0.31, mem_mb: 107.9}
+      data_transform: {time_s: 0.37, mem_mb: 121.3}
+    # JVM Clojure (warm): JIT warm-up 3回後、5回計測の中央値
+    # 1 JVM プロセスで全ベンチを連続実行 (clj_warm_bench.clj)
+    # メモリは計測不可 (プロセス内計測のため)
+    clojure_warm:
+      version: "1.12.4 (OpenJDK 21)"
+      fib30: {time_ms: 9.67}
+      sum_range: {time_ms: 5.79}
+      map_filter: {time_ms: 1.59}
+      string_ops: {time_ms: 1.82}
+      data_transform: {time_ms: 1.50}
+    # babashka: GraalVM ネイティブコンパイル済み Clojure (sci ベース)
+    babashka:
+      version: "v1.12.214"
+      fib30: {time_s: 0.16, mem_mb: 70.4}
+      sum_range: {time_s: 0.02, mem_mb: 58.9}
+      map_filter: {time_s: 0.01, mem_mb: 31.7}
+      string_ops: {time_s: 0.01, mem_mb: 32.3}
+      data_transform: {time_s: 0.01, mem_mb: 33.7}
+# ClojureWasmBeta 履歴
+history:
+  - date: 2026-01-28
+    version: "R7+D (post セミスペース GC)"
+    build: ReleaseFast
+    results:
+      # 注: この回の fib は fib(38) で計測。以降は fib(30)
+      fib: {time_s: 10.13, mem_mb: 1519.0, note: "fib(38)"}
+      sum_range: {time_s: 0.54, mem_mb: 134.7}
+      map_filter: {time_s: 2.01, mem_mb: 27481.2}
+      string_ops: {time_s: 0.19, mem_mb: 1305.5}
+      data_transform: {time_s: 0.16, mem_mb: 784.0}
+    notes: |
+      初回計測。fib は fib(38) で計測 (以降は fib(30) に変更)。
+      map_filter のメモリ 27GB は遅延シーケンスの GC 圧力による。
+  - date: 2026-01-28
+    version: "fib30 ベースライン"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 1.90, mem_mb: 1517.3}
+      sum_range: {time_s: 0.07, mem_mb: 133.2}
+      map_filter: {time_s: 1.75, mem_mb: 27164.3}
+      string_ops: {time_s: 0.09, mem_mb: 1278.8}
+      data_transform: {time_s: 0.06, mem_mb: 782.4}
+  - date: 2026-01-29
+    version: "P3 TreeWalk fast arithmetic"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 0.92, mem_mb: 730.2}
+      sum_range: {time_s: 0.07, mem_mb: 133.2}
+      map_filter: {time_s: 1.57, mem_mb: 27479.2}
+      string_ops: {time_s: 0.09, mem_mb: 1278.8}
+      data_transform: {time_s: 0.06, mem_mb: 782.0}
+  - date: 2026-01-29
+    version: "BUG fixes (named fn, load-file backend)"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 0.89, mem_mb: 730.2}
+      sum_range: {time_s: 0.07, mem_mb: 133.2}
+      map_filter: {time_s: 1.57, mem_mb: 27479.2}
+      string_ops: {time_s: 0.09, mem_mb: 1278.8}
+      data_transform: {time_s: 0.06, mem_mb: 782.0}
+  - date: 2026-01-29
+    version: "P1a Safe Point GC"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 0.90, mem_mb: 730.2}
+      sum_range: {time_s: 0.07, mem_mb: 133.2}
+      map_filter: {time_s: 1.56, mem_mb: 27479.2}
+      string_ops: {time_s: 0.09, mem_mb: 1278.8}
+      data_transform: {time_s: 0.06, mem_mb: 782.0}
+  - date: 2026-01-29
+    version: "P1b lazy take/reduce"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 0.91, mem_mb: 730.2}
+      sum_range: {time_s: 0.07, mem_mb: 133.2}
+      map_filter: {time_s: 1.58, mem_mb: 27481.9}
+      string_ops: {time_s: 0.09, mem_mb: 1278.9}
+      data_transform: {time_s: 0.06, mem_mb: 782.7}
+  - date: 2026-01-29
+    version: "P1c fused reduce"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 0.90, mem_mb: 730.2}
+      sum_range: {time_s: 0.07, mem_mb: 133.2}
+      map_filter: {time_s: 0.00, mem_mb: 6.5}
+      string_ops: {time_s: 0.04, mem_mb: 512.8}
+      data_transform: {time_s: 0.06, mem_mb: 782.6}
+  - date: 2026-01-29
+    version: "P1c fused reduce: generator routing + stack args"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 0.91, mem_mb: 730.2}
+      sum_range: {time_s: 0.01, mem_mb: 2.0}
+      map_filter: {time_s: 0.00, mem_mb: 3.5}
+      string_ops: {time_s: 0.04, mem_mb: 512.3}
+      data_transform: {time_s: 0.01, mem_mb: 22.0}
+  - date: 2026-01-29
+    version: "P1c VM backend benchmark"
+    build: ReleaseFast
+    # ここから --backend=vm で計測 (以前は TreeWalk)
+    # string_ops はまだ (reduce str ...) = O(n²) パターン
+    results:
+      fib30: {time_s: 0.07, mem_mb: 2.1}
+      sum_range: {time_s: 0.01, mem_mb: 2.1}
+      map_filter: {time_s: 0.00, mem_mb: 2.1}
+      string_ops: {time_s: 0.03, mem_mb: 507.7}
+      data_transform: {time_s: 0.01, mem_mb: 22.5}
+  - date: 2026-01-29
+    version: "string_ops: reduce str → apply str"
+    build: ReleaseFast
+    # string_ops ベンチを (reduce str ...) → (apply str ...) に変更。
+    # 他言語 (Java=StringBuilder, Python=join, Ruby=join, Zig=ArrayList) は
+    # 全て O(n) 結合を使用しており、Clojure だけ O(n²) だった。
+    # (apply str ...) は str に全要素を一括渡しするため O(n) になる。
+    # これ以前の string_ops 数値と直接比較不可。
+    results:
+      fib30: {time_s: 0.07, mem_mb: 2.1}
+      sum_range: {time_s: 0.01, mem_mb: 2.1}
+      map_filter: {time_s: 0.00, mem_mb: 2.1}
+      string_ops: {time_s: 0.01, mem_mb: 14.1}
+      data_transform: {time_s: 0.01, mem_mb: 22.5}

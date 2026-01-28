@@ -16,7 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-YAML_FILE="$PROJECT_DIR/status/bench.yaml"
+YAML_FILE="$PROJECT_DIR/status/bench_improvement.yaml"
 
 # オプション
 QUICK_MODE=false
