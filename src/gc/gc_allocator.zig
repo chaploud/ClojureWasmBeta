@@ -52,6 +52,8 @@ pub const GcAllocator = struct {
     total_freed_count: u64,
     /// 累計アロケーション数（alloc 呼び出し回数）
     total_alloc_count: u64,
+    /// 累計 GC 一時停止時間（ナノ秒）
+    total_pause_ns: u64,
 
     /// 初期閾値: 1MB
     const INITIAL_THRESHOLD: usize = 1024 * 1024;
@@ -71,6 +73,7 @@ pub const GcAllocator = struct {
             .total_freed_bytes = 0,
             .total_freed_count = 0,
             .total_alloc_count = 0,
+            .total_pause_ns = 0,
         };
     }
 
@@ -187,7 +190,13 @@ pub const GcAllocator = struct {
             .total_freed_bytes = self.total_freed_bytes,
             .total_freed_count = self.total_freed_count,
             .total_alloc_count = self.total_alloc_count,
+            .total_pause_ns = self.total_pause_ns,
         };
+    }
+
+    /// 累計一時停止時間を加算
+    pub fn addPauseTime(self: *GcAllocator, ns: u64) void {
+        self.total_pause_ns += ns;
     }
 
     pub const Stats = struct {
@@ -198,6 +207,7 @@ pub const GcAllocator = struct {
         total_freed_bytes: u64,
         total_freed_count: u64,
         total_alloc_count: u64,
+        total_pause_ns: u64,
     };
 
     // === VTable 実装 ===

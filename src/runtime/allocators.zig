@@ -112,11 +112,7 @@ pub const Allocators = struct {
     pub fn collectGarbage(self: *Allocators, env: *Env, globals: GcGlobals) void {
         if (self.gc) |gc_alloc| {
             if (gc_alloc.shouldCollect()) {
-                tracing.markRoots(gc_alloc, env, globals);
-                const result = gc_alloc.sweep();
-                if (self.gc_stats_enabled) {
-                    logSweepResult(result, gc_alloc.total_collections);
-                }
+                self.runGc(gc_alloc, env, globals);
             }
         }
     }
@@ -124,11 +120,35 @@ pub const Allocators = struct {
     /// GC 強制実行（閾値チェックなし）
     pub fn forceGC(self: *Allocators, env: *Env, globals: GcGlobals) void {
         if (self.gc) |gc_alloc| {
+            self.runGc(gc_alloc, env, globals);
+        }
+    }
+
+    /// GC 実行（mark + sweep + 計測）
+    fn runGc(self: *Allocators, gc_alloc: *GcAllocator, env: *Env, globals: GcGlobals) void {
+        var timer = std.time.Timer.start() catch {
+            // タイマー取得失敗時は計測なしで実行
             tracing.markRoots(gc_alloc, env, globals);
             const result = gc_alloc.sweep();
             if (self.gc_stats_enabled) {
-                logSweepResult(result, gc_alloc.total_collections);
+                logSweepResult(result, gc_alloc.total_collections, null, null);
             }
+            return;
+        };
+
+        // Mark phase
+        tracing.markRoots(gc_alloc, env, globals);
+        const mark_ns = timer.read();
+
+        // Sweep phase
+        const result = gc_alloc.sweep();
+        const total_ns = timer.read();
+        const sweep_ns = total_ns - mark_ns;
+
+        gc_alloc.addPauseTime(total_ns);
+
+        if (self.gc_stats_enabled) {
+            logSweepResult(result, gc_alloc.total_collections, mark_ns, sweep_ns);
         }
     }
 
@@ -144,6 +164,7 @@ pub const Allocators = struct {
             writer.print("  total collections : {d}\n", .{s.total_collections}) catch {};
             writer.print("  total freed       : {d} bytes, {d} objects\n", .{ s.total_freed_bytes, s.total_freed_count }) catch {};
             writer.print("  total allocated   : {d} alloc calls\n", .{s.total_alloc_count}) catch {};
+            writer.print("  total pause time  : {d:.3} ms\n", .{nsToMs(s.total_pause_ns)}) catch {};
             writer.print("  final heap        : {d} bytes, {d} objects\n", .{ s.bytes_allocated, s.num_allocations }) catch {};
             writer.print("  final threshold   : {d} bytes\n", .{s.gc_threshold}) catch {};
             writer.flush() catch {};
@@ -151,12 +172,12 @@ pub const Allocators = struct {
     }
 
     /// sweep 結果を stderr にログ出力
-    fn logSweepResult(result: GcAllocator.SweepResult, collection_num: u64) void {
+    fn logSweepResult(result: GcAllocator.SweepResult, collection_num: u64, mark_ns: ?u64, sweep_ns: ?u64) void {
         const stderr_file = std.fs.File.stderr();
         var buf: [512]u8 = undefined;
         var w = stderr_file.writer(&buf);
         const writer = &w.interface;
-        writer.print("[GC #{d}] freed {d} bytes, {d} objects | heap {d} -> {d} bytes | threshold {d} bytes\n", .{
+        writer.print("[GC #{d}] freed {d} bytes, {d} objects | heap {d} -> {d} bytes | threshold {d} bytes", .{
             collection_num,
             result.freed_bytes,
             result.freed_count,
@@ -164,7 +185,18 @@ pub const Allocators = struct {
             result.after_bytes,
             result.new_threshold,
         }) catch {};
+        if (mark_ns) |m| {
+            if (sweep_ns) |s| {
+                writer.print(" | mark {d:.3} ms, sweep {d:.3} ms", .{ nsToMs(m), nsToMs(s) }) catch {};
+            }
+        }
+        writer.writeByte('\n') catch {};
         writer.flush() catch {};
+    }
+
+    /// ナノ秒 → ミリ秒変換
+    fn nsToMs(ns: u64) f64 {
+        return @as(f64, @floatFromInt(ns)) / 1_000_000.0;
     }
 };
 
