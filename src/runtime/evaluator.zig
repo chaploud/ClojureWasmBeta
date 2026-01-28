@@ -566,6 +566,24 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
                 else => not_found,
             };
         },
+        .vector => |v| blk: {
+            // ベクターを関数として使用: ([1 2 3] idx) → (nth [1 2 3] idx)
+            if (args.len != 1) {
+                err.setArityError(args.len, "vector");
+                return error.ArityError;
+            }
+            const idx_val = args[0];
+            if (idx_val != .int) {
+                err.setTypeError("integer", idx_val.typeName());
+                return error.TypeError;
+            }
+            const idx = idx_val.int;
+            if (idx < 0 or idx >= @as(i64, @intCast(v.items.len))) {
+                err.setEvalErrorFmt(.index_out_of_bounds, "Index {d} out of bounds for vector of length {d}", .{ idx, v.items.len });
+                return error.TypeError;
+            }
+            break :blk v.items[@intCast(idx)];
+        },
         .var_val => |vp| {
             // Var を関数として呼び出し: (#'foo args...) → deref して再帰呼び出し
             const v: *var_mod.Var = @ptrCast(@alignCast(vp));

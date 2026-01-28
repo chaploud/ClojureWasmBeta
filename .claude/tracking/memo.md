@@ -511,11 +511,29 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 - **テスト**: `test/compat/clojure_template.clj` — 10 assertions
 - **注意**: マクロ可変長引数 (`& rest`) が1要素のみキャプチャする制限あり
 
+### S1j: clojure.zip 名前空間 — 完了
+
+- **`src/clj/clojure/zip.clj`**: 関数的階層 zipper
+  - zipper, seq-zip, vector-zip, xml-zip: zipper コンストラクタ
+  - node, branch?, children, make-node: ノード操作
+  - down, up, left, right, leftmost, rightmost: ナビゲーション
+  - root, path, lefts, rights: 位置情報
+  - insert-left, insert-right, insert-child, append-child: 挿入
+  - replace, edit, remove: 変更
+  - next, prev, end?: 深さ優先走査
+- **テスト**: `test/compat/clojure_zip.clj` — 34 assertions
+- **付随修正**:
+  - **vector-as-fn**: `([1 2 3] idx)` → ベクターを関数として呼び出し (evaluator.zig + vm.zig)
+  - **with-meta nil 対応**: `(with-meta obj nil)` でメタデータクリア (meta.zig)
+  - **deepClone メタデータ保持**: list/vector/map/set の deepClone でメタデータを複製 (value.zig)
+
 ### 推奨次回タスク
 
-1. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
-2. **P3**: VM 最適化 (ベンチマーク駆動)
-3. **新規 S1 候補**: clojure.pprint / clojure.zip 等
+1. **U5a**: ファイル直接実行オプション (`clj-wasm file.clj`)
+2. **U5b**: OPCODE/バイトコードダンプモード (`--dump-bytecode`)
+3. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
+4. **P3**: VM 最適化 (ベンチマーク駆動)
+5. **新規 S1 候補**: clojure.pprint 等
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
@@ -605,7 +623,7 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 
 ### テスト全体結果
 
-**815 pass, 1 fail(意図的), 0 error** (total: 816)
+**1036 pass, 1 fail(意図的), 0 error** (total: 1037)
 
 ### sci テストスイート移植
 
@@ -650,7 +668,8 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 | `test/compat/clojure_data.clj`          | 25           | PASS |
 | `test/compat/clojure_stacktrace.clj`    | 11           | PASS |
 | `test/compat/clojure_template.clj`      | 10           | PASS |
-| **compat 合計**                          | **751**      |      |
+| `test/compat/clojure_zip.clj`           | 34           | PASS |
+| **compat 合計**                          | **785**      |      |
 
 ### テスト基盤
 

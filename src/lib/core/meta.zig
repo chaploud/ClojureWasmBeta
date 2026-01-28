@@ -14,12 +14,17 @@ const Var = defs.Var;
 /// ※ 実際にはコレクションの meta フィールドを設定する
 pub fn withMeta(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 2) return error.ArityError;
-    if (args[1] != .map) return error.TypeError;
-    const meta = args[1];
 
-    // メタデータをヒープに確保
-    const meta_ptr = try allocator.create(Value);
-    meta_ptr.* = meta;
+    // メタデータは map か nil のみ許可
+    const meta_ptr: ?*const Value = switch (args[1]) {
+        .map => blk: {
+            const p = try allocator.create(Value);
+            p.* = args[1];
+            break :blk p;
+        },
+        .nil => null,
+        else => return error.TypeError,
+    };
 
     return switch (args[0]) {
         .list => |l| blk: {

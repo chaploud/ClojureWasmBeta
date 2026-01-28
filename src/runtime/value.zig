@@ -568,6 +568,14 @@ pub const Value = union(enum) {
         }
     }
 
+    /// メタデータポインタを深コピー
+    fn deepCloneMeta(allocator: std.mem.Allocator, meta: ?*const Value) error{OutOfMemory}!?*const Value {
+        const m = meta orelse return null;
+        const cloned = try allocator.create(Value);
+        cloned.* = try m.deepClone(allocator);
+        return cloned;
+    }
+
     /// Value を指定アロケータに深コピー（scratch → persistent 移行用）
     /// ヒープ確保されたデータ（String, Keyword, Symbol, コレクション）を複製する。
     /// fn_val, partial_fn, comp_fn, fn_proto, var_val, atom はそのままコピー
@@ -601,17 +609,19 @@ pub const Value = union(enum) {
                 };
                 break :blk .{ .symbol = new_sym };
             },
-            // コレクションを再帰的に複製
+            // コレクションを再帰的に複製（メタデータ含む）
             .list => |l| blk: {
                 const new_l = try allocator.create(PersistentList);
                 const items = try deepCloneValues(allocator, l.items);
-                new_l.* = .{ .items = items };
+                const meta_clone = try deepCloneMeta(allocator, l.meta);
+                new_l.* = .{ .items = items, .meta = meta_clone };
                 break :blk .{ .list = new_l };
             },
             .vector => |v| blk: {
                 const new_v = try allocator.create(PersistentVector);
                 const items = try deepCloneValues(allocator, v.items);
-                new_v.* = .{ .items = items };
+                const meta_clone = try deepCloneMeta(allocator, v.meta);
+                new_v.* = .{ .items = items, .meta = meta_clone };
                 break :blk .{ .vector = new_v };
             },
             .map => |m| blk: {
@@ -625,13 +635,15 @@ pub const Value = union(enum) {
                     try allocator.dupe(u32, m.hash_index)
                 else
                     &[_]u32{};
-                new_m.* = .{ .entries = entries, .hash_values = hv, .hash_index = hi };
+                const meta_clone = try deepCloneMeta(allocator, m.meta);
+                new_m.* = .{ .entries = entries, .hash_values = hv, .hash_index = hi, .meta = meta_clone };
                 break :blk .{ .map = new_m };
             },
             .set => |s| blk: {
                 const new_s = try allocator.create(PersistentSet);
                 const items = try deepCloneValues(allocator, s.items);
-                new_s.* = .{ .items = items };
+                const meta_clone = try deepCloneMeta(allocator, s.meta);
+                new_s.* = .{ .items = items, .meta = meta_clone };
                 break :blk .{ .set = new_s };
             },
             // Atom は内部値を深コピー（scratch 参照を排除）

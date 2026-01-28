@@ -365,6 +365,7 @@ doc/dir はマクロ展開、find-doc/apropos は builtin 関数。
 | S1g  | clojure.data (diff)                          | ✅ 完了   |
 | S1h  | clojure.stacktrace (print-stack-trace 等)    | ✅ 完了   |
 | S1i  | clojure.template (apply-template/do-template)| ✅ 完了   |
+| S1j  | clojure.zip (zipper ツリー操作)               | ✅ 完了   |
 
 **長期ビジョン**:
 - ブートストラップ `.clj` ファイル群を `src/clj/` に配置

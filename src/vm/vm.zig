@@ -924,6 +924,17 @@ pub const VM = struct {
                 self.sp = fn_idx;
                 try self.push(result);
             },
+            .vector => |v| {
+                // ベクターを関数として使用: ([1 2 3] idx) → (nth [1 2 3] idx)
+                if (arg_count != 1) return error.ArityError;
+                const idx_val = self.stack[fn_idx + 1];
+                if (idx_val != .int) return error.TypeError;
+                const idx = idx_val.int;
+                if (idx < 0 or idx >= @as(i64, @intCast(v.items.len))) return error.TypeError;
+                const result = v.items[@intCast(idx)];
+                self.sp = fn_idx;
+                try self.push(result);
+            },
             .var_val => |vp| {
                 // Var を関数として呼び出し: (#'foo args...) → deref して再帰呼び出し
                 const v: *var_mod.Var = @ptrCast(@alignCast(vp));
