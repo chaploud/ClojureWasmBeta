@@ -388,11 +388,34 @@ REPL ドキュメント閲覧機能。
 - **テスト**: clojure_string 37 (+5), clojure_walk 9 assertions
 - 全テスト 885 pass / 1 fail (意図的)
 
+### G1c: sweep 高速化 — セミスペース Arena GC — 完了
+
+GPA 個別 free → ArenaAllocator セミスペース方式に置換。
+
+- **gc_allocator.zig**: backing を GPA → ArenaAllocator に変更
+  - sweep() が生存オブジェクトを新 Arena にコピー、旧 Arena を一括解放
+  - ForwardingTable (old_ptr → new_ptr) を返す
+  - gcFree はレジストリ除去のみ (Arena が一括管理)
+- **tracing.zig**: fixupRoots/fixupValue/fixupSlice 等を追加
+  - sweep 後に全ルート (Env→Namespace→Var→Value) のポインタを更新
+  - PersistentMap の hash_values/hash_index も fixup 対象
+- **gc.zig**: GcGlobals.hierarchy を `*?Value` に変更 (fixup writeback 用)
+- **allocators.zig**: runGc に fixup フェーズ追加
+- **registry.zig**: getGcGlobals() で hierarchy ポインタを返す
+
+**性能結果** (240k objects, ~2.4GB):
+| フェーズ   | Before (GPA) | After (Arena) | 改善  |
+|------------|--------------|---------------|-------|
+| mark       | 0.567 ms     | 0.268 ms      | 同等  |
+| sweep      | 1,146 ms     | 29 ms         | ~40x  |
+| total GC   | 1,147 ms     | 29 ms         | ~40x  |
+
+全テスト維持 (885/1 compat, 270/274 zig — 4失敗は既存)
+
 ### 推奨次回タスク
 
-1. **G1c: sweep 高速化** — バルク解放 or Arena ベース GC
-2. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
-3. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars, add-watch 等)
+1. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
+2. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars, add-watch 等)
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 

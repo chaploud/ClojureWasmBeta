@@ -1,14 +1,15 @@
-//! GcAllocator: トラッキングアロケータ
+//! GcAllocator: トラッキングアロケータ（Arena セミスペース方式）
 //!
 //! std.mem.Allocator をラップし、全 alloc/free を registry に記録する。
 //! Mark-Sweep GC のための mark/sweep 機能を提供。
 //!
 //! 設計:
-//!   - backing allocator（GPA等）を透過的にラップ
+//!   - ArenaAllocator をバッキングストアとして使用（高速割り当て）
 //!   - alloc 時に registry (HashMap) に登録
-//!   - free 時に registry から削除
 //!   - mark(): ポインタを marked に設定
-//!   - sweep(): marked=false のエントリを backing.rawFree で解放
+//!   - sweep(): 生存オブジェクトを新 Arena にコピーし、旧 Arena を一括解放
+//!     → 個別 rawFree を排除し、O(survivors) でコンパクション
+//!   - 戻り値の SweepResult に forwarding テーブルを含む（呼び出し元がポインタ更新）
 //!
 //! 使い方:
 //!   var gc_alloc = GcAllocator.init(gpa.allocator());
@@ -32,10 +33,15 @@ const AllocInfo = struct {
 /// ポインタ → AllocInfo のマップ
 const AllocMap = std.AutoHashMapUnmanaged(*anyopaque, AllocInfo);
 
+/// ポインタ転送テーブル（旧 → 新）
+pub const ForwardingTable = std.AutoHashMapUnmanaged(*anyopaque, *anyopaque);
+
 /// GC トラッキングアロケータ
 pub const GcAllocator = struct {
-    /// 実際のメモリ確保先
-    backing: Allocator,
+    /// Arena（オブジェクト割り当て用）
+    arena: std.heap.ArenaAllocator,
+    /// registry 管理用アロケータ（HashMap 自体の管理に使用）
+    registry_alloc: Allocator,
     /// ptr → AllocInfo のマップ（追跡 registry）
     allocs: AllocMap,
     /// 現在の確保バイト数
@@ -63,9 +69,11 @@ pub const GcAllocator = struct {
     const MIN_THRESHOLD: usize = 256 * 1024;
 
     /// 初期化
-    pub fn init(backing: Allocator) GcAllocator {
+    /// registry_alloc: HashMap/配列管理用（GPA 等）
+    pub fn init(registry_alloc: Allocator) GcAllocator {
         return .{
-            .backing = backing,
+            .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+            .registry_alloc = registry_alloc,
             .allocs = .empty,
             .bytes_allocated = 0,
             .gc_threshold = INITIAL_THRESHOLD,
@@ -78,16 +86,9 @@ pub const GcAllocator = struct {
     }
 
     /// 破棄
-    /// 残存する全アロケーションを backing allocator に返却し、
-    /// registry HashMap を解放する。
     pub fn deinit(self: *GcAllocator) void {
-        var iter = self.allocs.iterator();
-        while (iter.next()) |entry| {
-            const raw_ptr: [*]u8 = @ptrCast(entry.key_ptr.*);
-            const info = entry.value_ptr.*;
-            self.backing.rawFree(raw_ptr[0..info.size], info.alignment, 0);
-        }
-        self.allocs.deinit(self.backing);
+        self.allocs.deinit(self.registry_alloc);
+        self.arena.deinit();
     }
 
     /// std.mem.Allocator インターフェースを返す
@@ -96,6 +97,11 @@ pub const GcAllocator = struct {
             .ptr = @ptrCast(self),
             .vtable = &vtable,
         };
+    }
+
+    /// backing allocator を返す（GC 対象外の割り当て用 — テスト等）
+    pub fn backing(self: *GcAllocator) Allocator {
+        return self.registry_alloc;
     }
 
     /// ポインタを mark（到達可能としてマーク）
@@ -124,35 +130,75 @@ pub const GcAllocator = struct {
         }
     }
 
-    /// Sweep: marked=false のアロケーションを解放
-    /// 戻り値: SweepResult（回収量の統計）
+    /// Sweep: セミスペース方式
+    /// 1. 生存オブジェクトを新 Arena にコピー
+    /// 2. 旧 Arena を一括解放
+    /// 3. ForwardingTable を返す（呼び出し元がポインタ更新に使用）
+    ///
+    /// 注意: 呼び出し元は返却された forwarding テーブルを使って
+    ///       全ルートのポインタを更新した後、forwarding.deinit() すること。
     pub fn sweep(self: *GcAllocator) SweepResult {
         const before_bytes = self.bytes_allocated;
         const before_count = self.allocs.count();
 
-        var iter = self.allocs.iterator();
-        while (iter.next()) |entry| {
-            if (!entry.value_ptr.marked) {
-                // 未到達 → 解放
-                const raw_ptr: [*]u8 = @ptrCast(entry.key_ptr.*);
-                const info = entry.value_ptr.*;
-                self.backing.rawFree(raw_ptr[0..info.size], info.alignment, 0);
-                self.bytes_allocated -= info.size;
-                // iterator から安全に削除
-                self.allocs.removeByPtr(entry.key_ptr);
-            } else {
-                // 次回用にリセット
-                entry.value_ptr.marked = false;
+        // 新 Arena を作成
+        var new_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        const new_alloc = new_arena.allocator();
+
+        // 新 registry と forwarding テーブルを事前確保
+        var new_allocs: AllocMap = .empty;
+        var forwarding: ForwardingTable = .empty;
+        var survived_bytes: usize = 0;
+        var survived_count: u32 = 0;
+
+        // 生存数を事前カウント（ensureTotalCapacity 用）
+        var survive_estimate: u32 = 0;
+        {
+            var count_iter = self.allocs.iterator();
+            while (count_iter.next()) |entry| {
+                if (entry.value_ptr.marked) survive_estimate += 1;
             }
         }
+
+        new_allocs.ensureTotalCapacity(self.registry_alloc, survive_estimate) catch {};
+        forwarding.ensureTotalCapacity(self.registry_alloc, survive_estimate) catch {};
+
+        // 生存オブジェクトを新 Arena にコピー
+        var iter = self.allocs.iterator();
+        while (iter.next()) |entry| {
+            if (entry.value_ptr.marked) {
+                const info = entry.value_ptr.*;
+                const old_ptr: [*]u8 = @ptrCast(entry.key_ptr.*);
+                const new_ptr = new_alloc.rawAlloc(info.size, info.alignment, 0) orelse continue;
+                @memcpy(new_ptr[0..info.size], old_ptr[0..info.size]);
+                const new_opaque: *anyopaque = @ptrCast(new_ptr);
+                new_allocs.putAssumeCapacity(new_opaque, .{
+                    .size = info.size,
+                    .alignment = info.alignment,
+                    .marked = false,
+                });
+                forwarding.putAssumeCapacity(entry.key_ptr.*, new_opaque);
+                survived_bytes += info.size;
+                survived_count += 1;
+            }
+        }
+
+        // 旧 Arena を一括解放（全デッドオブジェクトを O(1) で回収）
+        self.arena.deinit();
+
+        // 旧 registry を解放して新 registry にスワップ
+        self.allocs.deinit(self.registry_alloc);
+        self.allocs = new_allocs;
+        self.arena = new_arena;
+        self.bytes_allocated = survived_bytes;
 
         // 閾値を動的調整
         const new_threshold = self.bytes_allocated * GROWTH_FACTOR;
         self.gc_threshold = @max(new_threshold, MIN_THRESHOLD);
 
         // 統計更新
-        const freed_bytes = before_bytes - self.bytes_allocated;
-        const freed_count = before_count - self.allocs.count();
+        const freed_bytes = before_bytes - survived_bytes;
+        const freed_count = before_count - survived_count;
         self.total_collections += 1;
         self.total_freed_bytes += freed_bytes;
         self.total_freed_count += freed_count;
@@ -161,8 +207,9 @@ pub const GcAllocator = struct {
             .freed_bytes = freed_bytes,
             .freed_count = freed_count,
             .before_bytes = before_bytes,
-            .after_bytes = self.bytes_allocated,
+            .after_bytes = survived_bytes,
             .new_threshold = self.gc_threshold,
+            .forwarding = forwarding,
         };
     }
 
@@ -173,6 +220,9 @@ pub const GcAllocator = struct {
         before_bytes: usize,
         after_bytes: usize,
         new_threshold: usize,
+        /// ポインタ転送テーブル（旧 → 新）
+        /// 呼び出し元が全ルートのポインタ更新に使用した後、deinit すること
+        forwarding: ForwardingTable,
     };
 
     /// GC を実行すべきかどうか
@@ -219,27 +269,28 @@ pub const GcAllocator = struct {
         .free = gcFree,
     };
 
-    fn gcAlloc(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
+    fn gcAlloc(ctx: *anyopaque, len: usize, alignment: Alignment, _: usize) ?[*]u8 {
         const self: *GcAllocator = @ptrCast(@alignCast(ctx));
-        const ptr = self.backing.rawAlloc(len, alignment, ret_addr) orelse return null;
+        // Arena から割り当て
+        const ptr = self.arena.allocator().rawAlloc(len, alignment, 0) orelse return null;
 
         // registry に登録
-        self.allocs.put(self.backing, @ptrCast(ptr), .{
+        self.allocs.put(self.registry_alloc, @ptrCast(ptr), .{
             .size = len,
             .alignment = alignment,
             .marked = false,
-        }) catch return null; // HashMap の put が失敗した場合、メモリリークを許容する代わりに null を返す
+        }) catch return null;
 
         self.bytes_allocated += len;
         self.total_alloc_count += 1;
         return ptr;
     }
 
-    fn gcResize(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) bool {
+    fn gcResize(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, _: usize) bool {
         const self: *GcAllocator = @ptrCast(@alignCast(ctx));
         const old_len = memory.len;
 
-        if (!self.backing.rawResize(memory, alignment, new_len, ret_addr)) {
+        if (!self.arena.allocator().rawResize(memory, alignment, new_len, 0)) {
             return false;
         }
 
@@ -259,12 +310,12 @@ pub const GcAllocator = struct {
         return true;
     }
 
-    fn gcRemap(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+    fn gcRemap(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, _: usize) ?[*]u8 {
         const self: *GcAllocator = @ptrCast(@alignCast(ctx));
         const old_len = memory.len;
         const old_key: *anyopaque = @ptrCast(memory.ptr);
 
-        const new_ptr = self.backing.rawRemap(memory, alignment, new_len, ret_addr) orelse return null;
+        const new_ptr = self.arena.allocator().rawRemap(memory, alignment, new_len, 0) orelse return null;
 
         // 旧エントリの marked 状態を保持
         const was_marked = if (self.allocs.get(old_key)) |info| info.marked else false;
@@ -273,7 +324,7 @@ pub const GcAllocator = struct {
         _ = self.allocs.remove(old_key);
 
         // 新エントリを登録
-        self.allocs.put(self.backing, @ptrCast(new_ptr), .{
+        self.allocs.put(self.registry_alloc, @ptrCast(new_ptr), .{
             .size = new_len,
             .alignment = alignment,
             .marked = was_marked,
@@ -291,17 +342,15 @@ pub const GcAllocator = struct {
         return new_ptr;
     }
 
-    fn gcFree(ctx: *anyopaque, memory: []u8, alignment: Alignment, ret_addr: usize) void {
+    fn gcFree(ctx: *anyopaque, memory: []u8, _: Alignment, _: usize) void {
         const self: *GcAllocator = @ptrCast(@alignCast(ctx));
         const key: *anyopaque = @ptrCast(memory.ptr);
 
-        // registry から削除
+        // registry から削除（Arena は個別 free 不要）
         if (self.allocs.fetchRemove(key)) |kv| {
             self.bytes_allocated -= kv.value.size;
         }
-
-        // backing から解放
-        self.backing.rawFree(memory, alignment, ret_addr);
+        // Arena は個別解放しない（sweep で一括解放）
     }
 };
 
@@ -321,7 +370,7 @@ test "GcAllocator 基本 alloc/free" {
     try std.testing.expect(gc.bytes_allocated >= 100);
     try std.testing.expect(gc.allocs.count() > 0);
 
-    // free
+    // free（registry から除去のみ、Arena は個別解放しない）
     a.free(data);
     try std.testing.expectEqual(@as(usize, 0), gc.bytes_allocated);
 }
@@ -367,19 +416,22 @@ test "GcAllocator mark と sweep" {
     _ = gc.mark(@ptrCast(p1));
     _ = gc.mark(@ptrCast(p3));
 
-    // sweep → p2 が解放される
-    _ = gc.sweep();
+    // sweep → p2 が解放される、p1/p3 は新 Arena にコピー
+    var result = gc.sweep();
+    defer result.forwarding.deinit(gpa.allocator());
 
     // p2 分のメモリが減少
     try std.testing.expect(gc.bytes_allocated < before_bytes);
 
-    // p1, p3 はまだ使える（marked がリセットされている）
-    try std.testing.expectEqual(@as(u64, 1), p1.*);
-    try std.testing.expectEqual(@as(u64, 3), p3.*);
+    // forwarding テーブルで新ポインタを取得
+    const new_p1_opaque = result.forwarding.get(@ptrCast(p1)).?;
+    const new_p3_opaque = result.forwarding.get(@ptrCast(p3)).?;
+    const new_p1: *u64 = @ptrCast(@alignCast(new_p1_opaque));
+    const new_p3: *u64 = @ptrCast(@alignCast(new_p3_opaque));
 
-    // クリーンアップ: 残りを手動解放
-    a.destroy(p1);
-    a.destroy(p3);
+    // コピーされた値が正しい
+    try std.testing.expectEqual(@as(u64, 1), new_p1.*);
+    try std.testing.expectEqual(@as(u64, 3), new_p3.*);
 }
 
 test "GcAllocator shouldCollect" {
@@ -414,10 +466,9 @@ test "GcAllocator sweep 後の閾値調整" {
     // 確保して mark してから sweep
     const p1 = try a.create(u64);
     _ = gc.mark(@ptrCast(p1));
-    _ = gc.sweep();
+    var result = gc.sweep();
+    result.forwarding.deinit(gpa.allocator());
 
     // 閾値が MIN_THRESHOLD 以上であること
     try std.testing.expect(gc.gc_threshold >= GcAllocator.MIN_THRESHOLD);
-
-    a.destroy(p1);
 }

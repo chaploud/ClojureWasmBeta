@@ -191,6 +191,9 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 | 改善項目                      | 内容                                                   | 状態      |
 |-------------------------------|--------------------------------------------------------|-----------|
 | アロケーション計測            | GC 呼び出し頻度・回収量をログ出力する仕組み            | ✅ G1a    |
+| pause time 計測               | mark/sweep フェーズの所要時間計測                      | ✅ G1b    |
+| セミスペース Arena GC         | GPA 個別 free → Arena 一括解放 + ForwardingTable fixup | ✅ G1c    |
+|                               | sweep 性能: 1,146ms → 29ms (~40x 高速化)              |           |
 | MemoryPool 導入               | Value の頻繁な alloc/free を高速化                     | 未着手    |
 |                               | `std.heap.MemoryPool(Value)` — slab/pool 方式          |           |
 |                               | destroy 時にメモリを free list に返却 (ヒープ確保不要) |           |

@@ -124,12 +124,17 @@ pub const Allocators = struct {
         }
     }
 
-    /// GC 実行（mark + sweep + 計測）
+    /// GC 実行（mark + sweep + fixup + 計測）
     fn runGc(self: *Allocators, gc_alloc: *GcAllocator, env: *Env, globals: GcGlobals) void {
         var timer = std.time.Timer.start() catch {
             // タイマー取得失敗時は計測なしで実行
             tracing.markRoots(gc_alloc, env, globals);
-            const result = gc_alloc.sweep();
+            var result = gc_alloc.sweep();
+            // ポインタ修正
+            if (result.forwarding.count() > 0) {
+                tracing.fixupRoots(&result.forwarding, gc_alloc.registry_alloc, env, globals);
+            }
+            result.forwarding.deinit(gc_alloc.registry_alloc);
             if (self.gc_stats_enabled) {
                 logSweepResult(result, gc_alloc.total_collections, null, null);
             }
@@ -140,10 +145,16 @@ pub const Allocators = struct {
         tracing.markRoots(gc_alloc, env, globals);
         const mark_ns = timer.read();
 
-        // Sweep phase
-        const result = gc_alloc.sweep();
+        // Sweep phase（セミスペース: 生存オブジェクトを新 Arena にコピー）
+        var result = gc_alloc.sweep();
+        const sweep_ns = timer.read() - mark_ns;
+
+        // Fixup phase（全ルートのポインタを更新）
+        if (result.forwarding.count() > 0) {
+            tracing.fixupRoots(&result.forwarding, gc_alloc.registry_alloc, env, globals);
+        }
+        result.forwarding.deinit(gc_alloc.registry_alloc);
         const total_ns = timer.read();
-        const sweep_ns = total_ns - mark_ns;
 
         gc_alloc.addPauseTime(total_ns);
 

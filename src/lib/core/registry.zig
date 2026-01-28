@@ -257,7 +257,7 @@ const gc_mod = @import("../../gc/gc.zig");
 /// GC ルート用グローバル参照を取得
 pub fn getGcGlobals() gc_mod.GcGlobals {
     return .{
-        .hierarchy = defs.global_hierarchy,
+        .hierarchy = &defs.global_hierarchy,
         .taps = if (defs.global_taps) |t| t.items else null,
     };
 }

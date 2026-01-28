@@ -27,7 +27,7 @@
   - evaluator.zig の args 配列 → GC 対象
   - Value 所有権 → GC で管理
   - context.withBinding の配列 → GC 対象
-- **GC アーキテクチャ (Phase 21+修正)**:
+- **GC アーキテクチャ (Phase 21+修正+G1c)**:
   - **アロケータ分離**: Env/Namespace/Var/HashMap は GPA 直接管理 (GC 対象外)。
     Clojure Value (*String, *Vector, *Fn 等) は GcAllocator 経由 (GC 追跡)。
     main.zig: `Env.init(gpa_allocator)`, `registerCore(&env, allocs.persistent())`
@@ -37,6 +37,11 @@
   - **loop/recur 最適化**: `runLoop` で recur_buffer を事前割り当て。
     `runRecur` で in-place 再利用。毎イテレーションの GcAllocator 経由 alloc を排除。
     Context に `recur_buffer: ?[]Value` フィールド追加。
+  - **セミスペース Arena GC (G1c)**: GPA 個別 free → Arena 一括解放。
+    sweep() が生存オブジェクトを新 Arena にコピー + ForwardingTable を構築。
+    fixupRoots() で全ルートのポインタを新アドレスに更新。
+    sweep 性能: 1,146ms → 29ms (~40x 高速化)。
+    GcGlobals.hierarchy は `*?Value` (ポインタ) で fixup writeback に対応。
 
 ## Analyzer
 
