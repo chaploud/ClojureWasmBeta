@@ -159,7 +159,10 @@ pub const Analyzer = struct {
         }
 
         // 未定義シンボル
-        return err.parseError(.undefined_symbol, "Unable to resolve symbol", .{});
+        if (sym.namespace) |ns| {
+            return err.parseErrorFmt(.undefined_symbol, "Unable to resolve symbol: {s}/{s}", .{ ns, sym.name });
+        }
+        return err.parseErrorFmt(.undefined_symbol, "Unable to resolve symbol: {s}", .{sym.name});
     }
 
     // === コレクション解析 ===

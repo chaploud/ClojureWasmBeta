@@ -204,6 +204,26 @@ pub fn parseError(kind: Kind, message: []const u8, location: SourceLocation) Err
     });
 }
 
+/// フォーマット付き Parse エラー
+pub fn parseErrorFmt(kind: Kind, comptime fmt: []const u8, args: anytype) Error {
+    const msg = std.fmt.bufPrint(&msg_buf, fmt, args) catch "error message too long";
+    return setError(.{
+        .kind = kind,
+        .phase = .parse,
+        .message = msg,
+    });
+}
+
+/// フォーマット付きメッセージ設定（Zig error は呼び出し元で返す）
+pub fn setEvalErrorFmt(kind: Kind, comptime fmt: []const u8, args: anytype) void {
+    const msg = std.fmt.bufPrint(&msg_buf, fmt, args) catch "error message too long";
+    last_error = .{
+        .kind = kind,
+        .phase = .eval,
+        .message = msg,
+    };
+}
+
 /// Eval エラーを簡易作成
 pub fn evalError(kind: Kind, message: []const u8) Error {
     return setError(.{
@@ -211,6 +231,48 @@ pub fn evalError(kind: Kind, message: []const u8) Error {
         .phase = .eval,
         .message = message,
     });
+}
+
+/// 動的メッセージ用の threadlocal バッファ
+threadlocal var msg_buf: [512]u8 = undefined;
+
+/// フォーマット付き Eval エラー
+pub fn evalErrorFmt(kind: Kind, comptime fmt: []const u8, args: anytype) Error {
+    const msg = std.fmt.bufPrint(&msg_buf, fmt, args) catch "error message too long";
+    return setError(.{
+        .kind = kind,
+        .phase = .eval,
+        .message = msg,
+    });
+}
+
+/// ArityError メッセージを設定（Zig error は呼び出し元で返す）
+pub fn setArityError(got: usize, name: []const u8) void {
+    const msg = std.fmt.bufPrint(&msg_buf, "Wrong number of args ({d}) passed to: {s}", .{ got, name }) catch "arity error";
+    last_error = .{
+        .kind = .invalid_arity,
+        .phase = .eval,
+        .message = msg,
+    };
+}
+
+/// TypeError メッセージを設定（Zig error は呼び出し元で返す）
+pub fn setTypeError(expected: []const u8, got: []const u8) void {
+    const msg = std.fmt.bufPrint(&msg_buf, "Expected {s}, got {s}", .{ expected, got }) catch "type error";
+    last_error = .{
+        .kind = .type_error,
+        .phase = .eval,
+        .message = msg,
+    };
+}
+
+/// DivisionByZero メッセージを設定
+pub fn setDivisionByZero() void {
+    last_error = .{
+        .kind = .division_by_zero,
+        .phase = .eval,
+        .message = "Divide by zero",
+    };
 }
 
 // === テスト ===

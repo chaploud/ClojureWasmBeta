@@ -27,6 +27,7 @@ const core = clj.core;
 const engine_mod = clj.engine;
 const var_mod = clj.var_mod;
 const LineEditor = @import("repl/line_editor.zig").LineEditor;
+const base_error = clj.err;
 
 /// CLI エラー
 const CliError = error{
@@ -149,15 +150,13 @@ pub fn main() !void {
 
         if (compare_mode) {
             const compare_out = runCompare(&allocs, &env, expr, vm_snapshot, stdout, stderr) catch |err| {
-                stderr.print("Error: {any}\n", .{err}) catch {};
-                stderr.flush() catch {};
+                reportError(err, stderr);
                 std.process.exit(1);
             };
             vm_snapshot = compare_out;
         } else {
             runWithBackend(&allocs, &env, expr, backend, stdout) catch |err| {
-                stderr.print("Error: {any}\n", .{err}) catch {};
-                stderr.flush() catch {};
+                reportError(err, stderr);
                 std.process.exit(1);
             };
         }
@@ -487,8 +486,7 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
 
         // 1行読み込み (LineEditor)
         const line = editor.readLine(prompt) catch |err| {
-            stderr.print("Error: {any}\n", .{err}) catch {};
-            stderr.flush() catch {};
+            reportError(err, stderr);
             return;
         } orelse {
             // EOF (Ctrl-D)
@@ -521,8 +519,7 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
 
         if (compare_mode) {
             const compare_out = runCompare(&allocs, &env, source, vm_snapshot, stdout, stderr) catch |err| {
-                stderr.print("Error: {any}\n", .{err}) catch {};
-                stderr.flush() catch {};
+                reportError(err, stderr);
                 ve.bindRoot(Value.nil);
                 continue;
             };
@@ -530,8 +527,7 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
         } else {
             // 評価
             const result = evalForRepl(&allocs, &env, source, backend) catch |err| {
-                stderr.print("Error: {any}\n", .{err}) catch {};
-                stderr.flush() catch {};
+                reportError(err, stderr);
                 continue;
             };
 
@@ -634,6 +630,29 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\  clj-wasm --compare -e "(if true 1 2)"
         \\
     );
+}
+
+/// babashka 風エラー表示
+/// base/error.zig に詳細情報があればフォーマット表示、なければ従来通り
+fn reportError(err: anyerror, writer: *std.Io.Writer) void {
+    if (base_error.getLastError()) |info| {
+        // babashka 風フォーマット
+        writer.writeAll("----- Error --------------------------------------------------------------------\n") catch {};
+        writer.print("Type:     {s}\n", .{@tagName(info.kind)}) catch {};
+        writer.print("Message:  {s}\n", .{info.message}) catch {};
+        if (info.phase != .eval) {
+            writer.print("Phase:    {s}\n", .{@tagName(info.phase)}) catch {};
+        }
+        if (info.location.line > 0) {
+            writer.writeAll("Location: ") catch {};
+            const file = info.location.file orelse "NO_SOURCE_PATH";
+            writer.print("{s}:{d}:{d}\n", .{ file, info.location.line, info.location.column }) catch {};
+        }
+    } else {
+        // 詳細なし — Zig エラー名をフォールバック表示
+        writer.print("Error: {s}\n", .{@errorName(err)}) catch {};
+    }
+    writer.flush() catch {};
 }
 
 test "simple test" {

@@ -13,6 +13,7 @@ const Analyzer = defs.Analyzer;
 const tree_walk = defs.tree_walk;
 const Context = defs.Context;
 const var_mod = defs.var_mod;
+const base_err = @import("../../base/error.zig");
 const CoreError = defs.CoreError;
 
 const lazy = @import("lazy.zig");
@@ -415,6 +416,7 @@ pub fn compareNumbers(a: Value, b: Value) CoreError!i8 {
         .float => |f| f,
         else => {
             @branchHint(.cold);
+            base_err.setTypeError("number", a.typeName());
             return error.TypeError;
         },
     };
@@ -423,6 +425,7 @@ pub fn compareNumbers(a: Value, b: Value) CoreError!i8 {
         .float => |f| f,
         else => {
             @branchHint(.cold);
+            base_err.setTypeError("number", b.typeName());
             return error.TypeError;
         },
     };

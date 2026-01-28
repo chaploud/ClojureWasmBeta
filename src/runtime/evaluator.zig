@@ -304,6 +304,8 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
             // ユーザー定義関数
             const arity = f.findArity(args.len) orelse {
                 @branchHint(.cold);
+                const fn_name = if (f.name) |n| n.name else "<anonymous>";
+                err.setArityError(args.len, fn_name);
                 return error.ArityError;
             };
 
@@ -414,11 +416,15 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
             }
 
             // メソッドが見つからない
-            break :blk error.TypeError;
+            err.setEvalErrorFmt(.type_error, "No method in multimethod for dispatch value", .{});
+            return error.TypeError;
         },
         .protocol_fn => |pf| blk: {
             // プロトコル関数呼び出し: 第1引数の型で実装を検索
-            if (args.len < 1) return error.ArityError;
+            if (args.len < 1) {
+                err.setArityError(args.len, pf.method_name);
+                return error.ArityError;
+            }
             const type_key_str = args[0].typeKeyword();
 
             // type_key を文字列 Value として作成
@@ -443,7 +449,10 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
         },
         .keyword => |k| blk: {
             // キーワードを関数として使用: (:key map) or (:key map default)
-            if (args.len < 1 or args.len > 2) return error.ArityError;
+            if (args.len < 1 or args.len > 2) {
+                err.setArityError(args.len, k.name);
+                return error.ArityError;
+            }
             const not_found = if (args.len == 2) args[1] else value_mod.nil;
             break :blk switch (args[0]) {
                 .map => |m| m.get(Value{ .keyword = k }) orelse not_found,
@@ -464,6 +473,7 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
         },
         else => {
             @branchHint(.cold);
+            err.setTypeError("function", fn_val.typeName());
             return error.TypeError;
         },
     };

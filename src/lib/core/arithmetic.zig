@@ -10,6 +10,7 @@ const CoreError = defs.CoreError;
 const BuiltinDef = defs.BuiltinDef;
 
 const helpers = @import("helpers.zig");
+const base_err = @import("../../base/error.zig");
 
 // ============================================================
 // 算術演算
@@ -40,6 +41,7 @@ pub fn add(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
             },
             else => {
                 @branchHint(.cold);
+                base_err.setTypeError("number", arg.typeName());
                 return error.TypeError;
             },
         }
@@ -56,6 +58,7 @@ pub fn sub(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     if (args.len == 0) {
         @branchHint(.cold);
+        base_err.setArityError(0, "-");
         return error.ArityError;
     }
 
@@ -70,7 +73,10 @@ pub fn sub(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
             float_result = f;
             has_float = true;
         },
-        else => return error.TypeError,
+        else => {
+            base_err.setTypeError("number", args[0].typeName());
+            return error.TypeError;
+        },
     }
 
     // 単項マイナス
@@ -98,7 +104,10 @@ pub fn sub(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
                 }
                 float_result -= f;
             },
-            else => return error.TypeError,
+            else => {
+                base_err.setTypeError("number", arg.typeName());
+                return error.TypeError;
+            },
         }
     }
 
@@ -131,7 +140,10 @@ pub fn mul(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
                 }
                 float_result *= f;
             },
-            else => return error.TypeError,
+            else => {
+                base_err.setTypeError("number", arg.typeName());
+                return error.TypeError;
+            },
         }
     }
 
@@ -144,18 +156,27 @@ pub fn mul(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// / : 除算（常に float を返す）
 pub fn div(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
-    if (args.len == 0) return error.ArityError;
+    if (args.len == 0) {
+        base_err.setArityError(0, "/");
+        return error.ArityError;
+    }
 
     // 最初の引数を取得
     var result: f64 = switch (args[0]) {
         .int => |n| @as(f64, @floatFromInt(n)),
         .float => |f| f,
-        else => return error.TypeError,
+        else => {
+            base_err.setTypeError("number", args[0].typeName());
+            return error.TypeError;
+        },
     };
 
     // 単項 (/ x) は 1/x
     if (args.len == 1) {
-        if (result == 0.0) return error.DivisionByZero;
+        if (result == 0.0) {
+            base_err.setDivisionByZero();
+            return error.DivisionByZero;
+        }
         return Value{ .float = 1.0 / result };
     }
 
@@ -164,9 +185,15 @@ pub fn div(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
         const divisor: f64 = switch (arg) {
             .int => |n| @as(f64, @floatFromInt(n)),
             .float => |f| f,
-            else => return error.TypeError,
+            else => {
+                base_err.setTypeError("number", arg.typeName());
+                return error.TypeError;
+            },
         };
-        if (divisor == 0.0) return error.DivisionByZero;
+        if (divisor == 0.0) {
+            base_err.setDivisionByZero();
+            return error.DivisionByZero;
+        }
         result /= divisor;
     }
 
@@ -178,6 +205,7 @@ pub fn inc(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     if (args.len != 1) {
         @branchHint(.cold);
+        base_err.setArityError(args.len, "inc");
         return error.ArityError;
     }
 
@@ -186,7 +214,8 @@ pub fn inc(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
         .float => |f| Value{ .float = f + 1.0 },
         else => {
             @branchHint(.cold);
-            return error.TypeError;
+            base_err.setTypeError("number", args[0].typeName());
+                return error.TypeError;
         },
     };
 }
@@ -196,6 +225,7 @@ pub fn dec(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     if (args.len != 1) {
         @branchHint(.cold);
+        base_err.setArityError(args.len, "dec");
         return error.ArityError;
     }
 
@@ -204,7 +234,8 @@ pub fn dec(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
         .float => |f| Value{ .float = f - 1.0 },
         else => {
             @branchHint(.cold);
-            return error.TypeError;
+            base_err.setTypeError("number", args[0].typeName());
+                return error.TypeError;
         },
     };
 }
@@ -217,6 +248,7 @@ pub fn dec(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 pub fn eq(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len < 2) {
         @branchHint(.cold);
+        base_err.setArityError(args.len, "=");
         return error.ArityError;
     }
 
@@ -236,6 +268,7 @@ pub fn lt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     if (args.len < 2) {
         @branchHint(.cold);
+        base_err.setArityError(args.len, "<");
         return error.ArityError;
     }
 
@@ -251,6 +284,7 @@ pub fn gt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     if (args.len < 2) {
         @branchHint(.cold);
+        base_err.setArityError(args.len, ">");
         return error.ArityError;
     }
 
@@ -266,6 +300,7 @@ pub fn lte(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     if (args.len < 2) {
         @branchHint(.cold);
+        base_err.setArityError(args.len, "<=");
         return error.ArityError;
     }
 
@@ -281,6 +316,7 @@ pub fn gte(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
     if (args.len < 2) {
         @branchHint(.cold);
+        base_err.setArityError(args.len, ">=");
         return error.ArityError;
     }
 
