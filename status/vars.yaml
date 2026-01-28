@@ -3316,43 +3316,56 @@ vars:
   clojure_repl:
     dir:
       type: macro
-      status: todo
+      status: done
+      note: clojure.core のマクロ (analyze.zig 展開)
     doc:
       type: macro
-      status: todo
+      status: done
+      note: clojure.core のマクロ (analyze.zig 展開)
     source:
       type: macro
-      status: todo
+      status: done
+      note: clojure.repl NS (スタブ — ソーステキスト保持未実装)
     apropos:
       type: function
-      status: todo
+      status: done
+      note: clojure.repl NS (clojure.core/apropos 委譲)
     demunge:
       type: function
-      status: todo
+      status: done
+      note: clojure.repl NS (スタブ — Java 固有)
     dir-fn:
       type: function
-      status: todo
+      status: skip
+      note: Java 固有 (dir マクロで代替)
     find-doc:
       type: function
-      status: todo
+      status: done
+      note: clojure.repl NS (clojure.core/find-doc 委譲)
     pst:
       type: function
-      status: todo
+      status: done
+      note: clojure.repl NS (多引数 defn)
     root-cause:
       type: function
-      status: todo
+      status: done
+      note: clojure.repl NS (引数をそのまま返す)
     set-break-handler!:
       type: function
-      status: todo
+      status: skip
+      note: Java 固有 (スレッド制御)
     source-fn:
       type: function
-      status: todo
+      status: done
+      note: clojure.repl NS (スタブ — nil を返す)
     stack-element-str:
       type: function
-      status: todo
+      status: skip
+      note: Java 固有 (StackTraceElement)
     thread-stopper:
       type: function
-      status: todo
+      status: skip
+      note: Java 固有 (スレッド制御)
   clojure_string:
     blank?:
       type: function
@@ -3734,22 +3747,28 @@ vars:
   clojure_stacktrace:
     e:
       type: function
-      status: todo
+      status: done
+      note: clojure.stacktrace NS
     print-cause-trace:
       type: function
-      status: todo
+      status: done
+      note: clojure.stacktrace NS
     print-stack-trace:
       type: function
-      status: todo
+      status: done
+      note: clojure.stacktrace NS (スタブ — 例外文字列のみ)
     print-throwable:
       type: function
-      status: todo
+      status: done
+      note: clojure.stacktrace NS
     print-trace-element:
       type: function
-      status: todo
+      status: skip
+      note: Java 固有 (StackTraceElement)
     root-cause:
       type: function
-      status: todo
+      status: done
+      note: clojure.stacktrace NS (引数をそのまま返す)
   clojure_walk:
     keywordize-keys:
       type: function
@@ -3808,111 +3827,177 @@ vars:
   clojure_data:
     diff:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: pure Clojure 実装 (map/set/sequential 再帰差分)
     diff-similar:
       type: function
-      status: todo
+      status: skip
+      note: Diff プロトコル関数 (diff で内部的に処理)
     equality-partition:
       type: function
-      status: todo
+      status: skip
+      note: EqualityPartition プロトコル関数
     Diff:
       type: var
-      status: todo
+      status: skip
+      note: プロトコル (diff 関数で代替)
     EqualityPartition:
       type: var
-      status: todo
+      status: skip
+      note: プロトコル (diff 関数で代替)
   clojure_zip:
     append-child:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS (pure Clojure 実装)
     branch?:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     children:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     down:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     edit:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     end?:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     insert-child:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     insert-left:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     insert-right:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     left:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     leftmost:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     lefts:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     make-node:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     next:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     node:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     path:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     prev:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     remove:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     replace:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     right:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     rightmost:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     rights:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     root:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     seq-zip:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     up:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     vector-zip:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
     xml-zip:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS (スタブ — XML パーサー未実装)
     zipper:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.zip NS
   clojure_template:
     do-template:
-      type: macro
-      status: todo
+      type: function
+      status: done
+      impl_type: clj
+      note: clojure.template NS (関数版 — マクロ可変長引数制限を回避)
     apply-template:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.template NS (prewalk でシンボル置換)
   clojure_instant:
     parse-timestamp:
       type: function
@@ -3937,139 +4022,215 @@ vars:
   clojure_math:
     IEEE-remainder:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS (Zig builtin ラッパー)
     acos:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     add-exact:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.addExact (overflow 検出 — JVM 固有)
     asin:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     atan:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     atan2:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     cbrt:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     ceil:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     copy-sign:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     cos:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     cosh:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     decrement-exact:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.decrementExact (JVM 固有)
     exp:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     expm1:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     floor:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     floor-div:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     floor-mod:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     get-exponent:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.getExponent (JVM 固有)
     hypot:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     increment-exact:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.incrementExact (JVM 固有)
     log:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     log10:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     log1p:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     multiply-exact:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.multiplyExact (JVM 固有)
     negate-exact:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.negateExact (JVM 固有)
     next-after:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.nextAfter (JVM 固有)
     next-down:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.nextDown (JVM 固有)
     next-up:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.nextUp (JVM 固有)
     pow:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     random:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     rint:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     round:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     scalb:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.scalb (JVM 固有)
     signum:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     sin:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     sinh:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     sqrt:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     subtract-exact:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.subtractExact (JVM 固有)
     tan:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     tanh:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     to-degrees:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     to-radians:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.math NS
     ulp:
       type: function
-      status: todo
+      status: skip
+      note: Java Math.ulp (JVM 固有)
     E:
       type: var
-      status: todo
+      status: done
+      note: clojure.math NS (Math/E 定数)
     PI:
       type: var
-      status: todo
+      status: done
+      note: clojure.math NS (Math/PI 定数)
 
   # Phase LAST: Wasm 連携 (独自拡張)
   wasm:

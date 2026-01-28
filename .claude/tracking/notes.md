@@ -292,6 +292,31 @@
   `in-ns` → `def` しても Analyzer は先に全式を解析する（トップレベル式境界でのみ有効）
 - **ns-imports**: JVM 型なし。常に空マップを返す
 
+## Zig モジュールシステム
+
+- main.zig は `root` モジュール、root.zig は `ClojureWasmBeta` モジュール
+- **同一ファイルを2つのモジュールから直接 `@import` してはならない**
+  - NG: `main.zig` から `@import("compiler/bytecode.zig")` (root.zig が既に import 済み)
+  - OK: `main.zig` から `clj.bytecode` (`@import("ClojureWasmBeta")` 経由)
+- 新しいサブモジュールを main.zig で使う場合は、まず `root.zig` に `pub const` でエクスポートを追加
+- エラーメッセージ: `file exists in modules 'ClojureWasmBeta' and 'root'`
+
+## デバッグ: --dump-bytecode
+
+```bash
+# 式のバイトコードを確認
+clj-wasm --dump-bytecode -e '(+ 1 2)'
+
+# 関数定義の FnProto を再帰的にダンプ
+clj-wasm --dump-bytecode -e '(defn f [x] (+ x 1))'
+
+# ファイル内の式 (最初の式のみダンプ)
+clj-wasm --dump-bytecode -e '(load-file "test.clj")'
+```
+
+出力にはオペコード名、定数テーブル、スロット番号が表示される。
+VM の動作を理解するのに有用。
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

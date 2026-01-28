@@ -641,7 +641,7 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 
 ### 実装状況
 
-549 done / 169 skip / 0 todo (概算)
+663 done / 191 skip (全名前空間合計)
 
 照会: `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml`
 

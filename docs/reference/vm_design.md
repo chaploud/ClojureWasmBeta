@@ -161,17 +161,46 @@ VM はスタックインデックスが 1 ずれていても、たまたまそ�
 
 ### 2. デバッグ手段
 
-現状は stderr に一時的なトレースを仕込む方法:
+**`--dump-bytecode` フラグ** (U5b で実装):
+
+```bash
+clj-wasm --dump-bytecode -e '(defn add [a b] (+ a b))'
+```
+
+出力例:
+```
+=== Bytecode Dump ===
+
+--- Constants ---
+  [  0] <fn-proto>
+  [  1] add
+  [  2] <vector>
+
+--- Instructions ---
+     0: closure              #0
+     1: def                  #1  ; add
+     2: def_doc              #2  ; <vector>
+     3: ret
+
+--- fn add (arity=2) ---
+  Constants:
+    [  0] <var>
+       0: var_load             #0  ; <var>
+       1: local_load           slot=1
+       2: local_load           slot=2
+       3: call                 2
+       4: ret
+```
+
+**実装ファイル**: `src/compiler/bytecode.zig` の `dumpChunk`/`dumpFnProto`/`dumpInstruction`/`dumpValue`。
+`src/main.zig` の `dumpBytecode` 関数が Reader → Analyzer → Compiler パイプラインを実行してダンプ。
+
+**手動トレース** (より詳細なデバッグが必要な場合):
 
 ```zig
 // 例: local_load のデバッグ
 std.debug.print("local_load slot={} value={}\n", .{slot, stack[frame.base + slot]});
 ```
-
-体系的なバイトコードデバッガはまだない。将来的には:
-- バイトコードのディスアセンブル表示
-- ステップ実行 (opcode 単位)
-- スタック/フレーム状態のダンプ
 
 ### 3. --compare による回帰検出
 

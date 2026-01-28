@@ -101,7 +101,14 @@ src/
 │   └── allocators.zig  # 寿命別アロケータ
 │
 ├── lib/                # Clojure標準ライブラリ
-│   └── core.zig        # clojure.core 組み込み関数
+│   ├── core.zig        # clojure.core facade (re-export)
+│   └── core/           # ドメイン別サブモジュール (18ファイル)
+│       ├── arithmetic.zig  # 算術+比較+bit-ops
+│       ├── collections.zig # コレクション操作
+│       ├── sequences.zig   # シーケンス HOF
+│       ├── strings.zig     # 文字列+regex
+│       ├── math_fns.zig    # clojure.math 数学関数
+│       └── ...             # predicates, io, meta, concurrency 等
 │
 ├── wasm/               # Wasm 連携 (zware)
 │   ├── types.zig       # Value ↔ Wasm 型変換
@@ -111,7 +118,29 @@ src/
 │   ├── host_functions.zig # ホスト関数ブリッジ
 │   └── wasi.zig        # WASI サポート
 │
-└── main.zig            # CLI
+├── clj/                # Clojure ソースライブラリ
+│   └── clojure/        # clojure.* 名前空間 (.clj)
+│       ├── string.clj  # clojure.string
+│       ├── set.clj     # clojure.set
+│       ├── walk.clj    # clojure.walk
+│       ├── zip.clj     # clojure.zip
+│       ├── math.clj    # clojure.math
+│       ├── data.clj    # clojure.data
+│       └── ...         # edn, repl, stacktrace, template
+│
+├── repl/               # REPL サポート
+│   └── line_editor.zig # readline/履歴 (自前実装)
+│
+├── gc/                 # GC (セミスペース Arena)
+│   ├── gc.zig          # Mark フェーズ
+│   ├── gc_allocator.zig # Arena セミスペース Sweep
+│   └── tracing.zig     # Fixup (ポインタ更新)
+│
+├── regex/              # 正規表現 (フルスクラッチ)
+│   ├── regex.zig       # パーサ+コンパイラ
+│   └── matcher.zig     # バックトラッキング実行
+│
+└── main.zig            # CLI (REPL, -e, file.clj, --dump-bytecode)
 ```
 
 ---
@@ -141,6 +170,11 @@ src/
 | T1-T4    | テストフレームワーク + sci テストスイート移植 (678 pass)                                                                   |
 | Q1a-Q5a  | Wasm前品質修正 — 正規化/コンパイラ修正/letfn/with-out-str (729 pass)                                                       |
 | LAST     | Wasm 連携 (zware) — load/invoke/memory/host-fn/WASI/close (760 pass)                                                      |
+| R1-R6    | リファクタリング — core.zig/value.zig 分割、branchHint、死コード除去                                                       |
+| P1-P2c   | 高速化 — ベンチマーク基盤、VM最適化、Map ハッシュインデックス                                                              |
+| G1a-G1c  | GC — 計測基盤、セミスペース Arena (sweep 40x 高速化)                                                                       |
+| U1-U5    | UX — REPL readline、エラー表示、doc/dir、バグ修正、CLI拡充 (1036 pass)                                                     |
+| S1a-S1j  | セルフホスト — clojure.{string,set,walk,edn,math,repl,data,stacktrace,template,zip}                                        |
 
 > 詳細な完了フェーズ履歴: `.claude/tracking/memo.md`
 
@@ -150,14 +184,14 @@ src/
 
 **詳細ロードマップ: `docs/roadmap.md`**
 
-| フェーズ | 内容                                    | 依存関係         |
-|----------|-----------------------------------------|------------------|
-| Phase R  | リファクタリング (core.zig 分割、Zig イディオム再点検) | —       |
-| Phase P  | 高速化 (ベンチマーク基盤、VM 最適化)   | R 望ましい       |
-| Phase G  | GC・メモリ管理 (世代別 GC)             | P1 前提          |
-| Phase U  | UX 改善 (REPL readline、エラー改善)    | 独立着手可能     |
-| Phase S  | セルフホスト (.clj 移行)               | P1 前提          |
-| Phase D  | ドキュメント (3系統整備)               | 各フェーズ後随時 |
+| フェーズ | 内容                                                          | 状態         |
+|----------|---------------------------------------------------------------|--------------|
+| Phase R  | リファクタリング (core.zig/value.zig 分割、branchHint、死コード除去) | ✅ R1-R6 完了 |
+| Phase P  | 高速化 (ベンチマーク基盤、VM 最適化、Map ハッシュ)             | ✅ P1-P2c 完了 |
+| Phase G  | GC (計測基盤、セミスペース Arena 40x 高速化)                    | ✅ G1a-G1c 完了 |
+| Phase U  | UX (REPL readline、エラー表示、doc/dir、バグ修正、CLI拡充)      | ✅ U1-U5 完了 |
+| Phase S  | セルフホスト (.clj 名前空間: string/set/walk/zip/math/data 等)  | S1a-S1j 完了 |
+| Phase D  | ドキュメント整備                                               | 随時         |
 
 ### Phase LAST: Wasm 連携 (zware) — 完了
 

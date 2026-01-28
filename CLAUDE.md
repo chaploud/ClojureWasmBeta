@@ -50,10 +50,32 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 - **コミットメッセージ**: 日本語
 - **識別子**: 英語
 
-## CLI テスト時の注意
+## CLI 使い方
+
+```bash
+# 式を評価
+clj-wasm -e "(+ 1 2)"
+
+# スクリプトファイルを直接実行
+clj-wasm script.clj
+
+# バイトコードダンプ (デバッグ用)
+clj-wasm --dump-bytecode -e "(defn f [x] (+ x 1))"
+
+# 両バックエンドで評価して比較
+clj-wasm --compare -e "(+ 1 2)"
+
+# GC 統計表示
+clj-wasm --gc-stats -e '(dotimes [_ 1000] (vec (range 100)))'
+
+# REPL 起動 (引数なし)
+clj-wasm
+```
+
+### CLI テスト時の注意
 
 - **bash の `!` 展開に注意**: `-e '(swap! ...)'` のようにシングルクォート内に `!` を含むと、bash の history expansion が発動して予期しないエラーになる
-- **対策**: `!` を含む Clojure コードは **ファイル経由** (`load-file`) で実行する。`-e` での直接実行は避ける
+- **対策**: `!` を含む Clojure コードは **ファイル経由** (`clj-wasm file.clj` または `load-file`) で実行する。`-e` での直接実行は避ける
 - heredoc (`<< 'EOF'`) でファイルに書き出してから実行するのも有効
 
 ## Zig 0.15.2 ガイド
