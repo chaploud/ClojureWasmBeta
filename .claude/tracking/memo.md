@@ -412,6 +412,19 @@ GPA 個別 free → ArenaAllocator セミスペース方式に置換。
 
 全テスト維持 (885/1 compat, 270/274 zig — 4失敗は既存)
 
+### U4e: VM クロージャキャプチャ修正 — 完了
+
+VM の `createClosure`/`createMultiClosure` でネストされたクロージャのパラメータが
+呼び出し元の関数に解決されるバグを修正。
+
+- **根本原因**: `frame.base > 0` のとき `sp - frame.base` 分全スタック値をキャプチャしていた。
+  コンパイラは親スコープの宣言済みローカル数 (`capture_count`) のみ想定。
+  中間式 (map 関数など) がスタック上にある状態でクロージャ生成すると、
+  キャプチャ数がずれてパラメータのスロットが不正になる。
+- **修正**: `capture_count`/`capture_offset` に基づき正確にキャプチャ。
+- **テスト修正**: Phase 24 NS カウント (wasm NS 追加分), identical? keyword, mapcat lazy
+- **結果**: 274/274 Zig テスト全 pass (4 既存失敗を全修正), 885/886 compat
+
 ### 推奨次回タスク
 
 1. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)

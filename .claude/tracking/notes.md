@@ -49,7 +49,9 @@
 
 ## VM
 
-- createClosure: frame.base > 0 のみキャプチャ（トップレベルクロージャバグ修正済み）
+- createClosure: `capture_count`/`capture_offset` に基づきキャプチャ (U4e で修正)。
+  以前は `frame.base > 0` のとき全スタック値をキャプチャし、中間式が
+  スタック上にあるとキャプチャ数がずれてパラメータ解決が不正になっていた。
 - **sp_depth コンパイル時スタック追跡**: ローカル変数のスロット位置を正確に計算
   - `Local.slot`: frame.base からの実際のスタック位置
   - `Compiler.sp_depth`: コンパイル時のスタック深度追跡（全 emit 関数で更新）
