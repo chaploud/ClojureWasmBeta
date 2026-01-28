@@ -443,10 +443,20 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 - **テスト**: `test/compat/clojure_edn.clj` — 9 assertions (map/vector/list/set/string/number/keyword/true/nil)
 - TreeWalk / VM / --compare 全 PASS
 
+### U4g: add-watch/remove-watch 完全実装 — 完了
+
+- Atom: reset!/swap!/reset-vals!/swap-vals! でウォッチャーコールバック発火
+  (以前は登録のみで通知未実装だった)
+- Var: watches フィールド追加、alter-var-root で通知
+- add-watch/remove-watch が Atom と Var の両方を受け付けるよう拡張
+- remove-watch を配列再構築方式に改善
+- GC: Var.watches の mark + fixup 対応
+- **テスト**: `test/compat/watches.clj` — 12 assertions (TreeWalk/VM/--compare 全 PASS)
+
 ### 推奨次回タスク
 
-1. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
-2. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars, add-watch 等)
+1. **R3 残項目**: MultiArrayList / MemoryPool
+2. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
@@ -575,7 +585,8 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 | `test/compat/clojure_set.clj`            | 24           | PASS |
 | `test/compat/clojure_walk.clj`           | 9            | PASS |
 | `test/compat/clojure_edn.clj`            | 9            | PASS |
-| **compat 合計**                          | **643**      |      |
+| `test/compat/watches.clj`               | 12           | PASS |
+| **compat 合計**                          | **655**      |      |
 
 ### テスト基盤
 
@@ -611,8 +622,8 @@ deftest body 内 (= defn body 内) で使えない構文:
 | var-set no effect                      | var-set      | スキップ                          | Q3c ✅    |
 | alter-var-root uses thread-local       | avr+binding  | スキップ                          | Q3d ✅    |
 | with-local-vars not implemented        | wlv          | スキップ                          | —         |
-| add-watch on var not implemented       | add-watch    | スキップ                          | —         |
-| thread-bound? 1-arity only             | thread-bound | 1引数で使用                       | —         |
+| add-watch on var not implemented       | add-watch    | 修正済み                          | U4g ✅    |
+| thread-bound? 1-arity only             | thread-bound | 既に多引数対応済み                | 済 ✅     |
 | defmacro inside defn → Undefined       | defmacro     | トップレベルで定義                | —         |
 | with-out-str 未実装 (出力未キャプチャ) | io           | str(do body) に展開、空文字列     | Q5a ✅    |
 | VM reduced 未対応                      | reduce early | TreeWalk のみ                     | Q4a ✅    |

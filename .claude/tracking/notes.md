@@ -231,8 +231,12 @@
 ## Phase 15: Atom 拡張・Var 操作・メタデータ
 
 - **Atom 拡張**: validator, watches, meta フィールドを Atom 構造体に追加
-  - `add-watch`: watches 配列 [key, fn, key, fn, ...] に追加（通知は未実装、登録のみ）
-  - `remove-watch`: stub（watches 配列から削除する仕組みのみ）
+  - `add-watch`: watches 配列 [key, fn, key, fn, ...] に追加 + 通知実装済み (U4g)
+  - `remove-watch`: 配列再構築方式で完全実装 (U4g)
+  - 通知: reset!/swap!/reset-vals!/swap-vals! で `(fn key ref old new)` を発火
+- **Var ウォッチ (U4g)**: Var 構造体に `watches` フィールド追加
+  - add-watch/remove-watch が Atom と Var の両方に対応
+  - alter-var-root で通知。GC mark/fixup 対応済み
   - `set-validator!`/`get-validator`: validator を設定・取得
   - `compare-and-set!`: eql で比較して一致した場合のみ更新
   - `reset-vals!`/`swap-vals!`: [old new] ベクターを返す
