@@ -46,66 +46,66 @@ results:
     data_transform: {time_ms: 3.94, mem_mb: 1.8}
   zig:
     version: "0.15.2"
-    fib30: {time_ms: 3.62, mem_mb: 1.8}
-    sum_range: {time_ms: 5.99, mem_mb: 1.8}
-    map_filter: {time_ms: 3.39, mem_mb: 1.8}
-    string_ops: {time_ms: 2.12, mem_mb: 1.8}
-    data_transform: {time_ms: 5.16, mem_mb: 1.8}
+    fib30: {time_ms: 4.50, mem_mb: 1.8}
+    sum_range: {time_ms: 3.81, mem_mb: 1.8}
+    map_filter: {time_ms: 3.98, mem_mb: 1.8}
+    string_ops: {time_ms: 3.86, mem_mb: 1.8}
+    data_transform: {time_ms: 3.27, mem_mb: 1.8}
   java:
     version: "OpenJDK 21.0.9"
-    fib30: {time_ms: 33.29, mem_mb: 40.8}
-    sum_range: {time_ms: 34.36, mem_mb: 42.1}
-    map_filter: {time_ms: 45.30, mem_mb: 43.0}
-    string_ops: {time_ms: 48.90, mem_mb: 43.7}
-    data_transform: {time_ms: 38.25, mem_mb: 42.3}
+    fib30: {time_ms: 32.60, mem_mb: 40.8}
+    sum_range: {time_ms: 35.23, mem_mb: 42.0}
+    map_filter: {time_ms: 44.08, mem_mb: 42.8}
+    string_ops: {time_ms: 49.04, mem_mb: 43.8}
+    data_transform: {time_ms: 31.52, mem_mb: 42.2}
   # JVM Clojure (cold start): clojure -M file.clj
   # 0.3-0.4s の大部分は JVM 起動 + Clojure ランタイムロード
   clojure_cold:
     version: "1.12.4 (Clojure CLI 1.12.4.1582, OpenJDK 21)"
-    fib30: {time_ms: 383.71, mem_mb: 114.8}
-    sum_range: {time_ms: 314.44, mem_mb: 119.7}
-    map_filter: {time_ms: 390.84, mem_mb: 113.7}
-    string_ops: {time_ms: 320.69, mem_mb: 109.2}
-    data_transform: {time_ms: 386.39, mem_mb: 116.7}
+    fib30: {time_ms: 383.59, mem_mb: 116.0}
+    sum_range: {time_ms: 307.20, mem_mb: 107.6}
+    map_filter: {time_ms: 382.95, mem_mb: 113.8}
+    string_ops: {time_ms: 320.05, mem_mb: 108.7}
+    data_transform: {time_ms: 384.69, mem_mb: 113.1}
   # JVM Clojure (warm): JIT warm-up 3回後、5回計測の中央値
   # 1 JVM プロセスで全ベンチを連続実行 (clj_warm_bench.clj)
   # メモリは計測不可 (プロセス内計測のため)
   clojure_warm:
     version: "1.12.4 (OpenJDK 21)"
-    fib30: {time_ms: 9.85}
-    sum_range: {time_ms: 6.16}
-    map_filter: {time_ms: 1.65}
-    string_ops: {time_ms: 1.74}
-    data_transform: {time_ms: 1.55}
+    fib30: {time_ms: 10.06}
+    sum_range: {time_ms: 5.90}
+    map_filter: {time_ms: 1.41}
+    string_ops: {time_ms: 1.91}
+    data_transform: {time_ms: 1.52}
   # babashka: GraalVM ネイティブコンパイル済み Clojure (sci ベース)
   babashka:
     version: "v1.12.214"
-    fib30: {time_ms: 151.60, mem_mb: 70.5}
-    sum_range: {time_ms: 20.64, mem_mb: 58.9}
-    map_filter: {time_ms: 13.21, mem_mb: 31.7}
-    string_ops: {time_ms: 13.77, mem_mb: 32.3}
-    data_transform: {time_ms: 15.57, mem_mb: 33.7}
+    fib30: {time_ms: 151.97, mem_mb: 70.5}
+    sum_range: {time_ms: 21.73, mem_mb: 58.9}
+    map_filter: {time_ms: 12.56, mem_mb: 31.7}
+    string_ops: {time_ms: 12.90, mem_mb: 32.3}
+    data_transform: {time_ms: 13.21, mem_mb: 33.7}
   ruby:
     version: "3.3.6 (YJIT)"
-    fib30: {time_ms: 139.65, mem_mb: 16.9}
-    sum_range: {time_ms: 96.83, mem_mb: 17.0}
-    map_filter: {time_ms: 97.74, mem_mb: 17.2}
-    string_ops: {time_ms: 99.41, mem_mb: 17.6}
-    data_transform: {time_ms: 104.68, mem_mb: 18.4}
+    fib30: {time_ms: 134.97, mem_mb: 17.0}
+    sum_range: {time_ms: 102.59, mem_mb: 16.9}
+    map_filter: {time_ms: 97.06, mem_mb: 17.1}
+    string_ops: {time_ms: 98.03, mem_mb: 17.6}
+    data_transform: {time_ms: 99.87, mem_mb: 18.3}
   python:
     version: "3.14.2"
-    fib30: {time_ms: 76.38, mem_mb: 14.3}
-    sum_range: {time_ms: 20.69, mem_mb: 14.2}
-    map_filter: {time_ms: 15.26, mem_mb: 14.3}
-    string_ops: {time_ms: 17.87, mem_mb: 15.2}
-    data_transform: {time_ms: 16.74, mem_mb: 17.0}
+    fib30: {time_ms: 76.69, mem_mb: 14.3}
+    sum_range: {time_ms: 20.05, mem_mb: 14.3}
+    map_filter: {time_ms: 15.12, mem_mb: 14.4}
+    string_ops: {time_ms: 17.69, mem_mb: 15.1}
+    data_transform: {time_ms: 16.90, mem_mb: 17.0}
   clojurewasmbeta:
     version: "VM backend, ReleaseFast"
-    fib30: {time_ms: 69.14, mem_mb: 2.1}
-    sum_range: {time_ms: 12.85, mem_mb: 2.1}
-    map_filter: {time_ms: 1.78, mem_mb: 2.1}
-    string_ops: {time_ms: 6.63, mem_mb: 14.1}
-    data_transform: {time_ms: 10.32, mem_mb: 22.5}
+    fib30: {time_ms: 69.11, mem_mb: 2.1}
+    sum_range: {time_ms: 12.52, mem_mb: 2.2}
+    map_filter: {time_ms: 2.29, mem_mb: 2.2}
+    string_ops: {time_ms: 6.36, mem_mb: 14.0}
+    data_transform: {time_ms: 10.63, mem_mb: 22.5}
   # ClojureWasmBeta (warm): nREPL 経由、warm-up 3回後 5回計測の中央値
   # System/nanoTime でプロセス内計測。string_ops はクラッシュのため壁時計 (精度低)
   clojurewasmbeta_warm:
