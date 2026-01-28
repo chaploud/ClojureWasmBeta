@@ -118,13 +118,15 @@ Source Code
 
 1 JVM プロセスで全ベンチを warm-up 3回 + 計測 5回の中央値。純粋な計算時間。
 
-| ベンチマーク     | JVM Clj (warm) | ClojureWasmBeta | 比率      |
-|------------------|----------------|-----------------|-----------|
-| fib30            | 9.7ms          | 70ms            | JVM 7x速  |
-| sum_range        | 5.8ms          | 10ms            | JVM 2x速  |
-| map_filter       | 1.6ms          | <10ms           | 同等      |
-| string_ops       | 1.8ms          | <10ms           | 同等      |
-| data_transform   | 1.5ms          | 10ms            | JVM 7x速  |
+| ベンチマーク     | JVM Clj (warm) | CWB (warm) | 比率      |
+|------------------|----------------|------------|-----------|
+| fib30            | 9.7ms          | 63.8ms     | JVM 7x速  |
+| sum_range        | 5.8ms          | 10.4ms     | JVM 2x速  |
+| map_filter       | 1.6ms          | 0.4ms      | CWB 4x速  |
+| string_ops       | 1.8ms          | 59.4ms*    | JVM 33x速 |
+| data_transform   | 1.5ms          | 6.7ms      | JVM 4x速  |
+
+*string_ops: nREPL 内 System/nanoTime ラッパーでクラッシュするため壁時計計測 (精度低)
 
 ### 最適化前後の改善
 
@@ -148,9 +150,9 @@ Source Code
 ### 分析
 
 - **Cold start**: 全5ベンチで JVM Clojure (cold) / babashka より速度・メモリとも上位
-- **Warm JVM**: JIT warm-up 後は JVM Clojure が fib30 で 7x、data_transform で 7x 速い
+- **Warm JVM**: JIT warm-up 後は JVM Clojure が fib30 で 7x、string_ops で 33x 速い
+- **CWB warm 優位**: map_filter で CWB が 4x 速い (fused reduce の効果)
 - メモリは全条件で ClojureWasmBeta が最少 (2-22MB vs JVM 108-121MB)
-- fib30 以外で純 Java (JIT) よりも高速
 - **ポジショニング**: 起動が速くメモリが少ない CLI/スクリプト用途に強い。長期稼働サーバーでは JVM JIT が有利
 
 ---

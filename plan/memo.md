@@ -25,6 +25,9 @@
 
 ### 直近の完了
 
+- **Java Interop**: System/nanoTime, System/currentTimeMillis 実装 + tryJavaInterop namespace 対応修正
+- **clojure.string**: Zig builtin を clojure.string NS に直接登録 (core から移動、nREPL バグ修正)
+- **Bench**: cwb_warm_bench.sh — nREPL 経由 warm ベンチマーク追加
 - **P1c**: fused reduce — map_filter 27GB→2MB, sum_range 401MB→2MB, ジェネレータ直接ルーティング
 - **P1c**: VM ベンチ標準化 — run_bench.sh で --backend=vm をデフォルト化
 - **P1b**: 遅延 take/reduce — lazy-seq の遅延イテレーション実装 (collectToSlice 回避)
