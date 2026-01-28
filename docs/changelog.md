@@ -80,6 +80,13 @@
 | P2b   | VM フレームインライン化 (execute 再帰排除, 速度効果なし)      |
 | P2c   | PersistentMap ハッシュインデックス (O(n)→O(log n), ~7%改善)   |
 | P3    | 定数畳み込み (算術・比較演算の Analyzer 段階事前計算)         |
+| P3    | TW 高速算術 (fib30: 1.66s→0.92s, 45%改善)                    |
+| P3    | VM 算術 opcode 化 (VM fib30 65ms, TW の 12倍高速)            |
+| P1a   | Safe Point GC (recur で GC チェック)                          |
+| P1b   | 遅延 take/reduce (LazySeq.Take, collectToSlice 回避)         |
+| P1c   | Fused reduce (map_filter 27GB→2MB, sum_range 401MB→2MB)      |
+| P1c   | ジェネレータ直接ルーティング + スタック引数バッファ            |
+| P1c   | VM ベンチ標準化 (全ベンチ Java 同等以上の性能達成)            |
 
 ## GC フェーズ (Phase G)
 
