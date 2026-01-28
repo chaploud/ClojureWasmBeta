@@ -2407,7 +2407,7 @@ test "compare: Phase 11 misc predicates" {
     try expectBoolBoth(allocator, &env, "(identical? nil nil)", true);
     try expectBoolBoth(allocator, &env, "(identical? true true)", true);
     try expectBoolBoth(allocator, &env, "(identical? 42 42)", true);
-    try expectBoolBoth(allocator, &env, "(identical? :foo :foo)", false); // 別のポインタ
+    try expectBoolBoth(allocator, &env, "(identical? :foo :foo)", true); // キーワードは intern される
 
     // special-symbol?
     try expectBoolBoth(allocator, &env,
@@ -2879,9 +2879,9 @@ test "Phase 24: all-ns returns namespaces" {
     var env = try setupTestEnv(allocator);
     defer env.deinit();
 
-    // 初期状態: clojure.core と user
+    // 初期状態: clojure.core, user, wasm
     const result = try evalExpr(allocator, &env, "(count (all-ns))");
-    try std.testing.expectEqual(Value{ .int = 2 }, result);
+    try std.testing.expectEqual(Value{ .int = 3 }, result);
 }
 
 test "Phase 24: find-ns / create-ns" {
@@ -2901,9 +2901,9 @@ test "Phase 24: find-ns / create-ns" {
     const r2 = try evalExpr(allocator, &env, "(find-ns 'my.test)");
     try std.testing.expect(r2 == .symbol);
 
-    // all-ns が 3 に増える
+    // all-ns が 4 に増える (clojure.core + user + wasm + my.test)
     const r3 = try evalExpr(allocator, &env, "(count (all-ns))");
-    try std.testing.expectEqual(Value{ .int = 3 }, r3);
+    try std.testing.expectEqual(Value{ .int = 4 }, r3);
 }
 
 test "Phase 24: ns-name" {

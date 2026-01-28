@@ -1078,26 +1078,19 @@ pub const VM = struct {
         //   （let スコープ内の fn の場合、コンパイラが capture_count を設定）
         const frame = &self.frames[self.frame_count - 1];
         const closure_bindings: ?[]const Value = blk: {
-            if (frame.base > 0) {
-                // 関数内: 全ローカルをキャプチャ
-                const locals_count = self.sp - frame.base;
-                if (locals_count > 0) {
-                    const bindings = self.allocator.alloc(Value, locals_count) catch return error.OutOfMemory;
-                    for (0..locals_count) |i| {
-                        bindings[i] = self.stack[frame.base + i];
+            if (proto.capture_count > 0) {
+                // capture_count 分だけキャプチャ（コンパイラが計算した数）
+                // capture_offset: スタック上のキャプチャ開始位置（frame.base からの相対位置）
+                const cap_count = proto.capture_count;
+                const cap_start = frame.base + proto.capture_offset;
+                if (cap_start + cap_count <= self.sp) {
+                    const bindings = self.allocator.alloc(Value, cap_count) catch return error.OutOfMemory;
+                    for (0..cap_count) |i| {
+                        bindings[i] = self.stack[cap_start + i];
                     }
                     break :blk bindings;
                 }
                 break :blk null;
-            } else if (proto.capture_count > 0) {
-                // トップレベル let 内の fn: capture_offset から capture_count 分キャプチャ
-                const cap_count = proto.capture_count;
-                const cap_start = frame.base + proto.capture_offset;
-                const bindings = self.allocator.alloc(Value, cap_count) catch return error.OutOfMemory;
-                for (0..cap_count) |i| {
-                    bindings[i] = self.stack[cap_start + i];
-                }
-                break :blk bindings;
             } else break :blk null;
         };
 
@@ -1148,26 +1141,18 @@ pub const VM = struct {
         const capture_count = if (protos.len > 0) protos[0].capture_count else 0;
         const closure_bindings: ?[]const Value = if (self.frame_count > 0) blk: {
             const frame = &self.frames[self.frame_count - 1];
-            if (frame.base > 0) {
-                // 関数内: 全ローカルをキャプチャ
-                const locals_count = self.sp - frame.base;
-                if (locals_count > 0) {
-                    const bindings = self.allocator.alloc(Value, locals_count) catch return error.OutOfMemory;
-                    for (0..locals_count) |j| {
-                        bindings[j] = self.stack[frame.base + j];
+            if (capture_count > 0) {
+                // capture_count 分だけキャプチャ（コンパイラが計算した数）
+                const cap_offset = if (protos.len > 0) protos[0].capture_offset else 0;
+                const cap_start = frame.base + cap_offset;
+                if (cap_start + capture_count <= self.sp) {
+                    const bindings = self.allocator.alloc(Value, capture_count) catch return error.OutOfMemory;
+                    for (0..capture_count) |j| {
+                        bindings[j] = self.stack[cap_start + j];
                     }
                     break :blk bindings;
                 }
                 break :blk null;
-            } else if (capture_count > 0) {
-                // トップレベル let 内: capture_offset から capture_count 分キャプチャ
-                const cap_offset = if (protos.len > 0) protos[0].capture_offset else 0;
-                const cap_start = frame.base + cap_offset;
-                const bindings = self.allocator.alloc(Value, capture_count) catch return error.OutOfMemory;
-                for (0..capture_count) |j| {
-                    bindings[j] = self.stack[cap_start + j];
-                }
-                break :blk bindings;
             } else break :blk null;
         } else null;
 
