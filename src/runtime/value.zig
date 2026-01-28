@@ -694,6 +694,10 @@ pub const Value = union(enum) {
                         .source = if (g.source) |s| try deepCloneValues(allocator, s) else null,
                         .source_idx = g.source_idx,
                     } else null,
+                    .take = if (ls.take) |t| LazySeq.Take{
+                        .source = try t.source.deepClone(allocator),
+                        .n = t.n,
+                    } else null,
                 };
                 break :blk .{ .lazy_seq = new_ls };
             },

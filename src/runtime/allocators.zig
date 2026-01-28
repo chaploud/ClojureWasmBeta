@@ -137,6 +137,26 @@ pub const Allocators = struct {
         }
     }
 
+    /// Safe Point GC (VM スタックなし): builtin 関数内で呼び出す
+    /// reduce 等の長時間ループで使用
+    /// 閾値超過時のみ実行
+    pub fn safePointCollectNoStack(self: *Allocators, env: ?*Env, globals: GcGlobals) void {
+        const e = env orelse return;
+        if (self.gc) |gc_alloc| {
+            if (gc_alloc.shouldCollect()) {
+                self.runGc(gc_alloc, e, globals);
+            }
+        }
+    }
+
+    /// 強制 GC: 閾値に関係なく即座に GC を実行
+    /// 長時間 builtin ループで定期的に呼び出す
+    pub fn forceCollect(self: *Allocators, env: *Env, globals: GcGlobals) void {
+        if (self.gc) |gc_alloc| {
+            self.runGc(gc_alloc, env, globals);
+        }
+    }
+
     /// Safe Point GC 実行（mark + sweep + fixup + VM スタック修正 + 計測）
     fn runSafePointGc(self: *Allocators, gc_alloc: *GcAllocator, env: *Env, globals: GcGlobals, vm_stack: []Value) void {
         var timer = std.time.Timer.start() catch {

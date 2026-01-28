@@ -25,6 +25,13 @@ pub const LazySeq = struct {
     concat_sources: ?[]const Value,
     /// 遅延ジェネレータ: 無限シーケンス生成器
     generator: ?Generator,
+    /// 遅延 take: (take n coll) を遅延評価
+    take: ?Take,
+
+    pub const Take = struct {
+        source: Value, // 元シーケンス
+        n: usize,      // 残り取得数
+    };
 
     pub const TransformKind = enum { map, filter, mapcat, take_while, drop_while, map_indexed };
     pub const Transform = struct {
@@ -46,7 +53,7 @@ pub const LazySeq = struct {
 
     const empty_fields = LazySeq{
         .body_fn = null, .realized = null, .cons_head = null, .cons_tail = null,
-        .transform = null, .concat_sources = null, .generator = null,
+        .transform = null, .concat_sources = null, .generator = null, .take = null,
     };
 
     /// 未実体化の LazySeq を作成（サンク形式）
@@ -111,6 +118,13 @@ pub const LazySeq = struct {
     pub fn initRangeInfinite(start: Value) LazySeq {
         var ls = empty_fields;
         ls.generator = .{ .kind = .range_infinite, .fn_val = null, .current = start, .source = null, .source_idx = 0 };
+        return ls;
+    }
+
+    /// 遅延 take: (take n coll) を遅延評価
+    pub fn initTake(source: Value, n: usize) LazySeq {
+        var ls = empty_fields;
+        ls.take = .{ .source = source, .n = n };
         return ls;
     }
 

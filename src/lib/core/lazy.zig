@@ -35,6 +35,12 @@ pub fn forceLazySeqOneStep(allocator: std.mem.Allocator, ls: *value_mod.LazySeq)
         return;
     }
 
+    // 遅延 take の場合
+    if (ls.take) |t| {
+        try forceTakeOneStep(allocator, ls, t);
+        return;
+    }
+
     // サンク形式の場合: body_fn を呼んで結果を取得
     const body_fn = ls.body_fn orelse {
         // body_fn も cons_head もない → 空
@@ -55,6 +61,7 @@ pub fn forceLazySeqOneStep(allocator: std.mem.Allocator, ls: *value_mod.LazySeq)
         ls.transform = inner.transform;
         ls.concat_sources = inner.concat_sources;
         ls.generator = inner.generator;
+        ls.take = inner.take;
         // 再帰的に一段 force（内側もサンク形式かもしれない）
         return forceLazySeqOneStep(allocator, ls);
     }
@@ -370,6 +377,38 @@ fn forceGeneratorOneStep(
     }
 }
 
+/// 遅延 take を一段 force する
+fn forceTakeOneStep(
+    allocator: std.mem.Allocator,
+    ls: *value_mod.LazySeq,
+    t: value_mod.LazySeq.Take,
+) anyerror!void {
+    // 残り 0 の場合は空
+    if (t.n == 0) {
+        ls.take = null;
+        ls.realized = value_mod.nil;
+        return;
+    }
+
+    // ソースから first を取得
+    const first = try seqFirst(allocator, t.source);
+    if (first == .nil) {
+        // ソースが空 → 終了
+        ls.take = null;
+        ls.realized = value_mod.nil;
+        return;
+    }
+
+    // cons(first, lazy-take(n-1, rest(source)))
+    ls.take = null;
+    ls.cons_head = first;
+
+    const rest = try seqRest(allocator, t.source);
+    const tail_ls = try allocator.create(value_mod.LazySeq);
+    tail_ls.* = value_mod.LazySeq.initTake(rest, t.n - 1);
+    ls.cons_tail = Value{ .lazy_seq = tail_ls };
+}
+
 // ============================================================
 // シーケンスアクセス
 // ============================================================
@@ -430,8 +469,8 @@ pub fn isSourceExhausted(allocator: std.mem.Allocator, val: Value) anyerror!bool
                     else => false,
                 };
             }
-            // transform/concat/generator がまだあれば非空
-            if (ls_ptr.transform != null or ls_ptr.concat_sources != null or ls_ptr.generator != null) return false;
+            // transform/concat/generator/take がまだあれば非空
+            if (ls_ptr.transform != null or ls_ptr.concat_sources != null or ls_ptr.generator != null or ls_ptr.take != null) return false;
             return true;
         },
         else => false,

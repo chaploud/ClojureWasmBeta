@@ -20,38 +20,25 @@ const Fn = defs.Fn;
 // ============================================================
 
 /// take : 先頭 n 個の要素を取得
+/// lazy-seq の場合は遅延 take を返す（メモリ効率のため）
 pub fn take(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 2) return error.ArityError;
     if (args[0] != .int) return error.TypeError;
     const n_raw = args[0].int;
     const n: usize = if (n_raw < 0) 0 else @intCast(n_raw);
 
-    // lazy-seq の場合: 一要素ずつ取得（無限シーケンス対応）
-    if (args[1] == .lazy_seq) {
-        var items_buf: std.ArrayListUnmanaged(Value) = .empty;
-        var current: Value = args[1];
-        var taken: usize = 0;
-        while (taken < n) {
-            if (current == .lazy_seq) {
-                const elem = try lazy.lazyFirst(allocator, current.lazy_seq);
-                if (elem == .nil) break; // 空
-                items_buf.append(allocator, elem) catch return error.OutOfMemory;
-                current = try lazy.lazyRest(allocator, current.lazy_seq);
-                taken += 1;
-            } else {
-                // 具体値に到達
-                const remaining = n - taken;
-                const rest_items = helpers.getItems(current) orelse break;
-                const take_rest = @min(remaining, rest_items.len);
-                for (rest_items[0..take_rest]) |item| {
-                    items_buf.append(allocator, item) catch return error.OutOfMemory;
-                }
-                break;
-            }
-        }
+    // n == 0 の場合は空リストを即座に返す
+    if (n == 0) {
         const result = try allocator.create(value_mod.PersistentList);
-        result.* = .{ .items = items_buf.toOwnedSlice(allocator) catch return error.OutOfMemory };
+        result.* = .{ .items = &[_]Value{} };
         return Value{ .list = result };
+    }
+
+    // lazy-seq の場合: 遅延 take を返す
+    if (args[1] == .lazy_seq) {
+        const ls = try allocator.create(value_mod.LazySeq);
+        ls.* = value_mod.LazySeq.initTake(args[1], n);
+        return Value{ .lazy_seq = ls };
     }
 
     const items = helpers.getItems(args[1]) orelse return error.TypeError;
@@ -892,16 +879,29 @@ pub fn reduceFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
 
     // コレクションと初期値を決定
     var acc: Value = undefined;
-    var start_idx: usize = 0;
-    var items: []const Value = undefined;
+    var coll: Value = undefined;
+    var need_first: bool = false;
 
     if (args.len == 3) {
         // (reduce f init coll)
         acc = args[1];
-        items = try helpers.collectToSlice(allocator, args[2]);
+        coll = args[2];
     } else {
-        // (reduce f coll)
-        items = try helpers.collectToSlice(allocator, args[1]);
+        // (reduce f coll) → 最初の要素が初期値
+        coll = args[1];
+        need_first = true;
+    }
+
+    // lazy_seq の場合: 遅延イテレーション (メモリ効率)
+    if (coll == .lazy_seq) {
+        return reduceLazy(allocator, fn_val, acc, coll, need_first, call);
+    }
+
+    // 具体コレクションの場合: 従来通りスライス化
+    var start_idx: usize = 0;
+    const items = try helpers.collectToSlice(allocator, coll);
+
+    if (need_first) {
         if (items.len == 0) {
             // 空コレクションで初期値なし → (f) を呼び出す
             return call(fn_val, &[_]Value{}, allocator);
@@ -919,6 +919,76 @@ pub fn reduceFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
         // reduced による早期終了
         if (acc == .reduced_val) {
             return acc.reduced_val.value;
+        }
+    }
+
+    return acc;
+}
+
+/// 遅延シーケンスの reduce (一要素ずつ処理)
+/// メモリ効率: GC は式境界で行われる。builtin 内での GC は
+/// root tracking の複雑さからサポートしない。
+fn reduceLazy(
+    allocator: std.mem.Allocator,
+    fn_val: Value,
+    init_acc: Value,
+    coll: Value,
+    need_first: bool,
+    call: defs.CallFn,
+) anyerror!Value {
+    var acc = init_acc;
+    var current = coll;
+    var first_iter = need_first;
+
+    while (true) {
+        // 要素を取得
+        const elem = if (current == .lazy_seq)
+            try lazy.lazyFirst(allocator, current.lazy_seq)
+        else if (helpers.getItems(current)) |items|
+            if (items.len > 0) items[0] else Value.nil
+        else
+            Value.nil;
+
+        // 終端判定
+        if (elem == .nil) {
+            if (first_iter) {
+                // 空コレクションで初期値なし → (f) を呼び出す
+                return call(fn_val, &[_]Value{}, allocator);
+            }
+            break;
+        }
+
+        if (first_iter) {
+            // (reduce f coll) の最初の要素を初期値に
+            acc = elem;
+            first_iter = false;
+        } else {
+            // 畳み込み
+            const call_args = try allocator.alloc(Value, 2);
+            call_args[0] = acc;
+            call_args[1] = elem;
+            acc = try call(fn_val, call_args, allocator);
+
+            // reduced による早期終了
+            if (acc == .reduced_val) {
+                return acc.reduced_val.value;
+            }
+        }
+
+        // 次の要素へ
+        current = if (current == .lazy_seq)
+            try lazy.lazyRest(allocator, current.lazy_seq)
+        else if (helpers.getItems(current)) |items|
+            if (items.len > 1)
+                Value{ .list = try value_mod.PersistentList.fromSlice(allocator, items[1..]) }
+            else
+                Value.nil
+        else
+            Value.nil;
+
+        // 終端判定 (rest が空の場合)
+        if (current == .nil or (current == .list and current.list.items.len == 0)) {
+            break;
         }
     }
 
