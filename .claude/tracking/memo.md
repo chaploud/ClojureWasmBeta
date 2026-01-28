@@ -173,11 +173,17 @@ hot path のエラー分岐に `@branchHint(.cold)` を適用。
 wasm/types.zig の未使用関数 (wasmI64ToValue, wasmF32ToValue, wasmF64ToValue) は
 将来の Wasm 型拡張で必要になるため残留。
 
+### R6: Wasm ローダー重複排除 — 完了
+
+- loader.zig に `loadModuleCore()` 共通ヘルパー抽出 (PreInstantiateFn フック付き)
+- wasi.zig は `loader.loadModuleCore()` に委譲 (~50 行の重複削減)
+- 全テスト維持 (760/1 compat, wasm 4 テスト全 pass)
+
 ### 推奨次回タスク
 
-1. **R6: Wasm ローダー重複排除** — loadModule 系関数の共通部分抽出
-2. **U2: エラーメッセージ改善** — "Expected X, got Y" 形式
-3. **G1: GC 改善** — 世代別 GC or MemoryPool
+1. **U2: エラーメッセージ改善** — "Expected X, got Y" 形式
+2. **G1: GC 改善** — 世代別 GC or MemoryPool
+3. **R3 残項目**: MultiArrayList / MemoryPool / switch exhaustiveness / エラー伝播改善
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 

@@ -113,10 +113,11 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 - ✅ スタブファイル 4 件削除 (arena.zig, optimize.zig, ops.zig, stack.zig = -185 行)
 - wasm/types.zig の未使用変換関数は将来の Wasm 型拡張で必要なため残留
 
-### R6: Wasm ローダー重複排除
+### R6: Wasm ローダー重複排除 — ✅ 完了
 
-- `loadModule` / `loadModuleWithImports` / `loadWasiModule` の共通部分をヘルパーに抽出
-- テスト: wasm_basic/wasm_memory/wasm_host/wasm_wasi が全 pass
+- loader.zig に `loadModuleCore()` (PreInstantiateFn フック付き) を抽出
+- wasi.zig は loader.loadModuleCore() に委譲 (~50 行の重複コード削減)
+- テスト: wasm_basic/wasm_memory/wasm_host/wasm_wasi 全 pass
 
 ---
 
