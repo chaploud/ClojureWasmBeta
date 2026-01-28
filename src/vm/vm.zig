@@ -119,6 +119,11 @@ pub const VM = struct {
     pending_exception: bool,
     /// 伝搬中の例外値
     pending_exception_value: Value,
+    /// Safe Point GC カウンタ (N回の呼び出しごとに GC チェック)
+    safe_point_counter: u32,
+
+    /// Safe Point GC のチェック間隔
+    const SAFE_POINT_INTERVAL: u32 = 1024;
 
     /// 初期化
     pub fn init(allocator: std.mem.Allocator, env: *Env) VM {
@@ -132,6 +137,7 @@ pub const VM = struct {
             .handlers = undefined,
             .handler_count = 0,
             .pending_exception = false,
+            .safe_point_counter = 0,
             .pending_exception_value = value_mod.nil,
         };
     }
@@ -1038,6 +1044,19 @@ pub const VM = struct {
     /// 新フレームへのポインタを返す。メインループが code/constants を切り替える。
     /// builtin や他の型はその場で完結し null を返す。
     fn tryInlineCall(self: *VM, arg_count: usize) VMError!?*const CallFrame {
+        // Safe Point GC: 定期的に GC チェック
+        self.safe_point_counter +%= 1;
+        if (self.safe_point_counter >= SAFE_POINT_INTERVAL) {
+            self.safe_point_counter = 0;
+            if (defs.current_allocators) |allocs| {
+                allocs.safePointCollect(
+                    self.env,
+                    core.getGcGlobals(),
+                    self.stack[0..self.sp],
+                );
+            }
+        }
+
         const fn_idx = self.sp - arg_count - 1;
         const fn_val = self.stack[fn_idx];
 
