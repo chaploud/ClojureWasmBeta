@@ -316,7 +316,8 @@ doc/dir はマクロ展開、find-doc/apropos は builtin 関数。
 | ^:const 未対応                | 低     | 中     |
 | with-local-vars 未実装        | 低     | 中     |
 | add-watch on var 未実装       | 低     | 中     |
-| thread-bound? 多引数          | 低     | 低     |
+| ~~thread-bound? 多引数~~      | ✅ 完了 (U4c) |        |
+| ~~^:private / defn- 未対応~~  | ✅ 完了 (U4d) |        |
 | defmacro inside defn          | 低     | 高     |
 
 ---

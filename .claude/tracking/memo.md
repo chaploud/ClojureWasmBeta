@@ -310,6 +310,19 @@ REPL ドキュメント閲覧機能。
 | `test/compat/documentation.clj` | 14       | doc, dir, find-doc, apropos (U3 機能の検証)             |
 | `test/compat/namespaces.clj`    | 18       | all-ns, find-ns, create-ns, in-ns, the-ns, ns-publics, ns-resolve, alias, remove-ns |
 
+### U4c: thread-bound? 多引数対応 — 完了
+
+`(thread-bound? #'*x* #'*y*)` で全 Var が thread-bound か検査。
+1引数限定 → 多引数対応 (全て bound なら true)。
+
+### U4d: ^:private / defn- メタデータ対応 — 完了
+
+`(defn ^:private name ...)` と `(defn- name ...)` で private Var を定義可能に。
+- Analyzer: `(with-meta name {:private true})` パターンを検出し DefNode.is_private に設定
+- evaluator: `v.private = true` を設定
+- `dir` で private 関数が非表示になることを確認
+- `defn-` が実際に private Var を生成するよう修正 (従来は defn と同等だった)
+
 ### 推奨次回タスク
 
 1. **G1: GC 改善** — 世代別 GC or MemoryPool
