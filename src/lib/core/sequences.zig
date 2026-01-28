@@ -128,6 +128,13 @@ pub fn range(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
         count_val = @intCast(@divTrunc(start - end - step - 1, -step));
     }
 
+    // 大きい range は遅延ジェネレータとして返す (メモリ効率)
+    if (count_val > 256) {
+        const ls = try allocator.create(value_mod.LazySeq);
+        ls.* = value_mod.LazySeq.initRangeFinite(start, end, step);
+        return Value{ .lazy_seq = ls };
+    }
+
     const items = try allocator.alloc(Value, count_val);
     var val = start;
     for (0..count_val) |i| {
@@ -892,31 +899,46 @@ pub fn reduceFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
         need_first = true;
     }
 
-    // lazy_seq の場合: 遅延イテレーション (メモリ効率)
+    // lazy_seq の場合: fused reduce or 遅延イテレーション
     if (coll == .lazy_seq) {
         return reduceLazy(allocator, fn_val, acc, coll, need_first, call);
     }
 
-    // 具体コレクションの場合: 従来通りスライス化
+    // 具体コレクションの場合: 直接イテレーション (コピーなし)
+    const items = helpers.getItems(coll) orelse {
+        // 文字列等の特殊型は collectToSlice でフォールバック
+        const slice = try helpers.collectToSlice(allocator, coll);
+        return reduceSlice(allocator, fn_val, acc, slice, need_first, call);
+    };
+
+    return reduceSlice(allocator, fn_val, acc, items, need_first, call);
+}
+
+/// スライス上の reduce (コピーなし)
+fn reduceSlice(
+    allocator: std.mem.Allocator,
+    fn_val: Value,
+    init_acc: Value,
+    items: []const Value,
+    need_first: bool,
+    call: defs.CallFn,
+) anyerror!Value {
+    var acc = init_acc;
     var start_idx: usize = 0;
-    const items = try helpers.collectToSlice(allocator, coll);
 
     if (need_first) {
         if (items.len == 0) {
-            // 空コレクションで初期値なし → (f) を呼び出す
             return call(fn_val, &[_]Value{}, allocator);
         }
         acc = items[0];
         start_idx = 1;
     }
 
-    // 畳み込み
+    var call_args_buf: [2]Value = undefined;
     for (items[start_idx..]) |item| {
-        const call_args = try allocator.alloc(Value, 2);
-        call_args[0] = acc;
-        call_args[1] = item;
-        acc = try call(fn_val, call_args, allocator);
-        // reduced による早期終了
+        call_args_buf[0] = acc;
+        call_args_buf[1] = item;
+        acc = try call(fn_val, &call_args_buf, allocator);
         if (acc == .reduced_val) {
             return acc.reduced_val.value;
         }
@@ -985,7 +1007,10 @@ fn reduceLazy(
     }
 
     // チェーン解析成功の場合: fused reduce
-    if (transform_count > 0 or take_n != null) {
+    // transform/take がある場合、またはジェネレータの場合に fused reduce を使用
+    // ジェネレータは in-place でイテレーションでき、LazySeq 構造体を作成しないため高速
+    const has_generator = base_source == .lazy_seq and base_source.lazy_seq.generator != null;
+    if (transform_count > 0 or take_n != null or has_generator) {
         return reduceFused(allocator, fn_val, init_acc, base_source, transforms[0..transform_count], take_n, need_first, call);
     }
 
@@ -1014,6 +1039,9 @@ fn reduceFused(
     var acc = init_acc;
     var first_iter = need_first;
     var remaining = take_n orelse std.math.maxInt(usize);
+
+    // 畳み込み用の引数バッファ (ループ内で毎回 alloc しない)
+    var call_args_buf: [2]Value = undefined;
 
     // base_source のイテレータ
     const source_items: ?[]const Value = helpers.getItems(base_source);
@@ -1046,6 +1074,15 @@ fn reduceFused(
                 .range_infinite => {
                     elem = g.current;
                     g.current = value_mod.intVal(g.current.int + 1);
+                },
+                .range_finite => {
+                    const current = g.current.int;
+                    const end_val = (g.fn_val orelse return error.TypeError).int;
+                    const step_val: i64 = @bitCast(g.source_idx);
+                    const done = if (step_val > 0) current >= end_val else current <= end_val;
+                    if (done) break;
+                    elem = g.current;
+                    g.current = value_mod.intVal(current + step_val);
                 },
                 .iterate => {
                     elem = g.current;
@@ -1114,10 +1151,9 @@ fn reduceFused(
             acc = transformed;
             first_iter = false;
         } else {
-            const call_args = try allocator.alloc(Value, 2);
-            call_args[0] = acc;
-            call_args[1] = transformed;
-            acc = try call(fn_val, call_args, allocator);
+            call_args_buf[0] = acc;
+            call_args_buf[1] = transformed;
+            acc = try call(fn_val, &call_args_buf, allocator);
 
             // reduced による早期終了
             if (acc == .reduced_val) {
@@ -1148,6 +1184,7 @@ fn reduceIterative(
     var acc = init_acc;
     var current = coll;
     var first_iter = need_first;
+    var call_args_buf: [2]Value = undefined;
 
     while (true) {
         const elem = if (current == .lazy_seq)
@@ -1168,10 +1205,9 @@ fn reduceIterative(
             acc = elem;
             first_iter = false;
         } else {
-            const call_args = try allocator.alloc(Value, 2);
-            call_args[0] = acc;
-            call_args[1] = elem;
-            acc = try call(fn_val, call_args, allocator);
+            call_args_buf[0] = acc;
+            call_args_buf[1] = elem;
+            acc = try call(fn_val, &call_args_buf, allocator);
 
             if (acc == .reduced_val) {
                 return acc.reduced_val.value;

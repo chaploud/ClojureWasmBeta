@@ -374,6 +374,23 @@ fn forceGeneratorOneStep(
             tail_ls.* = value_mod.LazySeq.initRangeInfinite(value_mod.intVal(n + 1));
             ls.cons_tail = Value{ .lazy_seq = tail_ls };
         },
+        .range_finite => {
+            // 有限 range: step に従って進む
+            const current = g.current.int;
+            const end_val = (g.fn_val orelse return error.TypeError).int;
+            const step_val: i64 = @bitCast(g.source_idx);
+            const done = if (step_val > 0) current >= end_val else current <= end_val;
+            if (done) {
+                ls.generator = null;
+                ls.realized = value_mod.nil;
+                return;
+            }
+            ls.generator = null;
+            ls.cons_head = g.current;
+            const tail_ls = try allocator.create(value_mod.LazySeq);
+            tail_ls.* = value_mod.LazySeq.initRangeFinite(current + step_val, end_val, step_val);
+            ls.cons_tail = Value{ .lazy_seq = tail_ls };
+        },
     }
 }
 

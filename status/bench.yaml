@@ -142,3 +142,12 @@ history:
       map_filter: {time_s: 0.00, mem_mb: 6.5}
       string_ops: {time_s: 0.04, mem_mb: 512.8}
       data_transform: {time_s: 0.06, mem_mb: 782.6}
+  - date: 2026-01-29
+    version: "P1c fused reduce: generator routing + stack args"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 0.91, mem_mb: 730.2}
+      sum_range: {time_s: 0.01, mem_mb: 2.0}
+      map_filter: {time_s: 0.00, mem_mb: 3.5}
+      string_ops: {time_s: 0.04, mem_mb: 512.3}
+      data_transform: {time_s: 0.01, mem_mb: 22.0}

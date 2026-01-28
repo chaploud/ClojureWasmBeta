@@ -41,8 +41,8 @@ pub const LazySeq = struct {
         index: usize,     // map_indexed 用の現在インデックス
     };
 
-    /// 遅延ジェネレータ: iterate, repeat, cycle, range 等の無限シーケンス
-    pub const GeneratorKind = enum { iterate, repeat_infinite, cycle, range_infinite };
+    /// 遅延ジェネレータ: iterate, repeat, cycle, range 等の無限/有限シーケンス
+    pub const GeneratorKind = enum { iterate, repeat_infinite, cycle, range_infinite, range_finite };
     pub const Generator = struct {
         kind: GeneratorKind,
         fn_val: ?Value,   // iterate の f
@@ -118,6 +118,20 @@ pub const LazySeq = struct {
     pub fn initRangeInfinite(start: Value) LazySeq {
         var ls = empty_fields;
         ls.generator = .{ .kind = .range_infinite, .fn_val = null, .current = start, .source = null, .source_idx = 0 };
+        return ls;
+    }
+
+    /// range 有限ジェネレータ: (range start end step)
+    /// end を fn_val に、step を source_idx に格納
+    pub fn initRangeFinite(start: i64, end: i64, step: i64) LazySeq {
+        var ls = empty_fields;
+        ls.generator = .{
+            .kind = .range_finite,
+            .fn_val = @import("../value.zig").intVal(end),
+            .current = @import("../value.zig").intVal(start),
+            .source = null,
+            .source_idx = @bitCast(@as(i64, step)), // step を source_idx に格納 (i64→usize bit cast)
+        };
         return ls;
     }
 
