@@ -25,6 +25,9 @@
 
 ### 直近の完了
 
+- **P1b**: 遅延 take/reduce — lazy-seq の遅延イテレーション実装 (collectToSlice 回避)
+- **BUG**: load-file バックエンド — defs.current_backend でバックエンド統一
+- **P1a**: Safe Point GC — recur/call で GC チェック (VM 実行中)
 - **P3**: 定数畳み込み — Analyzer で算術・比較演算の定数畳み込み
 - **G2a-c**: 世代別 GC 基盤 — Nursery bump allocator + minor GC + promotion 実装
 - **S1**: clojure.pprint — pprint, print-table, cl-format (最小限) 実装
@@ -67,6 +70,8 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 | 9   | P3    | inline caching       | 保留     | VM 既に最適化済み (tryInlineCall)、効果限定 |
 | 10  | P3    | 定数畳み込み         | 完了     | Analyzer で算術・比較演算の定数畳み込み    |
 | 11  | P3    | tail call dispatch   | 保留     | Zig では実現困難、効果限定的               |
+| 12  | P1b   | 遅延 take/reduce     | 完了     | LazySeq.Take 追加、遅延イテレーション実装  |
+| 13  | P1c   | transducers          | 保留     | map_filter 27GB 問題の根本解決策           |
 
 ### スコープ外 (将来検討)
 
@@ -89,3 +94,4 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 
 - defmacro inside defn → エラー (トップレベルで定義が必要、明確なエラーメッセージあり)
 - フル medley の `compare-and-set!`/`deref-swap!`/`deref-reset!` 未実装
+- **map_filter 27GB メモリ**: 式境界 GC のため、`(->> (range 100000) (filter ...) (map ...) (take 10000) (reduce +))` のような複合遅延式は中間 LazySeq 構造体が蓄積。根本解決には transducers または増分 GC が必要
