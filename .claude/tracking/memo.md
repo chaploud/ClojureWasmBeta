@@ -527,13 +527,41 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
   - **with-meta nil 対応**: `(with-meta obj nil)` でメタデータクリア (meta.zig)
   - **deepClone メタデータ保持**: list/vector/map/set の deepClone でメタデータを複製 (value.zig)
 
+### U5a: ファイル直接実行オプション — 完了
+
+- `clj-wasm file.clj` でスクリプトファイルを直接実行可能に
+- 非オプション引数をスクリプトファイルとして認識
+- 内部で `(load-file "path")` 式に変換して評価
+- `-e` との併用も可能 (スクリプト後に追加式を実行)
+
+### U5b: バイトコードダンプモード — 完了
+
+- `--dump-bytecode` フラグで式のバイトコードをダンプ
+- dumpChunk: 定数テーブル + 命令リストを表示
+- dumpFnProto: 関数プロトタイプの再帰的ダンプ
+- dumpInstruction: オペコード名 + オペランド詳細
+- dumpValue: 定数の簡易表示
+- 出力例:
+  ```
+  === Bytecode Dump ===
+  --- Constants ---
+    [  0] <var>
+    [  1] 1
+    [  2] 2
+  --- Instructions ---
+       0: var_load             #0  ; <var>
+       1: const_load           #1  ; 1
+       2: const_load           #2  ; 2
+       3: call                 2
+       4: ret
+  (5 instructions, 3 constants)
+  ```
+
 ### 推奨次回タスク
 
-1. **U5a**: ファイル直接実行オプション (`clj-wasm file.clj`)
-2. **U5b**: OPCODE/バイトコードダンプモード (`--dump-bytecode`)
-3. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
-4. **P3**: VM 最適化 (ベンチマーク駆動)
-5. **新規 S1 候補**: clojure.pprint 等
+1. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
+2. **P3**: VM 最適化 (ベンチマーク駆動)
+3. **新規 S1 候補**: clojure.pprint 等
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 

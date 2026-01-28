@@ -62,6 +62,9 @@ pub fn main() !void {
     var backend: Backend = .tree_walk; // デフォルト
     var compare_mode = false;
     var gc_stats = false;
+    var dump_bytecode = false;
+
+    var script_file: ?[]const u8 = null;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -111,6 +114,8 @@ pub fn main() !void {
             compare_mode = true;
         } else if (std.mem.eql(u8, args[i], "--gc-stats")) {
             gc_stats = true;
+        } else if (std.mem.eql(u8, args[i], "--dump-bytecode")) {
+            dump_bytecode = true;
         } else if (std.mem.eql(u8, args[i], "-h") or std.mem.eql(u8, args[i], "--help")) {
             try printHelp(stdout);
             stdout.flush() catch {};
@@ -119,6 +124,9 @@ pub fn main() !void {
             stdout.writeAll("ClojureWasmBeta 0.1.0\n") catch {};
             stdout.flush() catch {};
             return;
+        } else if (!std.mem.startsWith(u8, args[i], "-")) {
+            // オプションでない引数はスクリプトファイルとして扱う
+            script_file = args[i];
         } else {
             stderr.print("Error: Unknown option: {s}\n", .{args[i]}) catch {};
             stderr.flush() catch {};
@@ -126,7 +134,7 @@ pub fn main() !void {
         }
     }
 
-    if (expressions.items.len == 0) {
+    if (expressions.items.len == 0 and script_file == null) {
         // REPL モード
         return runRepl(gpa_allocator, backend, compare_mode, gc_stats);
     }
@@ -152,6 +160,17 @@ pub fn main() !void {
     // デフォルトクラスパス: src/clj (clojure.string 等の標準ライブラリ)
     core.addClasspathRoot("src/clj");
 
+    // スクリプトファイルがある場合は (load-file "path") 式を追加
+    var load_file_buf: [1024]u8 = undefined;
+    if (script_file) |sf| {
+        const load_expr = std.fmt.bufPrint(&load_file_buf, "(load-file \"{s}\")", .{sf}) catch {
+            stderr.writeAll("Error: Script file path too long\n") catch {};
+            stderr.flush() catch {};
+            std.process.exit(1);
+        };
+        try expressions.append(gpa_allocator, load_expr);
+    }
+
     // 各式を評価
     var vm_snapshot: ?engine_mod.VarSnapshot = null;
     for (expressions.items) |expr| {
@@ -160,6 +179,14 @@ pub fn main() !void {
 
         // エラー表示用にソーステキストを設定
         base_error.setSourceText(expr);
+
+        if (dump_bytecode) {
+            dumpBytecode(&allocs, &env, expr, stderr) catch |err| {
+                reportError(err, stderr);
+                base_error.setSourceText(null);
+                std.process.exit(1);
+            };
+        }
 
         if (compare_mode) {
             const compare_out = runCompare(&allocs, &env, expr, vm_snapshot, stdout, stderr) catch |err| {
@@ -212,6 +239,45 @@ fn runWithBackend(
     // 結果を出力
     try printValue(writer, result);
     try writer.writeByte('\n');
+}
+
+/// コンパイルしてバイトコードをダンプ（stderr に出力）
+fn dumpBytecode(
+    allocs: *Allocators,
+    env: *Env,
+    source: []const u8,
+    writer: *std.Io.Writer,
+) !void {
+    const bytecode = clj.bytecode;
+    const Compiler = clj.compiler.Compiler;
+    const OpCode = bytecode.OpCode;
+
+    // Reader → Analyzer
+    var reader = Reader.init(allocs.scratch(), source);
+    const located = try reader.readLocated() orelse return error.EmptyInput;
+    var analyzer = Analyzer.init(allocs.scratch(), env);
+    analyzer.source_line = located.line;
+    analyzer.source_column = located.column;
+    const node = try analyzer.analyze(located.form);
+
+    // コンパイル
+    var compiler = Compiler.init(allocs.persistent());
+    defer compiler.deinit();
+    try compiler.compile(node);
+    try compiler.chunk.emitOp(OpCode.ret);
+
+    // ダンプ
+    try bytecode.dumpChunk(&compiler.chunk, writer);
+
+    // 定数テーブル内の FnProto を再帰的にダンプ
+    for (compiler.chunk.constants.items) |c| {
+        if (c == .fn_proto) {
+            const proto: *const bytecode.FnProto = @ptrCast(@alignCast(c.fn_proto));
+            try bytecode.dumpFnProto(proto, writer);
+        }
+    }
+
+    writer.flush() catch {};
 }
 
 /// 両バックエンドで評価して比較
@@ -648,7 +714,7 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\ClojureWasmBeta - A Clojure interpreter written in Zig
         \\
         \\Usage:
-        \\  clj-wasm [options]
+        \\  clj-wasm [options] [script.clj]
         \\
         \\Options:
         \\  -e <expr>              Evaluate the expression
@@ -657,15 +723,18 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\  --backend=<backend>    Select backend: tree_walk (default), vm
         \\  --compare              Run both backends and compare results
         \\  --gc-stats             Show GC statistics on stderr
+        \\  --dump-bytecode        Dump compiled bytecode (VM backend)
         \\  -h, --help             Show this help message
         \\  --version              Show version information
         \\
         \\Examples:
+        \\  clj-wasm script.clj
         \\  clj-wasm -e "(+ 1 2 3)"
         \\  clj-wasm -e "(def x 10)" -e "(+ x 5)"
         \\  clj-wasm --classpath=src:test/libs -e "(require 'my.lib)"
         \\  clj-wasm --backend=vm -e "(+ 1 2)"
         \\  clj-wasm --compare -e "(if true 1 2)"
+        \\  clj-wasm --dump-bytecode -e "(defn f [x] (+ x 1))"
         \\
     );
 }

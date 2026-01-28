@@ -339,6 +339,137 @@ pub const Chunk = struct {
     }
 };
 
+/// バイトコードダンプ（デバッグ用）
+pub fn dumpChunk(chunk: *const Chunk, writer: *std.Io.Writer) !void {
+    try writer.writeAll("=== Bytecode Dump ===\n");
+
+    // 定数テーブル
+    if (chunk.constants.items.len > 0) {
+        try writer.writeAll("\n--- Constants ---\n");
+        for (chunk.constants.items, 0..) |c, ci| {
+            try writer.print("  [{d:>3}] ", .{ci});
+            try dumpValue(c, writer);
+            try writer.writeByte('\n');
+        }
+    }
+
+    // 命令列
+    try writer.writeAll("\n--- Instructions ---\n");
+    for (chunk.code.items, 0..) |instr, ip| {
+        try writer.print("  {d:>4}: ", .{ip});
+        try dumpInstruction(instr, chunk.constants.items, writer);
+        try writer.writeByte('\n');
+    }
+
+    try writer.print("\n({d} instructions, {d} constants)\n", .{ chunk.code.items.len, chunk.constants.items.len });
+}
+
+/// FnProto のバイトコードをダンプ
+pub fn dumpFnProto(proto: *const FnProto, writer: *std.Io.Writer) !void {
+    try writer.print("\n--- fn {s} (arity={d}{s}) ---\n", .{
+        proto.name orelse "<anonymous>",
+        proto.arity,
+        if (proto.variadic) " variadic" else "",
+    });
+
+    // 定数テーブル
+    if (proto.constants.len > 0) {
+        try writer.writeAll("  Constants:\n");
+        for (proto.constants, 0..) |c, ci| {
+            try writer.print("    [{d:>3}] ", .{ci});
+            try dumpValue(c, writer);
+            try writer.writeByte('\n');
+        }
+    }
+
+    // 命令列
+    for (proto.code, 0..) |instr, ip| {
+        try writer.print("    {d:>4}: ", .{ip});
+        try dumpInstruction(instr, proto.constants, writer);
+        try writer.writeByte('\n');
+    }
+}
+
+/// 1命令をダンプ
+fn dumpInstruction(instr: Instruction, constants: []const Value, writer: *std.Io.Writer) !void {
+    const op_name = @tagName(instr.op);
+    try writer.print("{s:<20}", .{op_name});
+
+    // オペランド付きの opcode
+    switch (instr.op) {
+        .const_load => {
+            try writer.print(" #{d}", .{instr.operand});
+            if (instr.operand < constants.len) {
+                try writer.writeAll("  ; ");
+                try dumpValue(constants[instr.operand], writer);
+            }
+        },
+        .local_load, .local_store, .upvalue_load, .upvalue_store => {
+            try writer.print(" slot={d}", .{instr.operand});
+        },
+        .var_load, .var_load_dynamic, .def, .def_macro, .defmulti, .defmethod, .defprotocol, .extend_type_method, .def_doc => {
+            try writer.print(" #{d}", .{instr.operand});
+            if (instr.operand < constants.len) {
+                try writer.writeAll("  ; ");
+                try dumpValue(constants[instr.operand], writer);
+            }
+        },
+        .jump, .jump_if_false, .jump_if_true, .jump_if_nil, .jump_back => {
+            const signed: i16 = @bitCast(instr.operand);
+            try writer.print(" {d}", .{signed});
+        },
+        .call, .tail_call, .recur, .letfn_fixup => {
+            try writer.print(" {d}", .{instr.operand});
+        },
+        .scope_exit => {
+            try writer.print(" pop={d}", .{instr.operand});
+        },
+        .list_new, .vec_new, .set_new => {
+            try writer.print(" n={d}", .{instr.operand});
+        },
+        .map_new => {
+            try writer.print(" pairs={d}", .{instr.operand});
+        },
+        .closure, .closure_multi => {
+            try writer.print(" #{d}", .{instr.operand});
+        },
+        else => {
+            // オペランドなし or 不明
+            if (instr.operand != 0) {
+                try writer.print(" {d}", .{instr.operand});
+            }
+        },
+    }
+}
+
+/// Value を簡潔にダンプ
+fn dumpValue(val: Value, writer: *std.Io.Writer) !void {
+    switch (val) {
+        .nil => try writer.writeAll("nil"),
+        .bool_val => |b| try writer.print("{}", .{b}),
+        .int => |n| try writer.print("{d}", .{n}),
+        .float => |f| try writer.print("{d}", .{f}),
+        .string => |s| try writer.print("\"{s}\"", .{s.data}),
+        .keyword => |k| {
+            try writer.writeByte(':');
+            if (k.namespace) |ns| {
+                try writer.print("{s}/", .{ns});
+            }
+            try writer.print("{s}", .{k.name});
+        },
+        .symbol => |s| {
+            if (s.namespace) |ns| {
+                try writer.print("{s}/", .{ns});
+            }
+            try writer.print("{s}", .{s.name});
+        },
+        .var_val => try writer.writeAll("<var>"),
+        .fn_val => |f| try writer.print("<fn {s}>", .{if (f.name) |n| n.name else "?"}),
+        .fn_proto => try writer.writeAll("<fn-proto>"),
+        else => try writer.print("<{s}>", .{@tagName(val)}),
+    }
+}
+
 // === テスト ===
 
 test "Chunk basic" {
