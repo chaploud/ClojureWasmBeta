@@ -308,6 +308,15 @@ pub const Fn = struct {
     pub fn findArity(self: *const Fn, arg_count: usize) ?*const FnArityRuntime {
         const fn_arities = self.arities orelse return null;
 
+        // 単一アリティ fast path (大多数の関数)
+        if (fn_arities.len == 1) {
+            const arity = &fn_arities[0];
+            if (!arity.variadic) {
+                return if (arity.params.len == arg_count) arity else null;
+            }
+            return if (arg_count >= arity.params.len - 1) arity else null;
+        }
+
         // 固定アリティを優先検索
         for (fn_arities) |*arity| {
             if (!arity.variadic and arity.params.len == arg_count) {

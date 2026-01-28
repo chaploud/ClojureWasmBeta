@@ -127,35 +127,29 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 - `test/bench/basic.clj`: 10 ベンチマーク (fib, recur, reduce, str, atom, loop, map, assoc)
 - `test/bench/run_bench.sh`: 両バックエンド自動実行, 表形式出力, `--save`/`--compare` 対応
 
-### P2: Zig レベル最適化
+### P2: VM 最適化 — ✅ 完了 (構造改善、速度効果なし)
 
-ベンチマーク P1 の結果を見てから優先度を決定。候補:
+ベンチマーク P1 の結果に基づき、fib(25) の ~242k 再帰呼び出しをターゲットに最適化。
 
-| 最適化                    | 期待効果 | 難易度 | 前提条件     |
-|---------------------------|----------|--------|--------------|
-| Allocator 呼び出し頻度削減 | 中       | 低     | プロファイル |
-| スタックバッファ活用       | 中       | 低     | なし         |
-| PersistentMap 改善         | 高       | 高     | R2完了       |
-|   (線形走査→HAMT or sorted) |        |        |              |
-| MultiArrayList 適用        | 中       | 中     | R3完了       |
-| MemoryPool 適用            | 中       | 中     | R3完了       |
+**P2a: 低侵襲最適化** (types.zig, vm.zig)
+- findArity 単一アリティ fast path、例外ハンドラ分離、recur スタックバッファ
+- 結果: 計測誤差内で変化なし
 
-**PersistentMap について**:
-- 現状: 配列ベースの簡易実装 (O(n) ルックアップ)
-- 選択肢:
-  - HAMT (Hash Array Mapped Trie): Clojure 本家の方式。O(log32 n)。実装が複雑
-  - Sorted Array + Binary Search: O(log n)。実装が簡潔。小マップで有効
-  - 判断基準: ベンチマークで map ルックアップがボトルネックかどうか
+**P2b: フレームインライン化** (vm.zig, +179/-24 行)
+- CallFrame に code/constants フィールド追加
+- tryInlineCall(): fn_val/fn_proto をフレーム積みのみで処理 (execute 再帰排除)
+- ret opcode: 親フレームの code/constants に切替
+- 結果: 全テスト維持、速度効果なし
+- 分析: per-instruction overhead が支配的で execute 再帰のコストは微小
 
-### P3: VM 最適化
+**残る高インパクト候補**:
 
-| 最適化                         | 期待効果 | 難易度 | 侵襲度 |
-|--------------------------------|----------|--------|--------|
-| tail call dispatch             | 高       | 中     | 低     |
-|   (`@call(.always_tail, ...)`) |          |        |        |
-| 定数畳み込み (Compiler 側)     | 中       | 中     | 低     |
-| NaN boxing 検討                | 高       | 高     | 高     |
-| inline caching                 | 高       | 高     | 高     |
+| 最適化                    | 期待効果 | 難易度 | 備考                      |
+|---------------------------|----------|--------|---------------------------|
+| PersistentMap 改善         | 高       | 高     | O(n) → O(log n) が有効   |
+| NaN boxing                | 高       | 高     | Value サイズ縮小          |
+| 定数畳み込み              | 中       | 中     | Compiler 側               |
+| inline caching            | 高       | 高     | 関数呼び出し高速化        |
 
 **tail call dispatch について**:
 - Zig 0.15.2 の `@call(.always_tail, dispatch_fn, .{args})` で computed goto 相当

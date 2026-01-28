@@ -80,10 +80,38 @@ threadlocal 変数は inline アクセサ関数 (get/set) で提供。
 | value/collections.zig  | 172  | 永続コレクション 4 型                   |
 | value/lazy_seq.zig     | 121  | LazySeq + Transform + Generator         |
 
+### P2: VM 最適化 — 完了 (構造改善、速度効果なし)
+
+ベンチマーク計測に基づく段階的最適化。
+
+**P2a: 低侵襲最適化** (types.zig, vm.zig)
+- findArity: 単一アリティ fast path (大多数の関数が 1 アリティ)
+- callValueWithExceptionHandling: handler_count == 0 fast path
+- recur: スタックバッファ (16 要素まで heap 不要)
+- 結果: 計測誤差内で変化なし (ボトルネックは execute 再帰ではない)
+
+**P2b: フレームインライン化** (vm.zig)
+- CallFrame に code/constants フィールド追加
+- execute() 内でローカル code/constants 変数を使用、フレーム切替時に更新
+- tryInlineCall(): fn_val (ユーザー定義) / fn_proto をフレーム積みのみで処理
+  (execute 再帰を排除。builtin/partial/comp 等は従来の callValue パス)
+- ret opcode: 親フレームの code/constants に切替 + `sp = ret_base - 1`
+- call/call_0-3/tail_call: tryInlineCall 経由に変更
+- 結果: 全テスト維持 (760/1, zig 270/274)、速度効果なし
+- 分析: per-call overhead (フレーム構築・スタック操作) が支配的で、
+  execute 再帰のコスト自体は小さかった
+
+**ベンチマーク結果** (変化なし):
+| ベンチマーク           | TreeWalk    | VM          |
+|------------------------|-------------|-------------|
+| fib(25)                | 7,002 ms    | 6,976 ms    |
+| sum-to(10000)          | 134 ms      | 133 ms      |
+| get-from-map(200x100)  | 815 ms      | 824 ms      |
+
 ### 推奨次回タスク
 
-1. **P2: VM 最適化** — ベンチマーク基盤を使って計測しながら
-2. **R3: Zig イディオム再点検** — MultiArrayList, MemoryPool 等
+1. **R3: Zig イディオム再点検** — MultiArrayList, MemoryPool 等
+2. **G1: GC 改善** — 世代別 GC or 改善
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 

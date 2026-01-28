@@ -91,6 +91,10 @@ const CallFrame = struct {
     base: usize,
     /// クロージャ環境
     closure: ?[]const Value,
+    /// このフレームのコード (フレームインライン化用)
+    code: []const Instruction = &[_]Instruction{},
+    /// このフレームの定数テーブル (フレームインライン化用)
+    constants: []const Value = &[_]Value{},
 };
 
 /// 仮想マシン
@@ -139,6 +143,8 @@ pub const VM = struct {
             .ip = 0,
             .base = 0,
             .closure = null,
+            .code = chunk.code.items,
+            .constants = chunk.constants.items,
         };
         self.frame_count = 1;
 
@@ -146,7 +152,7 @@ pub const VM = struct {
     }
 
     /// 命令を実行
-    fn execute(self: *VM, code: []const Instruction, constants: []const Value) VMError!Value {
+    fn execute(self: *VM, top_code: []const Instruction, top_constants: []const Value) VMError!Value {
         // VM 用 LazySeq コールバックを設定
         current_vm = self;
         core.setForceCallback(&vmForce);
@@ -156,6 +162,10 @@ pub const VM = struct {
         // この execute が開始した時点の frame_count を記録
         // ret でこのレベルに戻ったら、この execute から return する
         const entry_frame_count = self.frame_count;
+
+        // フレームインライン化: code/constants をフレームから取得
+        var code = top_code;
+        var constants = top_constants;
 
         while (true) {
             const frame = &self.frames[self.frame_count - 1];
@@ -319,20 +329,45 @@ pub const VM = struct {
                 // [G] 関数
                 // ═══════════════════════════════════════════════════════
                 .call => {
-                    const arg_count = instr.operand;
-                    try self.callValueWithExceptionHandling(@intCast(arg_count));
+                    if (try self.tryInlineCall(@intCast(instr.operand))) |new_frame| {
+                        code = new_frame.code;
+                        constants = new_frame.constants;
+                    }
                 },
-                .call_0 => try self.callValueWithExceptionHandling(0),
-                .call_1 => try self.callValueWithExceptionHandling(1),
-                .call_2 => try self.callValueWithExceptionHandling(2),
-                .call_3 => try self.callValueWithExceptionHandling(3),
+                .call_0 => {
+                    if (try self.tryInlineCall(0)) |new_frame| {
+                        code = new_frame.code;
+                        constants = new_frame.constants;
+                    }
+                },
+                .call_1 => {
+                    if (try self.tryInlineCall(1)) |new_frame| {
+                        code = new_frame.code;
+                        constants = new_frame.constants;
+                    }
+                },
+                .call_2 => {
+                    if (try self.tryInlineCall(2)) |new_frame| {
+                        code = new_frame.code;
+                        constants = new_frame.constants;
+                    }
+                },
+                .call_3 => {
+                    if (try self.tryInlineCall(3)) |new_frame| {
+                        code = new_frame.code;
+                        constants = new_frame.constants;
+                    }
+                },
                 .tail_call => {
                     // TODO: 末尾呼び出し最適化
-                    const arg_count = instr.operand;
-                    try self.callValueWithExceptionHandling(@intCast(arg_count));
+                    if (try self.tryInlineCall(@intCast(instr.operand))) |new_frame| {
+                        code = new_frame.code;
+                        constants = new_frame.constants;
+                    }
                 },
                 .ret => {
                     const result = self.pop();
+                    const ret_base = frame.base;
 
                     // フレームを戻す
                     self.frame_count -= 1;
@@ -343,11 +378,15 @@ pub const VM = struct {
                         return result;
                     }
 
-                    // スタックをフレームベースまで戻す
-                    self.sp = frame.base;
-
-                    // 結果を push
+                    // スタックを fn 位置まで巻き戻し、結果を配置
+                    // (base - 1 = fn_idx: 関数自体が占めていたスロット)
+                    self.sp = ret_base - 1;
                     try self.push(result);
+
+                    // 親フレームの code/constants に切り替え
+                    const parent = &self.frames[self.frame_count - 1];
+                    code = parent.code;
+                    constants = parent.constants;
                 },
                 .closure => {
                     const proto_val = constants[instr.operand];
@@ -380,9 +419,13 @@ pub const VM = struct {
                     const arg_count = instr.operand & 0xFF;
                     const base_offset = (instr.operand >> 8) & 0xFF;
 
-                    // 引数をスタックから取り出して一時保存
-                    const temp_values = self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
-                    defer self.allocator.free(temp_values);
+                    // 引数をスタックから取り出して一時保存 (スタックバッファ)
+                    var temp_buf: [16]Value = undefined;
+                    const temp_values = if (arg_count <= 16)
+                        temp_buf[0..arg_count]
+                    else
+                        self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
+                    defer if (arg_count > 16) self.allocator.free(temp_values);
 
                     // 後ろから取り出す
                     var i: usize = arg_count;
@@ -575,6 +618,8 @@ pub const VM = struct {
                     .ip = 0,
                     .base = fn_idx + 1,
                     .closure = f.closure_bindings,
+                    .code = proto.code,
+                    .constants = proto.constants,
                 };
                 self.frame_count += 1;
 
@@ -596,6 +641,8 @@ pub const VM = struct {
                     .ip = 0,
                     .base = fn_idx + 1,
                     .closure = null,
+                    .code = proto.code,
+                    .constants = proto.constants,
                 };
                 self.frame_count += 1;
 
@@ -767,6 +814,103 @@ pub const VM = struct {
                 try self.callValue(arg_count);
             },
             else => return error.TypeError,
+        }
+    }
+
+    /// 関数呼び出し (インライン版)
+    /// ユーザー定義関数の場合、execute() を再帰呼び出しせずフレームを積んで
+    /// 新フレームへのポインタを返す。メインループが code/constants を切り替える。
+    /// builtin や他の型はその場で完結し null を返す。
+    fn tryInlineCall(self: *VM, arg_count: usize) VMError!?*const CallFrame {
+        const fn_idx = self.sp - arg_count - 1;
+        const fn_val = self.stack[fn_idx];
+
+        switch (fn_val) {
+            .fn_val => |f| {
+                // 組み込み関数は従来の callValue で処理
+                if (f.builtin != null) {
+                    try self.callValueWithExceptionHandling(arg_count);
+                    return null;
+                }
+
+                // ユーザー定義関数: フレームを積むだけ (execute 再帰なし)
+                const arity = f.findArity(arg_count) orelse return error.ArityError;
+                if (self.frame_count >= FRAMES_MAX) return error.StackOverflow;
+
+                const proto: *const FnProto = @ptrCast(@alignCast(arity.body));
+
+                // クロージャ環境の処理
+                if (f.closure_bindings) |closure_vals| {
+                    const args_start = fn_idx + 1;
+                    const args_end = self.sp;
+                    const args_count_actual = args_end - args_start;
+
+                    if (args_count_actual > 0 and closure_vals.len > 0) {
+                        const new_sp = args_start + closure_vals.len + args_count_actual;
+                        if (new_sp >= STACK_MAX) return error.StackOverflow;
+                        var i = args_count_actual;
+                        while (i > 0) {
+                            i -= 1;
+                            self.stack[args_start + closure_vals.len + i] = self.stack[args_start + i];
+                        }
+                        for (closure_vals, 0..) |cv, ci| {
+                            self.stack[args_start + ci] = cv;
+                        }
+                        self.sp = new_sp;
+                    } else if (closure_vals.len > 0) {
+                        for (closure_vals) |cv| {
+                            try self.push(cv);
+                        }
+                    }
+                }
+
+                // 可変長引数の処理
+                if (arity.variadic) {
+                    const closure_len = if (f.closure_bindings) |cb| cb.len else 0;
+                    const args_start = fn_idx + 1 + closure_len;
+                    const fixed_count = arity.params.len - 1;
+                    const rest_args = self.stack[args_start + fixed_count .. self.sp];
+                    const rest_list = value_mod.PersistentList.fromSlice(self.allocator, rest_args) catch return error.OutOfMemory;
+                    self.stack[args_start + fixed_count] = Value{ .list = rest_list };
+                    self.sp = args_start + fixed_count + 1;
+                }
+
+                // フレームを積む (execute を呼ばない)
+                self.frames[self.frame_count] = .{
+                    .proto = proto,
+                    .ip = 0,
+                    .base = fn_idx + 1,
+                    .closure = f.closure_bindings,
+                    .code = proto.code,
+                    .constants = proto.constants,
+                };
+                self.frame_count += 1;
+
+                return &self.frames[self.frame_count - 1];
+            },
+            .fn_proto => |proto_ptr| {
+                // fn_proto も同様にインライン化
+                const proto: *const FnProto = @ptrCast(@alignCast(proto_ptr));
+                if (arg_count != proto.arity) return error.ArityError;
+                if (self.frame_count >= FRAMES_MAX) return error.StackOverflow;
+
+                self.frames[self.frame_count] = .{
+                    .proto = proto,
+                    .ip = 0,
+                    .base = fn_idx + 1,
+                    .closure = null,
+                    .code = proto.code,
+                    .constants = proto.constants,
+                };
+                self.frame_count += 1;
+
+                return &self.frames[self.frame_count - 1];
+            },
+            else => {
+                // その他 (builtin, keyword, partial_fn, comp_fn, etc.) は従来のパスで処理
+                try self.callValueWithExceptionHandling(arg_count);
+                return null;
+            },
         }
     }
 
@@ -1200,16 +1344,18 @@ pub const VM = struct {
 
     /// callValue のラッパー: 例外をハンドラに転送
     fn callValueWithExceptionHandling(self: *VM, arg_count: usize) VMError!void {
+        // ハンドラ不在時は例外処理をスキップ (fast path)
+        if (self.handler_count == 0) {
+            return self.callValue(arg_count);
+        }
         self.callValue(arg_count) catch |e| {
-            if (self.handler_count > 0) {
-                if (e == error.UserException) {
-                    if (self.handleThrowFromError()) return;
-                    return e;
-                }
-                // 内部エラーを Value に変換して catch ハンドラに転送
-                const exception_val = self.internalErrorToValue(e);
-                if (self.handleThrow(exception_val)) return;
+            if (e == error.UserException) {
+                if (self.handleThrowFromError()) return;
+                return e;
             }
+            // 内部エラーを Value に変換して catch ハンドラに転送
+            const exception_val = self.internalErrorToValue(e);
+            if (self.handleThrow(exception_val)) return;
             return e;
         };
     }
