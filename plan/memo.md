@@ -60,7 +60,8 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 | 8   | BUG   | named fn スロット不整合 | 修正済  | let+named fn のキャプチャスロット計算修正  |
 | 9   | BUG   | テストVM検証漏れ     | 修正済   | strict_vm_check=true で厳格検証            |
 | 10  | BUG   | load-file バックエンド | 修正済   | defs.current_backend でバックエンド統一   |
-| 6   | P3    | NaN boxing           | 保留     | 大規模変更、事前に設計文書が必要           |
+| 11  | P1a   | Safe Point GC        | 完了     | recur/call で GC チェック、lazy seq は別対応 |
+| 12  | P3    | NaN boxing           | 保留     | 大規模変更、事前に設計文書が必要           |
 | 7   | G2a-c | 世代別 GC 基盤       | 完了     | Nursery bump allocator + minor GC + promotion |
 | 8   | G2d-e | 世代別 GC 統合       | 保留     | 式境界GCでは効果限定的、ベンチ確認後に検討 |
 | 9   | P3    | inline caching       | 保留     | VM 既に最適化済み (tryInlineCall)、効果限定 |
