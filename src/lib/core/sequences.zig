@@ -925,10 +925,219 @@ pub fn reduceFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
     return acc;
 }
 
-/// 遅延シーケンスの reduce (一要素ずつ処理)
-/// メモリ効率: GC は式境界で行われる。builtin 内での GC は
-/// root tracking の複雑さからサポートしない。
+/// Fused reduce: lazy-seq チェーンを解析して直接ループに展開
+/// (reduce + (take N (map f (filter pred (range M))))) のような
+/// パターンで中間 LazySeq 構造体の作成を完全に排除する。
+///
+/// サポートするチェーン: take → (map | filter)* → 具体コレクション/ジェネレータ
+/// 非対応パターンはフォールバック (遅延イテレーション) で処理。
 fn reduceLazy(
+    allocator: std.mem.Allocator,
+    fn_val: Value,
+    init_acc: Value,
+    coll: Value,
+    need_first: bool,
+    call: defs.CallFn,
+) anyerror!Value {
+    // === Step 1: lazy-seq チェーンを解析 ===
+    var take_n: ?usize = null;
+    var transforms: [16]TransformStep = undefined; // map/filter スタック (最大16段)
+    var transform_count: usize = 0;
+    var base_source: Value = coll;
+
+    var current_ls = coll;
+    chain_walk: while (current_ls == .lazy_seq) {
+        const ls = current_ls.lazy_seq;
+
+        // take
+        if (ls.take) |t| {
+            if (take_n != null) break :chain_walk; // 二重 take は非対応
+            take_n = t.n;
+            current_ls = t.source;
+            continue;
+        }
+
+        // transform (map, filter)
+        if (ls.transform) |t| {
+            switch (t.kind) {
+                .map, .filter => {
+                    if (transform_count >= transforms.len) break :chain_walk;
+                    transforms[transform_count] = .{ .kind = t.kind, .fn_val = t.fn_val };
+                    transform_count += 1;
+                    current_ls = t.source;
+                    continue;
+                },
+                else => break :chain_walk, // mapcat, take_while 等は非対応
+            }
+        }
+
+        // ジェネレータ (range 等) はそのまま base_source に
+        if (ls.generator != null) {
+            base_source = current_ls;
+            break;
+        }
+
+        // cons 形式やサンク形式は非対応
+        break :chain_walk;
+    } else {
+        // 具体コレクション (list, vector, range の結果)
+        base_source = current_ls;
+    }
+
+    // チェーン解析成功の場合: fused reduce
+    if (transform_count > 0 or take_n != null) {
+        return reduceFused(allocator, fn_val, init_acc, base_source, transforms[0..transform_count], take_n, need_first, call);
+    }
+
+    // === フォールバック: 遅延イテレーション ===
+    return reduceIterative(allocator, fn_val, init_acc, coll, need_first, call);
+}
+
+/// Transform チェーンの 1 ステップ
+const TransformStep = struct {
+    kind: value_mod.LazySeq.TransformKind,
+    fn_val: Value,
+};
+
+/// Fused reduce: base_source の要素に transforms を適用しながら畳み込み
+/// 中間 LazySeq 構造体を一切作成しない。
+fn reduceFused(
+    allocator: std.mem.Allocator,
+    fn_val: Value,
+    init_acc: Value,
+    base_source: Value,
+    transforms: []const TransformStep,
+    take_n: ?usize,
+    need_first: bool,
+    call: defs.CallFn,
+) anyerror!Value {
+    var acc = init_acc;
+    var first_iter = need_first;
+    var remaining = take_n orelse std.math.maxInt(usize);
+
+    // base_source のイテレータ
+    const source_items: ?[]const Value = helpers.getItems(base_source);
+    var source_idx: usize = 0;
+
+    // ジェネレータの場合
+    var gen_state: ?value_mod.LazySeq.Generator = if (base_source == .lazy_seq and base_source.lazy_seq.generator != null)
+        base_source.lazy_seq.generator
+    else
+        null;
+
+    // lazy_seq の場合 (take/transform のみ剥がして、残りは lazy_seq のまま)
+    var lazy_source: ?Value = if (source_items == null and gen_state == null and base_source == .lazy_seq)
+        base_source
+    else
+        null;
+
+    while (remaining > 0) {
+        // === 次の要素を取得 ===
+        var elem: Value = undefined;
+
+        if (source_items) |items| {
+            // 具体コレクションのイテレーション
+            if (source_idx >= items.len) break;
+            elem = items[source_idx];
+            source_idx += 1;
+        } else if (gen_state) |*g| {
+            // ジェネレータのイテレーション (in-place)
+            switch (g.kind) {
+                .range_infinite => {
+                    elem = g.current;
+                    g.current = value_mod.intVal(g.current.int + 1);
+                },
+                .iterate => {
+                    elem = g.current;
+                    const f = g.fn_val orelse return error.TypeError;
+                    g.current = try call(f, &[_]Value{g.current}, allocator);
+                },
+                .repeat_infinite => {
+                    elem = g.current;
+                },
+                .cycle => {
+                    const source = g.source orelse return error.TypeError;
+                    if (source.len == 0) break;
+                    elem = source[g.source_idx % source.len];
+                    g.source_idx += 1;
+                },
+            }
+        } else if (lazy_source) |ls_val| {
+            // lazy-seq のフォールバック
+            if (ls_val == .lazy_seq) {
+                elem = try lazy.lazyFirst(allocator, ls_val.lazy_seq);
+                if (elem == .nil) break;
+                lazy_source = try lazy.lazyRest(allocator, ls_val.lazy_seq);
+            } else if (helpers.getItems(ls_val)) |items| {
+                if (items.len == 0) break;
+                elem = items[0];
+                if (items.len > 1) {
+                    lazy_source = Value{ .list = try value_mod.PersistentList.fromSlice(allocator, items[1..]) };
+                } else {
+                    lazy_source = Value.nil;
+                }
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+
+        // === transforms を逆順に適用 (チェーンは外側→内側で記録された) ===
+        // transforms[0] が最外側 (最後に適用される)
+        // transforms[transform_count-1] が最内側 (最初に適用される)
+        var skip = false;
+        var transformed = elem;
+        var ti: usize = transforms.len;
+        while (ti > 0) {
+            ti -= 1;
+            const t = transforms[ti];
+            switch (t.kind) {
+                .filter => {
+                    const pred_result = try call(t.fn_val, &[_]Value{transformed}, allocator);
+                    if (!pred_result.isTruthy()) {
+                        skip = true;
+                        break;
+                    }
+                },
+                .map => {
+                    transformed = try call(t.fn_val, &[_]Value{transformed}, allocator);
+                },
+                else => unreachable,
+            }
+        }
+
+        if (skip) continue;
+
+        // === 畳み込み ===
+        if (first_iter) {
+            acc = transformed;
+            first_iter = false;
+        } else {
+            const call_args = try allocator.alloc(Value, 2);
+            call_args[0] = acc;
+            call_args[1] = transformed;
+            acc = try call(fn_val, call_args, allocator);
+
+            // reduced による早期終了
+            if (acc == .reduced_val) {
+                return acc.reduced_val.value;
+            }
+        }
+
+        remaining -= 1;
+    }
+
+    if (first_iter) {
+        // 空コレクションで初期値なし → (f) を呼び出す
+        return call(fn_val, &[_]Value{}, allocator);
+    }
+
+    return acc;
+}
+
+/// フォールバック: 遅延イテレーション (非 fused パターン用)
+fn reduceIterative(
     allocator: std.mem.Allocator,
     fn_val: Value,
     init_acc: Value,
@@ -941,7 +1150,6 @@ fn reduceLazy(
     var first_iter = need_first;
 
     while (true) {
-        // 要素を取得
         const elem = if (current == .lazy_seq)
             try lazy.lazyFirst(allocator, current.lazy_seq)
         else if (helpers.getItems(current)) |items|
@@ -949,33 +1157,27 @@ fn reduceLazy(
         else
             Value.nil;
 
-        // 終端判定
         if (elem == .nil) {
             if (first_iter) {
-                // 空コレクションで初期値なし → (f) を呼び出す
                 return call(fn_val, &[_]Value{}, allocator);
             }
             break;
         }
 
         if (first_iter) {
-            // (reduce f coll) の最初の要素を初期値に
             acc = elem;
             first_iter = false;
         } else {
-            // 畳み込み
             const call_args = try allocator.alloc(Value, 2);
             call_args[0] = acc;
             call_args[1] = elem;
             acc = try call(fn_val, call_args, allocator);
 
-            // reduced による早期終了
             if (acc == .reduced_val) {
                 return acc.reduced_val.value;
             }
         }
 
-        // 次の要素へ
         current = if (current == .lazy_seq)
             try lazy.lazyRest(allocator, current.lazy_seq)
         else if (helpers.getItems(current)) |items|
@@ -986,7 +1188,6 @@ fn reduceLazy(
         else
             Value.nil;
 
-        // 終端判定 (rest が空の場合)
         if (current == .nil or (current == .list and current.list.items.len == 0)) {
             break;
         }
