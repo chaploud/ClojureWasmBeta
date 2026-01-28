@@ -718,14 +718,14 @@ fn runDef(node: *const node_mod.DefNode, ctx: *Context) EvalError!Value {
         v.dynamic = true;
     }
 
-    // docstring を設定
+    // docstring を設定 (persistent にコピー — scratch arena は式境界でリセットされるため)
     if (node.doc) |doc| {
-        v.doc = doc;
+        v.doc = ctx.allocator.dupe(u8, doc) catch null;
     }
 
-    // arglists を設定
+    // arglists を設定 (persistent にコピー)
     if (node.arglists) |arglists| {
-        v.arglists = arglists;
+        v.arglists = ctx.allocator.dupe(u8, arglists) catch null;
     }
 
     // Var を返す（#'ns/name 形式）
