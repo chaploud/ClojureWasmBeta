@@ -34,9 +34,9 @@ pub const GC = struct {
     }
 
     /// GC を実行（mark-sweep）
-    pub fn collectGarbage(self: *GC, env: *Env, globals: GcGlobals) void {
+    pub fn collectGarbage(self: *GC, env: *Env, globals: GcGlobals) GcAllocator.SweepResult {
         tracing.markRoots(self.gc_alloc, env, globals);
-        self.gc_alloc.sweep();
+        return self.gc_alloc.sweep();
     }
 
     /// GC を実行すべきかどうか

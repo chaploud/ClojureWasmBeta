@@ -430,7 +430,7 @@ test "traceValue string を mark" {
     traceValue(&gc, val, &gray_stack);
 
     // sweep しても解放されない（mark 済み）
-    gc.sweep();
+    _ = gc.sweep();
 
     // String がまだ有効
     try std.testing.expectEqualStrings("hello", s.data);

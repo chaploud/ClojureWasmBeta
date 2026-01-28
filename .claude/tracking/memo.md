@@ -323,9 +323,30 @@ REPL ドキュメント閲覧機能。
 - `dir` で private 関数が非表示になることを確認
 - `defn-` が実際に private Var を生成するよう修正 (従来は defn と同等だった)
 
+### G1a: GC 統計ログ — 完了
+
+`--gc-stats` CLI フラグで GC 実行ごとの統計と終了時サマリを stderr に出力。
+
+- **GcAllocator**: `total_collections`, `total_freed_bytes`, `total_freed_count`, `total_alloc_count` 累計統計
+- **sweep()**: `SweepResult` を返す (回収バイト数/オブジェクト数/前後ヒープサイズ/新閾値)
+- **Allocators**: `gc_stats_enabled` フラグ、`printGcSummary()`, `logSweepResult()` 追加
+- **main.zig**: `--gc-stats` フラグ解析、`-e` モードと REPL モード両方対応
+- 出力例:
+  ```
+  [GC #1] freed 6412275 bytes, 100660 objects | heap 6451691 -> 39416 bytes | threshold 262144 bytes
+
+  [GC Summary]
+    total collections : 1
+    total freed       : 6412275 bytes, 100660 objects
+    total allocated   : 101114 alloc calls
+    final heap        : 39416 bytes, 452 objects
+    final threshold   : 262144 bytes
+  ```
+- 全テスト維持 (815/1 compat, 270/274 zig)
+
 ### 推奨次回タスク
 
-1. **G1: GC 改善** — 世代別 GC or MemoryPool
+1. **G1b: GC 計測分析** — `--gc-stats` の結果を基に MemoryPool 導入判断
 2. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
 3. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars, add-watch 等)
 

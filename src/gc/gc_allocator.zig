@@ -43,6 +43,16 @@ pub const GcAllocator = struct {
     /// GC トリガー閾値
     gc_threshold: usize,
 
+    // === GC 統計 ===
+    /// 累計 GC 実行回数
+    total_collections: u64,
+    /// 累計回収バイト数
+    total_freed_bytes: u64,
+    /// 累計回収オブジェクト数
+    total_freed_count: u64,
+    /// 累計アロケーション数（alloc 呼び出し回数）
+    total_alloc_count: u64,
+
     /// 初期閾値: 1MB
     const INITIAL_THRESHOLD: usize = 1024 * 1024;
     /// 閾値の成長係数（sweep 後に bytes_allocated * GROWTH_FACTOR に更新）
@@ -57,6 +67,10 @@ pub const GcAllocator = struct {
             .allocs = .empty,
             .bytes_allocated = 0,
             .gc_threshold = INITIAL_THRESHOLD,
+            .total_collections = 0,
+            .total_freed_bytes = 0,
+            .total_freed_count = 0,
+            .total_alloc_count = 0,
         };
     }
 
@@ -108,7 +122,11 @@ pub const GcAllocator = struct {
     }
 
     /// Sweep: marked=false のアロケーションを解放
-    pub fn sweep(self: *GcAllocator) void {
+    /// 戻り値: SweepResult（回収量の統計）
+    pub fn sweep(self: *GcAllocator) SweepResult {
+        const before_bytes = self.bytes_allocated;
+        const before_count = self.allocs.count();
+
         var iter = self.allocs.iterator();
         while (iter.next()) |entry| {
             if (!entry.value_ptr.marked) {
@@ -128,7 +146,31 @@ pub const GcAllocator = struct {
         // 閾値を動的調整
         const new_threshold = self.bytes_allocated * GROWTH_FACTOR;
         self.gc_threshold = @max(new_threshold, MIN_THRESHOLD);
+
+        // 統計更新
+        const freed_bytes = before_bytes - self.bytes_allocated;
+        const freed_count = before_count - self.allocs.count();
+        self.total_collections += 1;
+        self.total_freed_bytes += freed_bytes;
+        self.total_freed_count += freed_count;
+
+        return .{
+            .freed_bytes = freed_bytes,
+            .freed_count = freed_count,
+            .before_bytes = before_bytes,
+            .after_bytes = self.bytes_allocated,
+            .new_threshold = self.gc_threshold,
+        };
     }
+
+    /// sweep() の結果
+    pub const SweepResult = struct {
+        freed_bytes: usize,
+        freed_count: u32,
+        before_bytes: usize,
+        after_bytes: usize,
+        new_threshold: usize,
+    };
 
     /// GC を実行すべきかどうか
     pub fn shouldCollect(self: *const GcAllocator) bool {
@@ -141,6 +183,10 @@ pub const GcAllocator = struct {
             .bytes_allocated = self.bytes_allocated,
             .num_allocations = self.allocs.count(),
             .gc_threshold = self.gc_threshold,
+            .total_collections = self.total_collections,
+            .total_freed_bytes = self.total_freed_bytes,
+            .total_freed_count = self.total_freed_count,
+            .total_alloc_count = self.total_alloc_count,
         };
     }
 
@@ -148,6 +194,10 @@ pub const GcAllocator = struct {
         bytes_allocated: usize,
         num_allocations: u32,
         gc_threshold: usize,
+        total_collections: u64,
+        total_freed_bytes: u64,
+        total_freed_count: u64,
+        total_alloc_count: u64,
     };
 
     // === VTable 実装 ===
@@ -171,6 +221,7 @@ pub const GcAllocator = struct {
         }) catch return null; // HashMap の put が失敗した場合、メモリリークを許容する代わりに null を返す
 
         self.bytes_allocated += len;
+        self.total_alloc_count += 1;
         return ptr;
     }
 
@@ -307,7 +358,7 @@ test "GcAllocator mark と sweep" {
     _ = gc.mark(@ptrCast(p3));
 
     // sweep → p2 が解放される
-    gc.sweep();
+    _ = gc.sweep();
 
     // p2 分のメモリが減少
     try std.testing.expect(gc.bytes_allocated < before_bytes);
@@ -353,7 +404,7 @@ test "GcAllocator sweep 後の閾値調整" {
     // 確保して mark してから sweep
     const p1 = try a.create(u64);
     _ = gc.mark(@ptrCast(p1));
-    gc.sweep();
+    _ = gc.sweep();
 
     // 閾値が MIN_THRESHOLD 以上であること
     try std.testing.expect(gc.gc_threshold >= GcAllocator.MIN_THRESHOLD);

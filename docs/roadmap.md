@@ -188,13 +188,13 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 
 **現状**: GcAllocator (Mark-Sweep at expression boundary)
 
-| 改善項目                      | 内容                                                   |
-|-------------------------------|--------------------------------------------------------|
-| MemoryPool 導入               | Value の頻繁な alloc/free を高速化                     |
-|                               | `std.heap.MemoryPool(Value)` — slab/pool 方式          |
-|                               | destroy 時にメモリを free list に返却 (ヒープ確保不要) |
-| FixedBufferAllocator 活用     | VM スタックフレーム用に検討                            |
-| アロケーション計測            | GC 呼び出し頻度・回収量をログ出力する仕組み            |
+| 改善項目                      | 内容                                                   | 状態      |
+|-------------------------------|--------------------------------------------------------|-----------|
+| アロケーション計測            | GC 呼び出し頻度・回収量をログ出力する仕組み            | ✅ G1a    |
+| MemoryPool 導入               | Value の頻繁な alloc/free を高速化                     | 未着手    |
+|                               | `std.heap.MemoryPool(Value)` — slab/pool 方式          |           |
+|                               | destroy 時にメモリを free list に返却 (ヒープ確保不要) |           |
+| FixedBufferAllocator 活用     | VM スタックフレーム用に検討                            | 未着手    |
 
 ### G2: 世代別 GC
 

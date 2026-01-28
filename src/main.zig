@@ -61,6 +61,7 @@ pub fn main() !void {
     defer expressions.deinit(gpa_allocator);
     var backend: Backend = .tree_walk; // デフォルト
     var compare_mode = false;
+    var gc_stats = false;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -108,6 +109,8 @@ pub fn main() !void {
             }
         } else if (std.mem.eql(u8, args[i], "--compare")) {
             compare_mode = true;
+        } else if (std.mem.eql(u8, args[i], "--gc-stats")) {
+            gc_stats = true;
         } else if (std.mem.eql(u8, args[i], "-h") or std.mem.eql(u8, args[i], "--help")) {
             try printHelp(stdout);
             stdout.flush() catch {};
@@ -125,14 +128,18 @@ pub fn main() !void {
 
     if (expressions.items.len == 0) {
         // REPL モード
-        return runRepl(gpa_allocator, backend, compare_mode);
+        return runRepl(gpa_allocator, backend, compare_mode, gc_stats);
     }
 
     // 寿命別アロケータを初期化
     // persistent: Env, Var, def された値（GPA でリーク検出可能）
     // scratch: Reader/Analyzer の中間構造（式ごとに Arena でリセット）
     var allocs = Allocators.init(gpa_allocator);
-    defer allocs.deinit();
+    defer {
+        if (gc_stats) allocs.printGcSummary();
+        allocs.deinit();
+    }
+    allocs.gc_stats_enabled = gc_stats;
 
     // 環境を初期化（GPA を直接使用: Env/Namespace/Var/HashMap はインフラ）
     // GcAllocator 経由にすると GC sweep がインフラの HashMap backing を解放してしまう
@@ -428,7 +435,7 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
 }
 
 /// REPL: 対話型シェル
-fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: bool) !void {
+fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: bool, gc_stats: bool) !void {
     // stdout/stderr
     const stderr_file = std.fs.File.stderr();
     var stdout_buf: [4096]u8 = undefined;
@@ -440,7 +447,11 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
 
     // 環境を初期化
     var allocs = Allocators.init(gpa_allocator);
-    defer allocs.deinit();
+    defer {
+        if (gc_stats) allocs.printGcSummary();
+        allocs.deinit();
+    }
+    allocs.gc_stats_enabled = gc_stats;
 
     var env = Env.init(gpa_allocator);
     defer env.deinit();
@@ -639,6 +650,7 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\  -cp <paths>            Add classpath roots (colon-separated)
         \\  --backend=<backend>    Select backend: tree_walk (default), vm
         \\  --compare              Run both backends and compare results
+        \\  --gc-stats             Show GC statistics on stderr
         \\  -h, --help             Show this help message
         \\  --version              Show version information
         \\

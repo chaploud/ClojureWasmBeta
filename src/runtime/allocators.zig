@@ -47,6 +47,9 @@ pub const Allocators = struct {
     /// Reader の Form、Analyzer の Node、評価中のバインディング
     scratch_arena: std.heap.ArenaAllocator,
 
+    /// GC 統計ログを有効にするか (--gc-stats)
+    gc_stats_enabled: bool,
+
     /// 初期化
     /// parent は GcAllocator の backing として使用され、scratch の親にもなる
     pub fn init(parent: std.mem.Allocator) Allocators {
@@ -58,6 +61,7 @@ pub const Allocators = struct {
                 .persistent_allocator = parent,
                 .parent_allocator = parent,
                 .scratch_arena = std.heap.ArenaAllocator.init(parent),
+                .gc_stats_enabled = false,
             };
         };
         gc_alloc.* = GcAllocator.init(parent);
@@ -66,6 +70,7 @@ pub const Allocators = struct {
             .persistent_allocator = gc_alloc.allocator(),
             .parent_allocator = parent,
             .scratch_arena = std.heap.ArenaAllocator.init(parent),
+            .gc_stats_enabled = false,
         };
     }
 
@@ -108,7 +113,10 @@ pub const Allocators = struct {
         if (self.gc) |gc_alloc| {
             if (gc_alloc.shouldCollect()) {
                 tracing.markRoots(gc_alloc, env, globals);
-                gc_alloc.sweep();
+                const result = gc_alloc.sweep();
+                if (self.gc_stats_enabled) {
+                    logSweepResult(result, gc_alloc.total_collections);
+                }
             }
         }
     }
@@ -117,8 +125,46 @@ pub const Allocators = struct {
     pub fn forceGC(self: *Allocators, env: *Env, globals: GcGlobals) void {
         if (self.gc) |gc_alloc| {
             tracing.markRoots(gc_alloc, env, globals);
-            gc_alloc.sweep();
+            const result = gc_alloc.sweep();
+            if (self.gc_stats_enabled) {
+                logSweepResult(result, gc_alloc.total_collections);
+            }
         }
+    }
+
+    /// GC 統計サマリを stderr に出力
+    pub fn printGcSummary(self: *const Allocators) void {
+        if (self.gc) |gc_alloc| {
+            const s = gc_alloc.stats();
+            const stderr_file = std.fs.File.stderr();
+            var buf: [4096]u8 = undefined;
+            var w = stderr_file.writer(&buf);
+            const writer = &w.interface;
+            writer.writeAll("\n[GC Summary]\n") catch {};
+            writer.print("  total collections : {d}\n", .{s.total_collections}) catch {};
+            writer.print("  total freed       : {d} bytes, {d} objects\n", .{ s.total_freed_bytes, s.total_freed_count }) catch {};
+            writer.print("  total allocated   : {d} alloc calls\n", .{s.total_alloc_count}) catch {};
+            writer.print("  final heap        : {d} bytes, {d} objects\n", .{ s.bytes_allocated, s.num_allocations }) catch {};
+            writer.print("  final threshold   : {d} bytes\n", .{s.gc_threshold}) catch {};
+            writer.flush() catch {};
+        }
+    }
+
+    /// sweep 結果を stderr にログ出力
+    fn logSweepResult(result: GcAllocator.SweepResult, collection_num: u64) void {
+        const stderr_file = std.fs.File.stderr();
+        var buf: [512]u8 = undefined;
+        var w = stderr_file.writer(&buf);
+        const writer = &w.interface;
+        writer.print("[GC #{d}] freed {d} bytes, {d} objects | heap {d} -> {d} bytes | threshold {d} bytes\n", .{
+            collection_num,
+            result.freed_bytes,
+            result.freed_count,
+            result.before_bytes,
+            result.after_bytes,
+            result.new_threshold,
+        }) catch {};
+        writer.flush() catch {};
     }
 };
 
