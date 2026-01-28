@@ -28,6 +28,7 @@ const engine_mod = clj.engine;
 const var_mod = clj.var_mod;
 const LineEditor = @import("repl/line_editor.zig").LineEditor;
 const base_error = clj.err;
+const nrepl_server = clj.nrepl_server;
 
 /// CLI エラー
 const CliError = error{
@@ -63,6 +64,8 @@ pub fn main() !void {
     var compare_mode = false;
     var gc_stats = false;
     var dump_bytecode = false;
+    var nrepl_mode = false;
+    var nrepl_port: u16 = 0; // 0 = OS 割り当て
 
     var script_file: ?[]const u8 = null;
 
@@ -116,6 +119,15 @@ pub fn main() !void {
             gc_stats = true;
         } else if (std.mem.eql(u8, args[i], "--dump-bytecode")) {
             dump_bytecode = true;
+        } else if (std.mem.eql(u8, args[i], "--nrepl-server")) {
+            nrepl_mode = true;
+        } else if (std.mem.startsWith(u8, args[i], "--port=")) {
+            const port_str = args[i]["--port=".len..];
+            nrepl_port = std.fmt.parseInt(u16, port_str, 10) catch {
+                stderr.print("Error: Invalid port: {s}\n", .{port_str}) catch {};
+                stderr.flush() catch {};
+                std.process.exit(1);
+            };
         } else if (std.mem.eql(u8, args[i], "-h") or std.mem.eql(u8, args[i], "--help")) {
             try printHelp(stdout);
             stdout.flush() catch {};
@@ -132,6 +144,11 @@ pub fn main() !void {
             stderr.flush() catch {};
             std.process.exit(1);
         }
+    }
+
+    if (nrepl_mode) {
+        // nREPL サーバーモード
+        return nrepl_server.startServer(gpa_allocator, nrepl_port, backend);
     }
 
     if (expressions.items.len == 0 and script_file == null) {
@@ -724,6 +741,8 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\  --compare              Run both backends and compare results
         \\  --gc-stats             Show GC statistics on stderr
         \\  --dump-bytecode        Dump compiled bytecode (VM backend)
+        \\  --nrepl-server         Start nREPL server
+        \\  --port=<port>          nREPL server port (default: auto-assign)
         \\  -h, --help             Show this help message
         \\  --version              Show version information
         \\
@@ -735,6 +754,7 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\  clj-wasm --backend=vm -e "(+ 1 2)"
         \\  clj-wasm --compare -e "(if true 1 2)"
         \\  clj-wasm --dump-bytecode -e "(defn f [x] (+ x 1))"
+        \\  clj-wasm --nrepl-server --port=7888
         \\
     );
 }

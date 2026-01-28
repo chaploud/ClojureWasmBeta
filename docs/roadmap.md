@@ -331,6 +331,18 @@ doc/dir はマクロ展開、find-doc/apropos は builtin 関数。
 | U5a: ファイル直接実行    | ✅ 完了      |
 | U5b: バイトコードダンプ  | ✅ 完了      |
 
+### U6: nREPL サーバー — ✅ 完了
+
+Zig ネイティブ nREPL サーバー実装。CIDER/Calva/Conjure 互換。
+
+- `src/nrepl/bencode.zig`: bencode エンコード/デコード (~190 LOC, 8 ユニットテスト)
+- `src/nrepl/server.zig`: TCP サーバー + セッション管理 + ops (~550 LOC)
+- CLI: `--nrepl-server` / `--port=N` フラグ
+- サポート ops: clone, close, describe, eval, load-file, completions,
+  info/lookup, eldoc, ls-sessions, ns-list
+- eval: マルチフォーム対応、stdout キャプチャ、エラー報告、mutex 直列化
+- 利用ガイド: `docs/usage/nrepl.md`
+
 ---
 
 ## Phase S: セルフホスト化

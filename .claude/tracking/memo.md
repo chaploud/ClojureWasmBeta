@@ -557,6 +557,21 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
   (5 instructions, 3 constants)
   ```
 
+### U6: nREPL サーバー — 完了
+
+Zig ネイティブ nREPL サーバー。CIDER/Calva/Conjure 互換の最小 ops セット。
+
+- **`src/nrepl/bencode.zig`** (~190 LOC): bencode エンコード/デコード、8 ユニットテスト
+- **`src/nrepl/server.zig`** (~550 LOC): TCP サーバー + セッション + 11 ops
+  - clone/close/describe/eval/load-file/completions/info/lookup/eldoc/ls-sessions/ns-list
+  - eval: マルチフォーム、stdout キャプチャ、エラー報告 (err/ex/eval-error)
+  - mutex で eval 直列化 (スレッド安全)
+  - `.nrepl-port` ファイル書き出し/削除
+- **`src/main.zig`**: `--nrepl-server` / `--port=N` フラグ追加
+- **`src/root.zig`**: nrepl_bencode / nrepl_server エクスポート追加
+- **`docs/usage/nrepl.md`**: CIDER/Calva/Conjure 接続手順
+- 全テスト 1036 pass 維持
+
 ### 推奨次回タスク
 
 1. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)

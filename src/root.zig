@@ -97,6 +97,10 @@ pub const compiler = @import("compiler/emit.zig");
 // === 標準ライブラリ ===
 pub const core = @import("lib/core.zig");
 
+// === nREPL ===
+pub const nrepl_bencode = @import("nrepl/bencode.zig");
+pub const nrepl_server = @import("nrepl/server.zig");
+
 // === テスト ===
 pub const test_e2e = @import("test_e2e.zig");
 
