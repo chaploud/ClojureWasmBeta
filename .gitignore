@@ -21,3 +21,9 @@ test/bench/.baseline/
 
 # Claude Code
 .claude/settings.local.json
+
+# Benchmark build artifacts
+bench/**/bench_c
+bench/**/bench_cpp
+bench/**/bench_zig
+bench/**/*.class
