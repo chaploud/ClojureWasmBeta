@@ -11,11 +11,41 @@
 全機能実装フェーズ (Phase 1 〜 LAST) が完了。
 次のロードマップは `docs/roadmap.md` を参照。
 
-### 推奨開始タスク
+### R1: core.zig ファイル分割 — 完了
 
-1. **R1: core.zig ファイル分割** — 開発体験の最大改善
-2. **P1: ベンチマーク基盤整備** — 全最適化の前提
-3. **U1: REPL readline/履歴** — 独立して着手可能
+11,095行の `src/lib/core.zig` を 18 ドメイン別サブモジュール + facade に分割。
+全テスト (760 pass) 回帰なし。
+
+| ファイル            | 行数  | 内容                               |
+|---------------------|-------|------------------------------------|
+| core.zig (facade)   | 181   | re-export + threadlocal アクセサ   |
+| core/defs.zig       | 104   | 型定義, threadlocal, モジュール状態 |
+| core/helpers.zig    | 532   | 共通ユーティリティ                 |
+| core/lazy.zig       | 544   | LazySeq force/transform            |
+| core/arithmetic.zig | 1039  | 算術+比較+bit-ops                  |
+| core/predicates.zig | 892   | 型述語                             |
+| core/collections.zig| 1941  | コレクション操作                   |
+| core/sequences.zig  | 1328  | シーケンス HOF                     |
+| core/strings.zig    | 968   | 文字列+regex                       |
+| core/io.zig         | 230   | I/O                                |
+| core/meta.zig       | 140   | メタデータ                         |
+| core/concurrency.zig| 532   | Atom/Delay/Promise/Volatile        |
+| core/interop.zig    | 652   | 階層+型操作                        |
+| core/transducers.zig| 576   | Transient/Transduce                |
+| core/namespaces.zig | 939   | NS操作+require/use                 |
+| core/eval.zig       | 357   | eval/read-string/sorted            |
+| core/misc.zig       | 390   | gensym/UUID/tap/ex-info            |
+| core/wasm.zig       | 191   | wasm/* 関数                        |
+| core/registry.zig   | 243   | comptime テーブル集約+登録         |
+
+注意: Zig 0.15.2 では `pub usingnamespace` が廃止されたため、
+threadlocal 変数は inline アクセサ関数 (get/set) で提供。
+外部 3 ファイル (evaluator.zig, vm.zig, host_functions.zig) に軽微な変更あり。
+
+### 推奨次回タスク
+
+1. **P1: ベンチマーク基盤整備** — 全最適化の前提
+2. **U1: REPL readline/履歴** — 独立して着手可能
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 

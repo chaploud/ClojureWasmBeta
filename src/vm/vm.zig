@@ -149,9 +149,9 @@ pub const VM = struct {
     fn execute(self: *VM, code: []const Instruction, constants: []const Value) VMError!Value {
         // VM 用 LazySeq コールバックを設定
         current_vm = self;
-        core.force_lazy_seq_fn = &vmForce;
-        core.call_fn = &vmCall;
-        core.current_env = self.env;
+        core.setForceCallback(&vmForce);
+        core.setCallFn(&vmCall);
+        core.setCurrentEnv(self.env);
 
         // この execute が開始した時点の frame_count を記録
         // ret でこのレベルに戻ったら、この execute から return する

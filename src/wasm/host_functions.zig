@@ -46,7 +46,7 @@ fn allocContext(ctx: HostContext) !usize {
 fn hostTrampoline(vm: *zware.VirtualMachine, context_id: usize) zware.WasmError!void {
     const ctx = host_contexts[context_id] orelse return zware.WasmError.Trap;
 
-    const call = core.call_fn orelse return zware.WasmError.Trap;
+    const call = core.getCallFn() orelse return zware.WasmError.Trap;
 
     // VM スタックから引数を pop（逆順で取り出されるので反転が必要）
     var args_buf: [16]Value = undefined;

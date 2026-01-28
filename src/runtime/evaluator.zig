@@ -35,9 +35,9 @@ pub const EvalError = error{
 /// Node を評価
 pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
     // TreeWalk 用 LazySeq コールバックを設定
-    core.force_lazy_seq_fn = &treeWalkForce;
-    core.call_fn = &treeWalkCall;
-    core.current_env = ctx.env;
+    core.setForceCallback(&treeWalkForce);
+    core.setCallFn(&treeWalkCall);
+    core.setCurrentEnv(ctx.env);
     current_env = ctx.env;
 
     return switch (node.*) {
@@ -278,9 +278,9 @@ fn findIsaMethod(allocator: std.mem.Allocator, mf: *const value_mod.MultiFn, dis
 
 fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Value {
     // LazySeq コールバックを設定
-    core.force_lazy_seq_fn = &treeWalkForce;
-    core.call_fn = &treeWalkCall;
-    core.current_env = ctx.env;
+    core.setForceCallback(&treeWalkForce);
+    core.setCallFn(&treeWalkCall);
+    core.setCurrentEnv(ctx.env);
     current_env = ctx.env;
 
     return switch (fn_val) {
