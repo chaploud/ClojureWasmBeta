@@ -142,11 +142,16 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 - 結果: 全テスト維持、速度効果なし
 - 分析: per-instruction overhead が支配的で execute 再帰のコストは微小
 
+**P2c: PersistentMap ハッシュインデックス** (collections.zig, value.zig)
+- PersistentMap に hash_values/hash_index 追加 (entries は挿入順保持)
+- Value.valueHash() で全型対応ハッシュ (eql 互換不変条件を維持)
+- get: バイナリサーチ O(log n)、未構築時はリニアスキャンにフォールバック
+- 結果: map lookup で ~7% 改善 (per-call overhead が支配的なため限定的)
+
 **残る高インパクト候補**:
 
 | 最適化                    | 期待効果 | 難易度 | 備考                      |
 |---------------------------|----------|--------|---------------------------|
-| PersistentMap 改善         | 高       | 高     | O(n) → O(log n) が有効   |
 | NaN boxing                | 高       | 高     | Value サイズ縮小          |
 | 定数畳み込み              | 中       | 中     | Compiler 側               |
 | inline caching            | 高       | 高     | 関数呼び出し高速化        |

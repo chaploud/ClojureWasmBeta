@@ -144,6 +144,103 @@ pub const Value = union(enum) {
         };
     }
 
+    /// ハッシュ値を計算 (PersistentMap/PersistentSet の高速ルックアップ用)
+    /// Clojure の hash 互換ではなく、内部利用向けの高速ハッシュ。
+    /// 不変条件: a.eql(b) → a.valueHash() == b.valueHash()
+    pub fn valueHash(self: Value) u32 {
+        var h = std.hash.Wyhash.init(0);
+        switch (self) {
+            .nil => h.update("nil"),
+            .bool_val => |b| h.update(if (b) "true" else "false"),
+            .int => |n| {
+                // int/float 互換: 整数値の float は同じハッシュを返す
+                const bytes: [8]u8 = @bitCast(n);
+                h.update(&bytes);
+            },
+            .float => |f| {
+                // 整数と等しい float は int と同じハッシュを返す
+                const int_val: i64 = @intFromFloat(f);
+                if (@as(f64, @floatFromInt(int_val)) == f) {
+                    const bytes: [8]u8 = @bitCast(int_val);
+                    h.update(&bytes);
+                } else {
+                    h.update("f");
+                    const bytes: [8]u8 = @bitCast(f);
+                    h.update(&bytes);
+                }
+            },
+            .char_val => |c| {
+                h.update("c");
+                const val: u32 = @intCast(c);
+                const bytes: [4]u8 = @bitCast(val);
+                h.update(&bytes);
+            },
+            .string => |s| {
+                h.update("s");
+                h.update(s.data);
+            },
+            .keyword => |kw| {
+                h.update("k");
+                if (kw.namespace) |ns| {
+                    h.update(ns);
+                    h.update("/");
+                }
+                h.update(kw.name);
+            },
+            .symbol => |sym| {
+                h.update("y");
+                if (sym.namespace) |ns| {
+                    h.update(ns);
+                    h.update("/");
+                }
+                h.update(sym.name);
+            },
+            // 順序付きコレクション: 要素のハッシュを順に混合
+            // list と vector は eql で等価なので同じハッシュを返す
+            .list, .vector => {
+                h.update("seq");
+                const items = sequentialItems(self);
+                for (items) |item| {
+                    const item_hash = item.valueHash();
+                    const item_bytes: [4]u8 = @bitCast(item_hash);
+                    h.update(&item_bytes);
+                }
+            },
+            // マップ: 各ペアのハッシュを XOR で結合 (順序非依存)
+            .map => |m| {
+                h.update("m");
+                var map_hash: u32 = 0;
+                var i: usize = 0;
+                while (i < m.entries.len) : (i += 2) {
+                    map_hash ^= m.entries[i].valueHash() *% 31 +% m.entries[i + 1].valueHash();
+                }
+                const map_bytes: [4]u8 = @bitCast(map_hash);
+                h.update(&map_bytes);
+            },
+            // セット: 各要素のハッシュを XOR で結合 (順序非依存)
+            .set => |s| {
+                h.update("S");
+                var set_hash: u32 = 0;
+                for (s.items) |item| {
+                    set_hash ^= item.valueHash();
+                }
+                const set_bytes: [4]u8 = @bitCast(set_hash);
+                h.update(&set_bytes);
+            },
+            else => {
+                // 関数・参照等はポインタベースのハッシュ
+                h.update("p");
+                const ptr_int: usize = switch (self) {
+                    .fn_val => |p| @intFromPtr(p),
+                    else => 0,
+                };
+                const bytes: [8]u8 = @bitCast(ptr_int);
+                h.update(&bytes);
+            },
+        }
+        return @truncate(h.final());
+    }
+
     /// 等価性判定
     pub fn eql(self: Value, other: Value) bool {
         const self_tag = std.meta.activeTag(self);
@@ -520,7 +617,15 @@ pub const Value = union(enum) {
             .map => |m| blk: {
                 const new_m = try allocator.create(PersistentMap);
                 const entries = try deepCloneValues(allocator, m.entries);
-                new_m.* = .{ .entries = entries };
+                const hv = if (m.hash_values.len > 0)
+                    try allocator.dupe(u32, m.hash_values)
+                else
+                    &[_]u32{};
+                const hi = if (m.hash_index.len > 0)
+                    try allocator.dupe(u32, m.hash_index)
+                else
+                    &[_]u32{};
+                new_m.* = .{ .entries = entries, .hash_values = hv, .hash_index = hi };
                 break :blk .{ .map = new_m };
             },
             .set => |s| blk: {

@@ -108,6 +108,24 @@ threadlocal 変数は inline アクセサ関数 (get/set) で提供。
 | sum-to(10000)          | 134 ms      | 133 ms      |
 | get-from-map(200x100)  | 815 ms      | 824 ms      |
 
+### P2c: PersistentMap ハッシュインデックス — 完了
+
+O(n) リニアスキャン → O(log n) バイナリサーチ (ハッシュインデックス付き)。
+
+- Value.valueHash(): 全型対応のハッシュ関数 (Wyhash ベース)
+  - int/float 互換 (整数の float は同じハッシュ)
+  - list/vector 互換 (sequential equality に合わせたハッシュ)
+  - map/set は XOR 結合 (順序非依存)
+- PersistentMap に hash_values/hash_index フィールド追加
+  - entries は挿入順を保持 (イテレーション互換性)
+  - hash_values (ソート済み) + hash_index で O(log n) ルックアップ
+  - ハッシュ未構築の場合はリニアスキャンにフォールバック
+  - assoc/dissoc でインデックスを維持
+  - fromUnsortedEntries / buildIndex でインデックス構築
+- hash-map 関数で fromUnsortedEntries を使用
+- 全テスト維持 (760/1 compat, 270/274 zig)
+- ベンチマーク: map lookup で ~7% 改善
+
 ### 推奨次回タスク
 
 1. **R3: Zig イディオム再点検** — MultiArrayList, MemoryPool 等

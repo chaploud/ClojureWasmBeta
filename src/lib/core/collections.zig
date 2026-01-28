@@ -458,9 +458,8 @@ pub fn hashMap(allocator: std.mem.Allocator, args: []const Value) anyerror!Value
         return Value{ .map = m };
     }
 
-    const entries = try allocator.dupe(Value, args);
     const m = try allocator.create(value_mod.PersistentMap);
-    m.* = .{ .entries = entries };
+    m.* = try value_mod.PersistentMap.fromUnsortedEntries(allocator, args);
     return Value{ .map = m };
 }
 

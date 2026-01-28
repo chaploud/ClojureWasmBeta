@@ -34,7 +34,7 @@ pub fn withMeta(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
         },
         .map => |m| blk: {
             const new_map = try allocator.create(value_mod.PersistentMap);
-            new_map.* = .{ .entries = m.entries, .meta = meta_ptr };
+            new_map.* = .{ .entries = m.entries, .hash_values = m.hash_values, .hash_index = m.hash_index, .meta = meta_ptr };
             break :blk Value{ .map = new_map };
         },
         .set => |s| blk: {
