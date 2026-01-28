@@ -25,6 +25,7 @@
 
 ### 直近の完了
 
+- **U4**: 既知バグ修正 — `^:const` インライン化, `with-local-vars` 実装, `defmacro in defn` エラーメッセージ改善
 - **R7**: Zig イディオム改善 — WasmModule anyopaque → zware 具体型, valueHash switch 改善
 - **D1-D3**: ドキュメント — presentation.md, getting_started.md, developer_guide.md
 - **Bench**: 7言語×5ベンチマーク比較基盤 (`bash bench/run_bench.sh --quick --record`)
@@ -46,7 +47,7 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 
 | #   | Phase | タスク                | 状態     | 備考                                      |
 |-----|-------|----------------------|----------|-------------------------------------------|
-| 1   | U4    | 既知バグ修正         | 未着手   | ^:const, with-local-vars, defmacro in defn |
+| 1   | U4    | 既知バグ修正         | 完了     | ^:const, with-local-vars, defmacro in defn |
 | 2   | S1    | clojure.pprint       | 未着手   | 実用上重要な標準 NS                        |
 | 3   | P3    | NaN boxing           | 未着手   | Value サイズ縮小、高速化の要               |
 | 4   | G2    | 世代別 GC            | 未着手   | Young bump allocator + minor GC           |
@@ -73,7 +74,5 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 
 ## 既知の制限
 
-- ^:const 未対応
-- with-local-vars 未実装
-- defmacro inside defn → Undefined (トップレベルで定義が必要)
+- defmacro inside defn → エラー (トップレベルで定義が必要、明確なエラーメッセージあり)
 - フル medley の `compare-and-set!`/`deref-swap!`/`deref-reset!` 未実装

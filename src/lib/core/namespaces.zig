@@ -469,6 +469,19 @@ pub fn popThreadBindingsFn(_: std.mem.Allocator, _: []const Value) anyerror!Valu
     return value_mod.nil;
 }
 
+/// __create-local-var — with-local-vars 用に名前空間に登録しない動的 Var を作成
+pub fn createLocalVarFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = args;
+    // 新しい Var を作成（名前空間には登録しない）
+    const v = try allocator.create(var_mod.Var);
+    v.* = .{
+        .sym = value_mod.Symbol.init("local-var"),
+        .ns_name = "local",
+        .dynamic = true, // 動的バインディング可能
+    };
+    return Value{ .var_val = @ptrCast(v) };
+}
+
 /// thread-bound? — 全 Var がバインディングフレーム内か (多引数対応)
 pub fn threadBoundPred(_: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len < 1) return error.ArityError;
@@ -922,6 +935,7 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "push-thread-bindings", .func = pushThreadBindingsFn },
     .{ .name = "pop-thread-bindings", .func = popThreadBindingsFn },
     .{ .name = "thread-bound?", .func = threadBoundPred },
+    .{ .name = "__create-local-var", .func = createLocalVarFn },
     .{ .name = "with-redefs-fn", .func = withRedefsFnFn },
     .{ .name = "requiring-resolve", .func = requiringResolveFn },
     // Phase 20: NS

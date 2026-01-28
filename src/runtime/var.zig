@@ -34,6 +34,9 @@ pub const Var = struct {
     /// ^:private フラグ
     private: bool = false,
 
+    /// ^:const フラグ（コンパイル時インライン化）
+    is_const: bool = false,
+
     /// メタデータ（将来: *PersistentMap）
     meta: ?*const Value = null,
 

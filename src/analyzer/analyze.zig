@@ -188,6 +188,10 @@ pub const Analyzer = struct {
             RuntimeSymbol.init(sym.name);
 
         if (self.env.resolve(runtime_sym)) |v| {
+            // ^:const Var はコンパイル時に値をインライン化
+            if (v.is_const and !v.root.isNil()) {
+                return self.makeConstant(v.root);
+            }
             return self.makeVarRef(v);
         }
 
@@ -1160,12 +1164,13 @@ pub const Analyzer = struct {
         var sym_name: []const u8 = undefined;
         var is_dynamic = false;
         var is_private = false;
+        var is_const = false;
 
         // items[1] がシンボルか (with-meta sym meta) かを判定
         if (items[1] == .symbol) {
             sym_name = items[1].symbol.name;
         } else if (items[1] == .list) {
-            // (with-meta sym {:dynamic true, :private true}) パターンを検出
+            // (with-meta sym {:dynamic true, :private true, :const true}) パターンを検出
             const wm_items = items[1].list;
             if (wm_items.len == 3 and wm_items[0] == .symbol and
                 std.mem.eql(u8, wm_items[0].symbol.name, "with-meta"))
@@ -1174,7 +1179,7 @@ pub const Analyzer = struct {
                     return self.analysisError(.invalid_binding, "def name must be a symbol");
                 }
                 sym_name = wm_items[1].symbol.name;
-                // メタデータマップから :dynamic, :private を検索
+                // メタデータマップから :dynamic, :private, :const を検索
                 if (wm_items[2] == .map) {
                     const meta_entries = wm_items[2].map;
                     var mi: usize = 0;
@@ -1185,6 +1190,8 @@ pub const Analyzer = struct {
                                 is_dynamic = true;
                             } else if (std.mem.eql(u8, kw_name, "private")) {
                                 is_private = true;
+                            } else if (std.mem.eql(u8, kw_name, "const")) {
+                                is_const = true;
                             }
                         }
                     }
@@ -1205,6 +1212,9 @@ pub const Analyzer = struct {
             if (is_private) {
                 v.private = true;
             }
+            if (is_const) {
+                v.is_const = true;
+            }
         }
 
         const init_node = if (items.len == 3)
@@ -1212,12 +1222,24 @@ pub const Analyzer = struct {
         else
             null;
 
+        // ^:const で初期化式が定数の場合、解析時に値を設定（インライン化を有効化）
+        if (is_const and init_node != null) {
+            if (init_node.?.* == .constant) {
+                if (self.env.getCurrentNs()) |ns| {
+                    if (ns.resolve(sym_name)) |v| {
+                        v.root = init_node.?.constant;
+                    }
+                }
+            }
+        }
+
         const def_data = self.allocator.create(node_mod.DefNode) catch return error.OutOfMemory;
         def_data.* = .{
             .sym_name = sym_name,
             .init = init_node,
             .is_dynamic = is_dynamic,
             .is_private = is_private,
+            .is_const = is_const,
             .doc = self.pending_doc,
             .arglists = self.pending_arglists,
             .stack = self.currentSourceInfo(),
@@ -2475,6 +2497,12 @@ pub const Analyzer = struct {
     fn analyzeDefmacro(self: *Analyzer, items: []const Form) err.Error!*Node {
         // (defmacro name [params] body...)
         // 内部的には (def name (fn [params] body...)) を生成し、マクロフラグを設定
+
+        // defmacro はトップレベルでのみ有効（ローカルスコープ内では無効）
+        if (self.locals.items.len > 0) {
+            return self.analysisError(.invalid_binding, "defmacro must be at top level, not inside fn/let/loop");
+        }
+
         if (items.len < 3) {
             return self.analysisError(.invalid_arity, "defmacro requires at least name and params");
         }
@@ -4488,9 +4516,81 @@ pub const Analyzer = struct {
         return Form{ .list = do_forms };
     }
 
-    /// (with-local-vars [name val ...] & body) → (let [name val ...] & body) スタブ
+    /// (with-local-vars [x 1 y 2] body...) →
+    /// (let [x (__create-local-var) y (__create-local-var)]
+    ///   (push-thread-bindings {x 1 y 2})
+    ///   (try body... (finally (pop-thread-bindings))))
     fn expandWithLocalVars(self: *Analyzer, items: []const Form) err.Error!Form {
-        return self.expandBinding(items);
+        if (items.len < 3) {
+            return self.analysisError(.invalid_arity, "with-local-vars requires bindings vector and body");
+        }
+        const bindings = switch (items[1]) {
+            .vector => |v| v,
+            else => return self.analysisError(.invalid_binding, "with-local-vars requires a vector of bindings"),
+        };
+        if (bindings.len % 2 != 0) {
+            return self.analysisError(.invalid_binding, "with-local-vars requires an even number of forms");
+        }
+        const allocator = self.allocator;
+
+        const n_pairs = bindings.len / 2;
+
+        // let バインディング: [x (__create-local-var) y (__create-local-var) ...]
+        const let_bindings = allocator.alloc(Form, bindings.len) catch return error.OutOfMemory;
+        var i: usize = 0;
+        while (i < n_pairs) : (i += 1) {
+            let_bindings[i * 2] = bindings[i * 2]; // シンボル
+            // (__create-local-var)
+            const create_call = allocator.alloc(Form, 1) catch return error.OutOfMemory;
+            create_call[0] = Form{ .symbol = form_mod.Symbol.init("__create-local-var") };
+            let_bindings[i * 2 + 1] = Form{ .list = create_call };
+        }
+
+        // push-thread-bindings のマップ: {x 1 y 2}
+        // bindings はそのまま使える（[x 1 y 2] → {x 1 y 2})
+        const map_form = Form{ .map = bindings };
+
+        // (push-thread-bindings {x 1 y 2})
+        const push_call = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        push_call[0] = Form{ .symbol = form_mod.Symbol.init("push-thread-bindings") };
+        push_call[1] = map_form;
+
+        // (pop-thread-bindings)
+        const pop_call = allocator.alloc(Form, 1) catch return error.OutOfMemory;
+        pop_call[0] = Form{ .symbol = form_mod.Symbol.init("pop-thread-bindings") };
+
+        // body を do で包む
+        const body_forms = items[2..];
+        const body = if (body_forms.len == 1)
+            body_forms[0]
+        else blk: {
+            const do_forms = allocator.alloc(Form, body_forms.len + 1) catch return error.OutOfMemory;
+            do_forms[0] = Form{ .symbol = form_mod.Symbol.init("do") };
+            for (body_forms, 0..) |bf, j| {
+                do_forms[j + 1] = bf;
+            }
+            break :blk Form{ .list = do_forms };
+        };
+
+        // (finally (pop-thread-bindings))
+        const finally_form = allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        finally_form[0] = Form{ .symbol = form_mod.Symbol.init("finally") };
+        finally_form[1] = Form{ .list = pop_call };
+
+        // (try body (finally ...))
+        const try_form = allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        try_form[0] = Form{ .symbol = form_mod.Symbol.init("try") };
+        try_form[1] = body;
+        try_form[2] = Form{ .list = finally_form };
+
+        // (let [bindings] (push...) (try ...))
+        const let_form = allocator.alloc(Form, 4) catch return error.OutOfMemory;
+        let_form[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        let_form[1] = Form{ .vector = let_bindings };
+        let_form[2] = Form{ .list = push_call };
+        let_form[3] = Form{ .list = try_form };
+
+        return Form{ .list = let_form };
     }
 
     /// (with-redefs [name val ...] & body) →
