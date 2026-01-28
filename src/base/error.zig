@@ -246,6 +246,17 @@ pub fn evalErrorFmt(kind: Kind, comptime fmt: []const u8, args: anytype) Error {
     });
 }
 
+/// フォーマット付き Parse エラー（ソース位置付き）
+pub fn parseErrorFmtLoc(kind: Kind, location: SourceLocation, comptime fmt: []const u8, args: anytype) Error {
+    const msg = std.fmt.bufPrint(&msg_buf, fmt, args) catch "error message too long";
+    return setError(.{
+        .kind = kind,
+        .phase = .parse,
+        .message = msg,
+        .location = location,
+    });
+}
+
 /// ArityError メッセージを設定（Zig error は呼び出し元で返す）
 pub fn setArityError(got: usize, name: []const u8) void {
     const msg = std.fmt.bufPrint(&msg_buf, "Wrong number of args ({d}) passed to: {s}", .{ got, name }) catch "arity error";
@@ -273,6 +284,16 @@ pub fn setDivisionByZero() void {
         .phase = .eval,
         .message = "Divide by zero",
     };
+}
+
+/// last_error にソース位置を追加設定（既にメッセージ設定済みの場合に使用）
+/// Node.stack の情報を error.Info.location に伝播する
+pub fn setErrorLocation(location: SourceLocation) void {
+    if (last_error) |*info| {
+        if (info.location.line == 0) {
+            info.location = location;
+        }
+    }
 }
 
 // === テスト ===

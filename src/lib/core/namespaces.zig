@@ -378,7 +378,7 @@ pub fn loadFileFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Va
     const file = std.fs.cwd().openFile(path, .{}) catch return value_mod.nil;
     defer file.close();
     const content = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return value_mod.nil;
-    return helpers.loadFileContent(allocator, content);
+    return helpers.loadFileContentWithPath(allocator, content, path);
 }
 
 // ============================================================
@@ -714,7 +714,7 @@ fn tryLoadFile(allocator: std.mem.Allocator, path: []const u8) bool {
     // 現在の NS を退避（ファイル内で ns が変更される可能性がある）
     const env = defs.current_env orelse return false;
     const saved_ns = env.getCurrentNs();
-    _ = helpers.loadFileContent(allocator, content) catch |e| {
+    _ = helpers.loadFileContentWithPath(allocator, content, path) catch |e| {
         // エラー時は NS を復元
         if (saved_ns) |ns| env.setCurrentNs(ns);
         // デバッグ: エラーを stderr に出力

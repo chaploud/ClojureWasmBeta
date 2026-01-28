@@ -43,7 +43,10 @@ pub fn run(node: *const Node, ctx: *Context) EvalError!Value {
     return switch (node.*) {
         .constant => |val| val,
         .var_ref => |ref| ref.var_ref.deref(),
-        .local_ref => |ref| ctx.getLocal(ref.idx) orelse return error.UndefinedSymbol,
+        .local_ref => |ref| ctx.getLocal(ref.idx) orelse {
+            setSourceLocationFromNode(ref.stack);
+            return error.UndefinedSymbol;
+        },
         .if_node => |n| runIf(n, ctx),
         .do_node => |n| runDo(n, ctx),
         .let_node => |n| runLet(n, ctx),
@@ -248,8 +251,22 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
         args[i] = try run(arg, ctx);
     }
 
-    // 関数を呼び出し
-    return callWithArgs(fn_val, args, ctx);
+    // 関数を呼び出し（エラー時にソース位置を付与）
+    return callWithArgs(fn_val, args, ctx) catch |e| {
+        setSourceLocationFromNode(node.stack);
+        return e;
+    };
+}
+
+/// Node の SourceInfo をエラー位置として設定
+fn setSourceLocationFromNode(stack: node_mod.SourceInfo) void {
+    if (stack.line > 0) {
+        err.setErrorLocation(.{
+            .file = stack.file,
+            .line = stack.line,
+            .column = stack.column,
+        });
+    }
 }
 
 /// TreeWalk 用 LazySeq force コールバック

@@ -19,10 +19,18 @@ const err = @import("../base/error.zig");
 
 /// Reader
 /// Tokenizer から Form を構築する
+/// Reader が返すソース位置付き Form
+pub const LocatedForm = struct {
+    form: Form,
+    line: u32,
+    column: u32,
+};
+
 pub const Reader = struct {
     tokenizer: Tokenizer,
     source: []const u8,
     allocator: std.mem.Allocator,
+    source_file: ?[]const u8 = null,
 
     /// 先読みトークン（peek用）
     peeked: ?Token = null,
@@ -47,6 +55,22 @@ pub const Reader = struct {
 
         const form = try self.readForm(token);
         return form;
+    }
+
+    /// ソース位置付きで次の Form を読み取る
+    pub fn readLocated(self: *Reader) err.Error!?LocatedForm {
+        const token = self.nextToken();
+
+        if (token.kind == .eof) {
+            return null;
+        }
+
+        const form = try self.readForm(token);
+        return .{
+            .form = form,
+            .line = token.line,
+            .column = token.column,
+        };
     }
 
     /// 全てのフォームを読み取る
@@ -686,8 +710,8 @@ pub const Reader = struct {
     // === エラーヘルパー ===
 
     fn tokenLocation(self: *Reader, token: Token) err.SourceLocation {
-        _ = self;
         return .{
+            .file = self.source_file,
             .line = token.line,
             .column = token.column,
         };

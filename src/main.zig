@@ -177,11 +177,13 @@ fn runWithBackend(
 ) !void {
     // Reader（scratch アロケータ - Form は一時的）
     var reader = Reader.init(allocs.scratch(), source);
-    const form = try reader.read() orelse return error.EmptyInput;
+    const located = try reader.readLocated() orelse return error.EmptyInput;
 
     // Analyzer（scratch アロケータ - Node は一時的）
     var analyzer = Analyzer.init(allocs.scratch(), env);
-    const node = try analyzer.analyze(form);
+    analyzer.source_line = located.line;
+    analyzer.source_column = located.column;
+    const node = try analyzer.analyze(located.form);
 
     // Engine で評価（persistent アロケータ - 結果の Value は永続的かもしれない）
     var eng = EvalEngine.init(allocs.persistent(), env, backend);
@@ -206,11 +208,13 @@ fn runCompare(
 ) !engine_mod.VarSnapshot {
     // Reader（scratch アロケータ）
     var reader = Reader.init(allocs.scratch(), source);
-    const form = try reader.read() orelse return error.EmptyInput;
+    const located = try reader.readLocated() orelse return error.EmptyInput;
 
     // Analyzer（scratch アロケータ）
     var analyzer = Analyzer.init(allocs.scratch(), env);
-    const node = try analyzer.analyze(form);
+    analyzer.source_line = located.line;
+    analyzer.source_column = located.column;
+    const node = try analyzer.analyze(located.form);
 
     // 両バックエンドで評価（persistent アロケータ、VM snapshot を伝搬）
     const out = try engine_mod.runAndCompare(allocs.persistent(), env, node, vm_snapshot);
@@ -557,9 +561,11 @@ fn evalForRepl(
     backend: Backend,
 ) !Value {
     var reader = Reader.init(allocs.scratch(), source);
-    const form = try reader.read() orelse return error.EmptyInput;
+    const located = try reader.readLocated() orelse return error.EmptyInput;
     var analyzer = Analyzer.init(allocs.scratch(), env);
-    const node = try analyzer.analyze(form);
+    analyzer.source_line = located.line;
+    analyzer.source_column = located.column;
+    const node = try analyzer.analyze(located.form);
     var eng = EvalEngine.init(allocs.persistent(), env, backend);
     const raw_result = try eng.run(node);
     return core.ensureRealized(allocs.persistent(), raw_result) catch raw_result;

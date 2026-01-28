@@ -50,12 +50,50 @@ pub const Analyzer = struct {
     /// ローカル変数のスタック（let, fn のバインディング）
     locals: std.ArrayListUnmanaged(LocalBinding) = .empty,
 
+    /// ソースファイル名（エラー表示用）
+    source_file: ?[]const u8 = null,
+
+    /// 現在解析中のトップレベル式の位置（エラー表示用）
+    source_line: u32 = 0,
+    source_column: u32 = 0,
+
     /// 初期化
     pub fn init(allocator: std.mem.Allocator, env: *Env) Analyzer {
         return .{
             .allocator = allocator,
             .env = env,
         };
+    }
+
+    /// 現在のソース位置情報を SourceInfo として返す
+    fn currentSourceInfo(self: *const Analyzer) SourceInfo {
+        if (self.source_line > 0) {
+            return .{
+                .line = self.source_line,
+                .column = self.source_column,
+                .file = self.source_file,
+            };
+        }
+        return .{};
+    }
+
+    /// 現在のソース位置を error.SourceLocation として返す
+    fn currentSourceLocation(self: *const Analyzer) err.SourceLocation {
+        return .{
+            .file = self.source_file,
+            .line = self.source_line,
+            .column = self.source_column,
+        };
+    }
+
+    /// 解析エラー（ソース位置自動付与）
+    fn analysisError(self: *const Analyzer, kind: err.Kind, message: []const u8) err.Error {
+        return err.parseError(kind, message, self.currentSourceLocation());
+    }
+
+    /// 解析エラー（フォーマット付き、ソース位置自動付与）
+    fn analysisErrorFmt(self: *const Analyzer, kind: err.Kind, comptime fmt: []const u8, args: anytype) err.Error {
+        return err.parseErrorFmtLoc(kind, self.currentSourceLocation(), fmt, args);
     }
 
     /// 解放
@@ -100,7 +138,7 @@ pub const Analyzer = struct {
 
         // パターンをコンパイル
         const compiled = matcher.compile(self.allocator, pattern) catch {
-            return err.parseError(.invalid_token, "Invalid regex pattern", .{});
+            return self.analysisError(.invalid_token, "Invalid regex pattern");
         };
 
         // CompiledRegex をヒープに確保
@@ -160,9 +198,9 @@ pub const Analyzer = struct {
 
         // 未定義シンボル
         if (sym.namespace) |ns| {
-            return err.parseErrorFmt(.undefined_symbol, "Unable to resolve symbol: {s}/{s}", .{ ns, sym.name });
+            return self.analysisErrorFmt(.undefined_symbol, "Unable to resolve symbol: {s}/{s}", .{ ns, sym.name });
         }
-        return err.parseErrorFmt(.undefined_symbol, "Unable to resolve symbol: {s}", .{sym.name});
+        return self.analysisErrorFmt(.undefined_symbol, "Unable to resolve symbol: {s}", .{sym.name});
     }
 
     // === コレクション解析 ===
@@ -325,7 +363,7 @@ pub const Analyzer = struct {
     fn analyzeIf(self: *Analyzer, items: []const Form) err.Error!*Node {
         // (if test then) または (if test then else)
         if (items.len < 3 or items.len > 4) {
-            return err.parseError(.invalid_arity, "if requires 2 or 3 arguments", .{});
+            return self.analysisError(.invalid_arity, "if requires 2 or 3 arguments");
         }
 
         const test_node = try self.analyze(items[1]);
@@ -340,7 +378,7 @@ pub const Analyzer = struct {
             .test_node = test_node,
             .then_node = then_node,
             .else_node = else_node,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -362,7 +400,7 @@ pub const Analyzer = struct {
         const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
         do_data.* = .{
             .statements = statements,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -373,18 +411,18 @@ pub const Analyzer = struct {
     fn analyzeLet(self: *Analyzer, items: []const Form) err.Error!*Node {
         // (let [binding1 val1 binding2 val2 ...] body...)
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "let requires binding vector", .{});
+            return self.analysisError(.invalid_arity, "let requires binding vector");
         }
 
         // バインディングベクター
         const bindings_form = items[1];
         if (bindings_form != .vector) {
-            return err.parseError(.invalid_binding, "let bindings must be a vector", .{});
+            return self.analysisError(.invalid_binding, "let bindings must be a vector");
         }
 
         const binding_pairs = bindings_form.vector;
         if (binding_pairs.len % 2 != 0) {
-            return err.parseError(.invalid_binding, "let bindings must have even number of forms", .{});
+            return self.analysisError(.invalid_binding, "let bindings must have even number of forms");
         }
 
         // ローカルバインディングをスタックに追加
@@ -419,7 +457,7 @@ pub const Analyzer = struct {
                 statements[j] = try self.analyze(item);
             }
             const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
-            do_data.* = .{ .statements = statements, .stack = .{} };
+            do_data.* = .{ .statements = statements, .stack = self.currentSourceInfo() };
             const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
             do_node.* = .{ .do_node = do_data };
             break :blk do_node;
@@ -432,7 +470,7 @@ pub const Analyzer = struct {
         let_data.* = .{
             .bindings = bindings,
             .body = body,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -444,13 +482,13 @@ pub const Analyzer = struct {
     /// (letfn [(f [x] body1) (g [x] body2)] expr)
     fn analyzeLetfn(self: *Analyzer, items: []const Form) err.Error!*Node {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "letfn requires binding vector and body", .{});
+            return self.analysisError(.invalid_arity, "letfn requires binding vector and body");
         }
 
         // バインディングベクター
         const bindings_form = items[1];
         if (bindings_form != .vector) {
-            return err.parseError(.invalid_binding, "letfn bindings must be a vector", .{});
+            return self.analysisError(.invalid_binding, "letfn bindings must be a vector");
         }
 
         const binding_forms = bindings_form.vector;
@@ -462,14 +500,14 @@ pub const Analyzer = struct {
 
         for (binding_forms) |bf| {
             if (bf != .list) {
-                return err.parseError(.invalid_binding, "letfn binding must be a list: (name [params] body...)", .{});
+                return self.analysisError(.invalid_binding, "letfn binding must be a list: (name [params] body...)");
             }
             const bf_items = bf.list;
             if (bf_items.len < 2) {
-                return err.parseError(.invalid_binding, "letfn binding requires name and params", .{});
+                return self.analysisError(.invalid_binding, "letfn binding requires name and params");
             }
             if (bf_items[0] != .symbol) {
-                return err.parseError(.invalid_binding, "letfn binding name must be a symbol", .{});
+                return self.analysisError(.invalid_binding, "letfn binding name must be a symbol");
             }
             const name = bf_items[0].symbol.name;
             fn_names.append(self.allocator, name) catch return error.OutOfMemory;
@@ -510,7 +548,7 @@ pub const Analyzer = struct {
                 statements[j] = try self.analyze(item);
             }
             const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
-            do_data.* = .{ .statements = statements, .stack = .{} };
+            do_data.* = .{ .statements = statements, .stack = self.currentSourceInfo() };
             const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
             do_node.* = .{ .do_node = do_data };
             break :blk do_node;
@@ -523,7 +561,7 @@ pub const Analyzer = struct {
         letfn_data.* = .{
             .bindings = bindings,
             .body = body,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -558,7 +596,7 @@ pub const Analyzer = struct {
                 try self.expandMapPattern(entries, init_node, bindings);
             },
             else => {
-                return err.parseError(.invalid_binding, "binding pattern must be a symbol, vector, or map", .{});
+                return self.analysisError(.invalid_binding, "binding pattern must be a symbol, vector, or map");
             },
         }
     }
@@ -591,7 +629,7 @@ pub const Analyzer = struct {
             if (elem == .symbol and std.mem.eql(u8, elem.symbol.name, "&")) {
                 // 次の要素が rest パラメータ
                 if (i + 1 >= elems.len) {
-                    return err.parseError(.invalid_binding, "& must be followed by a binding", .{});
+                    return self.analysisError(.invalid_binding, "& must be followed by a binding");
                 }
                 const rest_pattern = elems[i + 1];
 
@@ -607,7 +645,7 @@ pub const Analyzer = struct {
                     const maybe_as = elems[i + 1];
                     if (maybe_as == .keyword and std.mem.eql(u8, maybe_as.keyword.name, "as")) {
                         if (i + 2 >= elems.len) {
-                            return err.parseError(.invalid_binding, ":as must be followed by a symbol", .{});
+                            return self.analysisError(.invalid_binding, ":as must be followed by a symbol");
                         }
                         const as_pattern = elems[i + 2];
                         try self.expandBindingPattern(as_pattern, temp_ref, bindings);
@@ -620,7 +658,7 @@ pub const Analyzer = struct {
             // :as チェック
             if (elem == .keyword and std.mem.eql(u8, elem.keyword.name, "as")) {
                 if (i + 1 >= elems.len) {
-                    return err.parseError(.invalid_binding, ":as must be followed by a symbol", .{});
+                    return self.analysisError(.invalid_binding, ":as must be followed by a symbol");
                 }
                 const as_pattern = elems[i + 1];
                 try self.expandBindingPattern(as_pattern, temp_ref, bindings);
@@ -684,11 +722,11 @@ pub const Analyzer = struct {
                 if (std.mem.eql(u8, kw_name, "keys")) {
                     // :keys [a b c] -> 各シンボルを同名キーワードで get
                     if (val != .vector) {
-                        return err.parseError(.invalid_binding, ":keys must be followed by a vector", .{});
+                        return self.analysisError(.invalid_binding, ":keys must be followed by a vector");
                     }
                     for (val.vector) |sym_form| {
                         if (sym_form != .symbol) {
-                            return err.parseError(.invalid_binding, ":keys elements must be symbols", .{});
+                            return self.analysisError(.invalid_binding, ":keys elements must be symbols");
                         }
                         const sym_name = sym_form.symbol.name;
                         const get_init = try self.makeGet(temp_ref, sym_name, defaults);
@@ -699,11 +737,11 @@ pub const Analyzer = struct {
                 } else if (std.mem.eql(u8, kw_name, "strs")) {
                     // :strs [a b] -> 各シンボルを同名文字列キーで get
                     if (val != .vector) {
-                        return err.parseError(.invalid_binding, ":strs must be followed by a vector", .{});
+                        return self.analysisError(.invalid_binding, ":strs must be followed by a vector");
                     }
                     for (val.vector) |sym_form| {
                         if (sym_form != .symbol) {
-                            return err.parseError(.invalid_binding, ":strs elements must be symbols", .{});
+                            return self.analysisError(.invalid_binding, ":strs elements must be symbols");
                         }
                         const sym_name = sym_form.symbol.name;
                         const get_init = try self.makeGetStr(temp_ref, sym_name, defaults);
@@ -719,20 +757,20 @@ pub const Analyzer = struct {
                     continue;
                 } else {
                     // 未知のキーワード
-                    return err.parseError(.invalid_binding, "unknown map destructuring keyword", .{});
+                    return self.analysisError(.invalid_binding, "unknown map destructuring keyword");
                 }
             } else if (key == .symbol) {
                 // {x :x, y :y} -> x = (get coll :x)
                 const sym_name = key.symbol.name;
                 if (val != .keyword) {
-                    return err.parseError(.invalid_binding, "map destructuring: value must be a keyword", .{});
+                    return self.analysisError(.invalid_binding, "map destructuring: value must be a keyword");
                 }
                 const get_init = try self.makeGetKeyword(temp_ref, val.keyword.name);
                 const bind_idx: u32 = @intCast(self.locals.items.len);
                 self.locals.append(self.allocator, .{ .name = sym_name, .idx = bind_idx }) catch return error.OutOfMemory;
                 bindings.append(self.allocator, .{ .name = sym_name, .init = get_init }) catch return error.OutOfMemory;
             } else {
-                return err.parseError(.invalid_binding, "map destructuring: key must be keyword or symbol", .{});
+                return self.analysisError(.invalid_binding, "map destructuring: key must be keyword or symbol");
             }
         }
     }
@@ -794,7 +832,7 @@ pub const Analyzer = struct {
     /// (get coll key) または (get coll key default) を生成
     fn makeGetCall(self: *Analyzer, coll_node: *Node, key_node: *Node, default_node: ?*Node) err.Error!*Node {
         const get_sym = RuntimeSymbol.init("get");
-        const get_var = self.env.resolve(get_sym) orelse return err.parseError(.undefined_symbol, "get not found", .{});
+        const get_var = self.env.resolve(get_sym) orelse return self.analysisError(.undefined_symbol, "get not found");
         const fn_node = try self.makeVarRef(get_var);
 
         const arg_count: usize = if (default_node != null) 3 else 2;
@@ -809,7 +847,7 @@ pub const Analyzer = struct {
         call_data.* = .{
             .fn_node = fn_node,
             .args = args,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -821,7 +859,7 @@ pub const Analyzer = struct {
     fn makeNth(self: *Analyzer, coll_node: *Node, idx: usize) err.Error!*Node {
         // nth Var を取得
         const nth_sym = RuntimeSymbol.init("nth");
-        const nth_var = self.env.resolve(nth_sym) orelse return err.parseError(.undefined_symbol, "nth not found", .{});
+        const nth_var = self.env.resolve(nth_sym) orelse return self.analysisError(.undefined_symbol, "nth not found");
 
         const fn_node = try self.makeVarRef(nth_var);
         const idx_node = try self.makeConstant(value_mod.intVal(@intCast(idx)));
@@ -834,7 +872,7 @@ pub const Analyzer = struct {
         call_data.* = .{
             .fn_node = fn_node,
             .args = args,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -851,7 +889,7 @@ pub const Analyzer = struct {
 
         // rest Var を取得
         const rest_sym = RuntimeSymbol.init("rest");
-        const rest_var = self.env.resolve(rest_sym) orelse return err.parseError(.undefined_symbol, "rest not found", .{});
+        const rest_var = self.env.resolve(rest_sym) orelse return self.analysisError(.undefined_symbol, "rest not found");
 
         var current = coll_node;
         for (0..pos) |_| {
@@ -863,7 +901,7 @@ pub const Analyzer = struct {
             call_data.* = .{
                 .fn_node = fn_node,
                 .args = args,
-                .stack = .{},
+                .stack = self.currentSourceInfo(),
             };
 
             const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -877,7 +915,7 @@ pub const Analyzer = struct {
     fn analyzeFn(self: *Analyzer, items: []const Form) err.Error!*Node {
         // (fn name? [params] body...) または (fn name? ([params] body...) ...)
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "fn requires parameter vector", .{});
+            return self.analysisError(.invalid_arity, "fn requires parameter vector");
         }
 
         var idx: usize = 1;
@@ -890,7 +928,7 @@ pub const Analyzer = struct {
         }
 
         if (idx >= items.len) {
-            return err.parseError(.invalid_arity, "fn requires parameter vector", .{});
+            return self.analysisError(.invalid_arity, "fn requires parameter vector");
         }
 
         // 名前付き fn の場合、自己参照できるようにローカルに追加
@@ -913,7 +951,7 @@ pub const Analyzer = struct {
             fn_data.* = .{
                 .name = name,
                 .arities = arities,
-                .stack = .{},
+                .stack = self.currentSourceInfo(),
             };
 
             const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -928,12 +966,12 @@ pub const Analyzer = struct {
         while (idx < items.len) {
             const arity_form = items[idx];
             if (arity_form != .list) {
-                return err.parseError(.invalid_token, "fn arity must be a list: ([params] body...)", .{});
+                return self.analysisError(.invalid_token, "fn arity must be a list: ([params] body...)");
             }
 
             const arity_items = arity_form.list;
             if (arity_items.len == 0 or arity_items[0] != .vector) {
-                return err.parseError(.invalid_token, "fn arity must start with parameter vector", .{});
+                return self.analysisError(.invalid_token, "fn arity must start with parameter vector");
             }
 
             const arity = try self.analyzeFnArity(arity_items[0].vector, arity_items[1..]);
@@ -946,14 +984,14 @@ pub const Analyzer = struct {
         self.locals.shrinkRetainingCapacity(fn_name_locals_start);
 
         if (arities_list.items.len == 0) {
-            return err.parseError(.invalid_arity, "fn requires at least one arity", .{});
+            return self.analysisError(.invalid_arity, "fn requires at least one arity");
         }
 
         const fn_data = self.allocator.create(node_mod.FnNode) catch return error.OutOfMemory;
         fn_data.* = .{
             .name = name,
             .arities = arities_list.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -1005,7 +1043,7 @@ pub const Analyzer = struct {
                     self.locals.append(self.allocator, .{ .name = synthetic_name, .idx = idx }) catch return error.OutOfMemory;
                 },
                 else => {
-                    return err.parseError(.invalid_binding, "fn parameter must be a symbol, vector, or map pattern", .{});
+                    return self.analysisError(.invalid_binding, "fn parameter must be a symbol, vector, or map pattern");
                 },
             }
             param_idx += 1;
@@ -1028,7 +1066,7 @@ pub const Analyzer = struct {
                     statements[i] = try self.analyze(item);
                 }
                 const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
-                do_data.* = .{ .statements = statements, .stack = .{} };
+                do_data.* = .{ .statements = statements, .stack = self.currentSourceInfo() };
                 const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
                 do_node.* = .{ .do_node = do_data };
                 break :blk do_node;
@@ -1067,7 +1105,7 @@ pub const Analyzer = struct {
         for (patterns) |entry| {
             // 合成パラメータへの参照を作成
             const param_name = params[entry.idx];
-            const local = self.findLocal(param_name) orelse return err.parseError(.undefined_symbol, "internal error: param not found", .{});
+            const local = self.findLocal(param_name) orelse return self.analysisError(.undefined_symbol, "internal error: param not found");
             const param_ref = try self.makeLocalRef(local.name, local.idx);
 
             // パターンを展開
@@ -1089,7 +1127,7 @@ pub const Analyzer = struct {
                 statements[i] = try self.analyze(item);
             }
             const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
-            do_data.* = .{ .statements = statements, .stack = .{} };
+            do_data.* = .{ .statements = statements, .stack = self.currentSourceInfo() };
             const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
             do_node.* = .{ .do_node = do_data };
             break :blk do_node;
@@ -1100,7 +1138,7 @@ pub const Analyzer = struct {
         let_data.* = .{
             .bindings = bindings,
             .body = body,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -1112,7 +1150,7 @@ pub const Analyzer = struct {
         // (def name) または (def name value)
         // (def ^:dynamic name value) → reader が (def (with-meta name {:dynamic true}) value) に変換
         if (items.len < 2 or items.len > 3) {
-            return err.parseError(.invalid_arity, "def requires 1 or 2 arguments", .{});
+            return self.analysisError(.invalid_arity, "def requires 1 or 2 arguments");
         }
 
         var sym_name: []const u8 = undefined;
@@ -1128,7 +1166,7 @@ pub const Analyzer = struct {
                 std.mem.eql(u8, wm_items[0].symbol.name, "with-meta"))
             {
                 if (wm_items[1] != .symbol) {
-                    return err.parseError(.invalid_binding, "def name must be a symbol", .{});
+                    return self.analysisError(.invalid_binding, "def name must be a symbol");
                 }
                 sym_name = wm_items[1].symbol.name;
                 // メタデータマップから :dynamic を検索
@@ -1146,10 +1184,10 @@ pub const Analyzer = struct {
                     }
                 }
             } else {
-                return err.parseError(.invalid_binding, "def name must be a symbol", .{});
+                return self.analysisError(.invalid_binding, "def name must be a symbol");
             }
         } else {
-            return err.parseError(.invalid_binding, "def name must be a symbol", .{});
+            return self.analysisError(.invalid_binding, "def name must be a symbol");
         }
 
         // Var を先に作成（再帰的な defn で fn body から参照できるように）
@@ -1170,7 +1208,7 @@ pub const Analyzer = struct {
             .sym_name = sym_name,
             .init = init_node,
             .is_dynamic = is_dynamic,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -1181,7 +1219,7 @@ pub const Analyzer = struct {
     fn analyzeQuote(self: *Analyzer, items: []const Form) err.Error!*Node {
         // (quote form)
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "quote requires exactly 1 argument", .{});
+            return self.analysisError(.invalid_arity, "quote requires exactly 1 argument");
         }
 
         // Form を Value に変換
@@ -1190,7 +1228,7 @@ pub const Analyzer = struct {
         const quote_data = self.allocator.create(node_mod.QuoteNode) catch return error.OutOfMemory;
         quote_data.* = .{
             .form = val,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -1202,17 +1240,17 @@ pub const Analyzer = struct {
         // (loop [binding1 val1 ...] body...)
         // let と同じ構造だが、recur のターゲットになる
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "loop requires binding vector", .{});
+            return self.analysisError(.invalid_arity, "loop requires binding vector");
         }
 
         const bindings_form = items[1];
         if (bindings_form != .vector) {
-            return err.parseError(.invalid_binding, "loop bindings must be a vector", .{});
+            return self.analysisError(.invalid_binding, "loop bindings must be a vector");
         }
 
         const binding_pairs = bindings_form.vector;
         if (binding_pairs.len % 2 != 0) {
-            return err.parseError(.invalid_binding, "loop bindings must have even number of forms", .{});
+            return self.analysisError(.invalid_binding, "loop bindings must have even number of forms");
         }
 
         const start_locals = self.locals.items.len;
@@ -1222,7 +1260,7 @@ pub const Analyzer = struct {
         while (i < binding_pairs.len) : (i += 2) {
             const sym_form = binding_pairs[i];
             if (sym_form != .symbol) {
-                return err.parseError(.invalid_binding, "loop binding name must be a symbol", .{});
+                return self.analysisError(.invalid_binding, "loop binding name must be a symbol");
             }
 
             const name = sym_form.symbol.name;
@@ -1244,7 +1282,7 @@ pub const Analyzer = struct {
                 statements[j] = try self.analyze(item);
             }
             const do_data = self.allocator.create(node_mod.DoNode) catch return error.OutOfMemory;
-            do_data.* = .{ .statements = statements, .stack = .{} };
+            do_data.* = .{ .statements = statements, .stack = self.currentSourceInfo() };
             const do_node = self.allocator.create(Node) catch return error.OutOfMemory;
             do_node.* = .{ .do_node = do_data };
             break :blk do_node;
@@ -1256,7 +1294,7 @@ pub const Analyzer = struct {
         loop_data.* = .{
             .bindings = bindings,
             .body = body,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -1274,7 +1312,7 @@ pub const Analyzer = struct {
         const recur_data = self.allocator.create(node_mod.RecurNode) catch return error.OutOfMemory;
         recur_data.* = .{
             .args = args,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -1290,7 +1328,7 @@ pub const Analyzer = struct {
     /// (throw expr) の解析
     fn analyzeThrow(self: *Analyzer, items: []const Form) err.Error!*Node {
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "throw requires 1 argument", .{});
+            return self.analysisError(.invalid_arity, "throw requires 1 argument");
         }
 
         const expr = try self.analyze(items[1]);
@@ -1298,7 +1336,7 @@ pub const Analyzer = struct {
         const throw_data = self.allocator.create(node_mod.ThrowNode) catch return error.OutOfMemory;
         throw_data.* = .{
             .expr = expr,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -1309,7 +1347,7 @@ pub const Analyzer = struct {
     /// (try body* (catch Exception e handler*) (finally cleanup*)) の解析
     fn analyzeTry(self: *Analyzer, items: []const Form) err.Error!*Node {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "try requires at least a body expression", .{});
+            return self.analysisError(.invalid_arity, "try requires at least a body expression");
         }
 
         // items[0] は "try" シンボル自体
@@ -1327,12 +1365,12 @@ pub const Analyzer = struct {
                     if (std.mem.eql(u8, name, "catch")) {
                         // (catch Exception e handler-body*)
                         if (sub_items.len < 4) {
-                            return err.parseError(.invalid_arity, "catch requires (catch ExceptionType name body*)", .{});
+                            return self.analysisError(.invalid_arity, "catch requires (catch ExceptionType name body*)");
                         }
                         // sub_items[1] は Exception 型（初期は無視）
                         // sub_items[2] はバインディング名
                         if (sub_items[2] != .symbol) {
-                            return err.parseError(.invalid_binding, "catch binding must be a symbol", .{});
+                            return self.analysisError(.invalid_binding, "catch binding must be a symbol");
                         }
                         const binding_name = sub_items[2].symbol.name;
 
@@ -1362,7 +1400,7 @@ pub const Analyzer = struct {
                     if (std.mem.eql(u8, name, "finally")) {
                         // (finally cleanup-body*)
                         if (sub_items.len < 2) {
-                            return err.parseError(.invalid_arity, "finally requires at least one expression", .{});
+                            return self.analysisError(.invalid_arity, "finally requires at least one expression");
                         }
 
                         finally_body = if (sub_items.len == 2)
@@ -1391,7 +1429,7 @@ pub const Analyzer = struct {
             .body = body_node,
             .catch_clause = catch_clause,
             .finally_body = finally_body,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -1562,14 +1600,14 @@ pub const Analyzer = struct {
         const pairs = items[1..]; // cond を除く
         if (pairs.len == 0) return Form.nil;
         if (pairs.len % 2 != 0) {
-            return err.parseError(.invalid_arity, "cond requires an even number of forms", .{});
+            return self.analysisError(.invalid_arity, "cond requires an even number of forms");
         }
         return self.buildCondChain(pairs);
     }
 
     fn buildCondChain(self: *Analyzer, pairs: []const Form) err.Error!Form {
         if (pairs.len == 0) return Form.nil;
-        if (pairs.len < 2) return err.parseError(.invalid_arity, "cond requires pairs", .{});
+        if (pairs.len < 2) return self.analysisError(.invalid_arity, "cond requires pairs");
 
         const test_form = pairs[0];
         const expr = pairs[1];
@@ -1604,7 +1642,7 @@ pub const Analyzer = struct {
     /// (when test body1 body2 ...) → (if test (do body1 body2 ...))
     fn expandWhen(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "when requires at least a test", .{});
+            return self.analysisError(.invalid_arity, "when requires at least a test");
         }
 
         const body = items[2..];
@@ -1620,7 +1658,7 @@ pub const Analyzer = struct {
     /// (when-not test body1 body2 ...) → (if (not test) (do body1 body2 ...))
     fn expandWhenNot(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "when-not requires at least a test", .{});
+            return self.analysisError(.invalid_arity, "when-not requires at least a test");
         }
 
         // (not test)
@@ -1644,12 +1682,12 @@ pub const Analyzer = struct {
     /// 分配束縛対応: パターンがシンボルでない場合は temp 変数を導入
     fn expandIfLet(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3 or items.len > 4) {
-            return err.parseError(.invalid_arity, "if-let requires 2-3 arguments", .{});
+            return self.analysisError(.invalid_arity, "if-let requires 2-3 arguments");
         }
 
         const binding_vec = items[1];
         if (binding_vec != .vector or binding_vec.vector.len != 2) {
-            return err.parseError(.invalid_binding, "if-let requires a binding vector [sym expr]", .{});
+            return self.analysisError(.invalid_binding, "if-let requires a binding vector [sym expr]");
         }
 
         const bindings = binding_vec.vector;
@@ -1708,12 +1746,12 @@ pub const Analyzer = struct {
     /// 分配束縛対応: パターンがシンボルでない場合は temp 変数を導入
     fn expandWhenLet(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "when-let requires at least a binding and body", .{});
+            return self.analysisError(.invalid_arity, "when-let requires at least a binding and body");
         }
 
         const binding_vec = items[1];
         if (binding_vec != .vector or binding_vec.vector.len != 2) {
-            return err.parseError(.invalid_binding, "when-let requires a binding vector [sym expr]", .{});
+            return self.analysisError(.invalid_binding, "when-let requires a binding vector [sym expr]");
         }
 
         const bindings = binding_vec.vector;
@@ -1846,7 +1884,7 @@ pub const Analyzer = struct {
     /// (-> x f) → (f x) （シンボルの場合）
     fn expandThreadFirst(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "-> requires at least one argument", .{});
+            return self.analysisError(.invalid_arity, "-> requires at least one argument");
         }
 
         var result = items[1]; // 初期値
@@ -1859,7 +1897,7 @@ pub const Analyzer = struct {
     /// (->> x (f a) (g b)) → (g a (f b x))
     fn expandThreadLast(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "->> requires at least one argument", .{});
+            return self.analysisError(.invalid_arity, "->> requires at least one argument");
         }
 
         var result = items[1];
@@ -1898,7 +1936,7 @@ pub const Analyzer = struct {
                 }
             },
             else => {
-                return err.parseError(.invalid_token, "threading form must be a symbol or list", .{});
+                return self.analysisError(.invalid_token, "threading form must be a symbol or list");
             },
         }
     }
@@ -1922,14 +1960,14 @@ pub const Analyzer = struct {
     /// (defn name "doc"? ([a] body1) ([a b] body2)) → (def name (fn name ([a] body1) ([a b] body2)))
     fn expandDefn(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "defn requires a name and at least one body", .{});
+            return self.analysisError(.invalid_arity, "defn requires a name and at least one body");
         }
 
         // items[0] = defn, items[1] = name
         const name_form = items[1];
         const name_sym = switch (name_form) {
             .symbol => |s| s,
-            else => return err.parseError(.invalid_token, "defn name must be a symbol", .{}),
+            else => return self.analysisError(.invalid_token, "defn name must be a symbol"),
         };
 
         // docstring + メタデータマップをスキップ
@@ -1942,7 +1980,7 @@ pub const Analyzer = struct {
         }
 
         if (body_start >= items.len) {
-            return err.parseError(.invalid_arity, "defn requires at least one body", .{});
+            return self.analysisError(.invalid_arity, "defn requires at least one body");
         }
 
         // (def name (fn name ...)) を構築
@@ -1966,7 +2004,7 @@ pub const Analyzer = struct {
     /// (if-not test then else) → (if (not test) then else)
     fn expandIfNot(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3 or items.len > 4) {
-            return err.parseError(.invalid_arity, "if-not requires 2 or 3 arguments", .{});
+            return self.analysisError(.invalid_arity, "if-not requires 2 or 3 arguments");
         }
 
         // (not test)
@@ -1989,15 +2027,15 @@ pub const Analyzer = struct {
     /// (dotimes [i n] body...) → (loop [i 0] (when (< i n) body... (recur (inc i))))
     fn expandDotimes(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "dotimes requires a binding vector and body", .{});
+            return self.analysisError(.invalid_arity, "dotimes requires a binding vector and body");
         }
 
         const binding_vec = switch (items[1]) {
             .vector => |v| v,
-            else => return err.parseError(.invalid_binding, "dotimes requires a binding vector [i n]", .{}),
+            else => return self.analysisError(.invalid_binding, "dotimes requires a binding vector [i n]"),
         };
         if (binding_vec.len != 2) {
-            return err.parseError(.invalid_binding, "dotimes binding must be [i n]", .{});
+            return self.analysisError(.invalid_binding, "dotimes binding must be [i n]");
         }
 
         const var_sym = binding_vec[0];
@@ -2043,15 +2081,15 @@ pub const Analyzer = struct {
     /// 展開: (loop [__items (seq coll)] (when __items (let [x (first __items)] body... (recur (rest __items)))))
     fn expandDoseq(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "doseq requires a binding vector and body", .{});
+            return self.analysisError(.invalid_arity, "doseq requires a binding vector and body");
         }
 
         const binding_vec = switch (items[1]) {
             .vector => |v| v,
-            else => return err.parseError(.invalid_binding, "doseq requires a binding vector [x coll]", .{}),
+            else => return self.analysisError(.invalid_binding, "doseq requires a binding vector [x coll]"),
         };
         if (binding_vec.len != 2) {
-            return err.parseError(.invalid_binding, "doseq binding must be [x coll]", .{});
+            return self.analysisError(.invalid_binding, "doseq binding must be [x coll]");
         }
 
         const var_sym = binding_vec[0];
@@ -2129,7 +2167,7 @@ pub const Analyzer = struct {
         call_data.* = .{
             .fn_node = fn_node,
             .args = args,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -2163,7 +2201,7 @@ pub const Analyzer = struct {
             .local_ref = .{
                 .name = name,
                 .idx = idx,
-                .stack = .{},
+                .stack = self.currentSourceInfo(),
             },
         };
         return node;
@@ -2174,7 +2212,7 @@ pub const Analyzer = struct {
         node.* = .{
             .var_ref = .{
                 .var_ref = v,
-                .stack = .{},
+                .stack = self.currentSourceInfo(),
             },
         };
         return node;
@@ -2184,7 +2222,7 @@ pub const Analyzer = struct {
     fn makeBuiltinCall(self: *Analyzer, fn_name: []const u8, args: []*Node) err.Error!*Node {
         const runtime_sym = RuntimeSymbol.init(fn_name);
         const v = self.env.resolve(runtime_sym) orelse {
-            return err.parseError(.undefined_symbol, "Unable to resolve builtin function", .{});
+            return self.analysisError(.undefined_symbol, "Unable to resolve builtin function");
         };
         const fn_node = try self.makeVarRef(v);
 
@@ -2192,7 +2230,7 @@ pub const Analyzer = struct {
         call_data.* = .{
             .fn_node = fn_node,
             .args = args,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -2276,7 +2314,7 @@ pub const Analyzer = struct {
                 const regex = @import("../regex/regex.zig");
                 const matcher_m = @import("../regex/matcher.zig");
                 const compiled = matcher_m.compile(self.allocator, pattern) catch
-                    return err.parseError(.invalid_token, "Invalid regex pattern", .{});
+                    return self.analysisError(.invalid_token, "Invalid regex pattern");
                 const compiled_ptr = self.allocator.create(regex.CompiledRegex) catch return error.OutOfMemory;
                 compiled_ptr.* = compiled;
                 const pat = self.allocator.create(value_mod.Pattern) catch return error.OutOfMemory;
@@ -2296,11 +2334,11 @@ pub const Analyzer = struct {
         // (defmacro name [params] body...)
         // 内部的には (def name (fn [params] body...)) を生成し、マクロフラグを設定
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "defmacro requires at least name and params", .{});
+            return self.analysisError(.invalid_arity, "defmacro requires at least name and params");
         }
 
         if (items[1] != .symbol) {
-            return err.parseError(.invalid_binding, "defmacro name must be a symbol", .{});
+            return self.analysisError(.invalid_binding, "defmacro name must be a symbol");
         }
 
         const macro_name = items[1].symbol.name;
@@ -2324,7 +2362,7 @@ pub const Analyzer = struct {
             .sym_name = macro_name,
             .init = fn_node,
             .is_macro = true,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -2337,11 +2375,11 @@ pub const Analyzer = struct {
     /// (defmulti name dispatch-fn)
     fn analyzeDefmulti(self: *Analyzer, items: []const Form) err.Error!*Node {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "defmulti requires name and dispatch-fn", .{});
+            return self.analysisError(.invalid_arity, "defmulti requires name and dispatch-fn");
         }
 
         if (items[1] != .symbol) {
-            return err.parseError(.invalid_binding, "defmulti name must be a symbol", .{});
+            return self.analysisError(.invalid_binding, "defmulti name must be a symbol");
         }
 
         const name = items[1].symbol.name;
@@ -2358,7 +2396,7 @@ pub const Analyzer = struct {
         data.* = .{
             .name = name,
             .dispatch_fn = dispatch_fn,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -2371,11 +2409,11 @@ pub const Analyzer = struct {
     fn analyzeDefmethod(self: *Analyzer, items: []const Form) err.Error!*Node {
         // 最低4要素: defmethod name dispatch-val [params]
         if (items.len < 4) {
-            return err.parseError(.invalid_arity, "defmethod requires name, dispatch-val, and method body", .{});
+            return self.analysisError(.invalid_arity, "defmethod requires name, dispatch-val, and method body");
         }
 
         if (items[1] != .symbol) {
-            return err.parseError(.invalid_binding, "defmethod name must be a symbol", .{});
+            return self.analysisError(.invalid_binding, "defmethod name must be a symbol");
         }
 
         const multi_name = items[1].symbol.name;
@@ -2403,7 +2441,7 @@ pub const Analyzer = struct {
             .multi_name = multi_name,
             .dispatch_val = dispatch_val,
             .method_fn = method_fn,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -2416,11 +2454,11 @@ pub const Analyzer = struct {
     /// (defprotocol Name (method1 [this]) (method2 [this arg]))
     fn analyzeDefprotocol(self: *Analyzer, items: []const Form) err.Error!*Node {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "defprotocol requires at least a name", .{});
+            return self.analysisError(.invalid_arity, "defprotocol requires at least a name");
         }
 
         if (items[1] != .symbol) {
-            return err.parseError(.invalid_binding, "defprotocol name must be a symbol", .{});
+            return self.analysisError(.invalid_binding, "defprotocol name must be a symbol");
         }
 
         const proto_name = items[1].symbol.name;
@@ -2434,17 +2472,17 @@ pub const Analyzer = struct {
         var sigs_buf: std.ArrayListUnmanaged(node_mod.DefprotocolNode.ProtocolMethodSig) = .empty;
         for (items[2..]) |item| {
             if (item != .list) {
-                return err.parseError(.invalid_token, "defprotocol method signature must be a list", .{});
+                return self.analysisError(.invalid_token, "defprotocol method signature must be a list");
             }
             const sig_items = item.list;
             if (sig_items.len < 2) {
-                return err.parseError(.invalid_arity, "defprotocol method signature requires name and params", .{});
+                return self.analysisError(.invalid_arity, "defprotocol method signature requires name and params");
             }
             if (sig_items[0] != .symbol) {
-                return err.parseError(.invalid_binding, "defprotocol method name must be a symbol", .{});
+                return self.analysisError(.invalid_binding, "defprotocol method name must be a symbol");
             }
             if (sig_items[1] != .vector) {
-                return err.parseError(.invalid_token, "defprotocol method params must be a vector", .{});
+                return self.analysisError(.invalid_token, "defprotocol method params must be a vector");
             }
 
             const method_name = sig_items[0].symbol.name;
@@ -2465,7 +2503,7 @@ pub const Analyzer = struct {
         data.* = .{
             .name = proto_name,
             .method_sigs = sigs_buf.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -2476,11 +2514,11 @@ pub const Analyzer = struct {
     /// (extend-type TypeName ProtoName (m1 [this] body) ... ProtoName2 (m2 [this] body) ...)
     fn analyzeExtendType(self: *Analyzer, items: []const Form) err.Error!*Node {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "extend-type requires type-name and at least one protocol extension", .{});
+            return self.analysisError(.invalid_arity, "extend-type requires type-name and at least one protocol extension");
         }
 
         if (items[1] != .symbol) {
-            return err.parseError(.invalid_binding, "extend-type type name must be a symbol", .{});
+            return self.analysisError(.invalid_binding, "extend-type type name must be a symbol");
         }
 
         const type_name = items[1].symbol.name;
@@ -2493,7 +2531,7 @@ pub const Analyzer = struct {
         while (idx < items.len) {
             // プロトコル名を取得
             if (items[idx] != .symbol) {
-                return err.parseError(.invalid_binding, "extend-type expects a protocol name symbol", .{});
+                return self.analysisError(.invalid_binding, "extend-type expects a protocol name symbol");
             }
             const protocol_name = items[idx].symbol.name;
             idx += 1;
@@ -2506,10 +2544,10 @@ pub const Analyzer = struct {
 
                 const method_items = items[idx].list;
                 if (method_items.len < 2) {
-                    return err.parseError(.invalid_arity, "extend-type method requires name and params", .{});
+                    return self.analysisError(.invalid_arity, "extend-type method requires name and params");
                 }
                 if (method_items[0] != .symbol) {
-                    return err.parseError(.invalid_binding, "extend-type method name must be a symbol", .{});
+                    return self.analysisError(.invalid_binding, "extend-type method name must be a symbol");
                 }
 
                 const method_name = method_items[0].symbol.name;
@@ -2540,7 +2578,7 @@ pub const Analyzer = struct {
         data.* = .{
             .type_name = type_name,
             .extensions = extensions.toOwnedSlice(self.allocator) catch return error.OutOfMemory,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -2555,7 +2593,7 @@ pub const Analyzer = struct {
     fn analyzeLazySeq(self: *Analyzer, items: []const Form) err.Error!*Node {
         // (lazy-seq body) — body は1つ
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "lazy-seq requires exactly 1 body expression", .{});
+            return self.analysisError(.invalid_arity, "lazy-seq requires exactly 1 body expression");
         }
 
         const body = try self.analyze(items[1]);
@@ -2563,7 +2601,7 @@ pub const Analyzer = struct {
         const data = self.allocator.create(node_mod.LazySeqNode) catch return error.OutOfMemory;
         data.* = .{
             .body = body,
-            .stack = .{},
+            .stack = self.currentSourceInfo(),
         };
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
@@ -2676,7 +2714,7 @@ pub const Analyzer = struct {
         // 組み込み関数（BuiltinFn）としてのマクロはサポートしない
         // ユーザー定義マクロのみ
         const arity = macro_fn.findArity(args.len) orelse
-            return err.parseError(.invalid_arity, "Macro arity mismatch", .{});
+            return self.analysisError(.invalid_arity, "Macro arity mismatch");
 
         // 新しいコンテキストを作成
         var ctx = Context.init(self.allocator, self.env);
@@ -2691,7 +2729,7 @@ pub const Analyzer = struct {
 
         // ボディを評価
         const body: *const Node = @ptrCast(@alignCast(arity.body));
-        return evaluator.run(body, &ctx) catch return err.parseError(.macro_error, "Macro expansion failed", .{});
+        return evaluator.run(body, &ctx) catch return self.analysisError(.macro_error, "Macro expansion failed");
     }
 
     // ============================================================
@@ -2703,7 +2741,7 @@ pub const Analyzer = struct {
     fn expandCondp(self: *Analyzer, items: []const Form) err.Error!Form {
         // (condp pred expr clause1 clause2 ... default?)
         if (items.len < 4) {
-            return err.parseError(.invalid_arity, "condp requires pred, expr, and at least one clause", .{});
+            return self.analysisError(.invalid_arity, "condp requires pred, expr, and at least one clause");
         }
 
         const pred = items[1];
@@ -2754,7 +2792,7 @@ pub const Analyzer = struct {
     /// → (let [__case__ expr] (cond (= __case__ val1) result1 ... :else default))
     fn expandCase(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 4) {
-            return err.parseError(.invalid_arity, "case requires expr and at least one clause", .{});
+            return self.analysisError(.invalid_arity, "case requires expr and at least one clause");
         }
 
         const expr = items[1];
@@ -2799,7 +2837,7 @@ pub const Analyzer = struct {
     /// (some-> expr form1 form2 ...) → (let [__st x] (if (nil? __st) nil (let [__st form1(__st)] (if (nil? __st) nil ...))))
     fn expandSomeThreadFirst(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "some-> requires an expression", .{});
+            return self.analysisError(.invalid_arity, "some-> requires an expression");
         }
         return self.buildSomeThread(items[1], items[2..], true);
     }
@@ -2807,7 +2845,7 @@ pub const Analyzer = struct {
     /// (some->> expr form1 form2 ...)
     fn expandSomeThreadLast(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "some->> requires an expression", .{});
+            return self.analysisError(.invalid_arity, "some->> requires an expression");
         }
         return self.buildSomeThread(items[1], items[2..], false);
     }
@@ -2880,7 +2918,7 @@ pub const Analyzer = struct {
     /// (as-> expr name form1 form2 ...) → (let [name expr name form1 name form2 ...] name)
     fn expandAsThread(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "as-> requires expr, name, and at least one form", .{});
+            return self.analysisError(.invalid_arity, "as-> requires expr, name, and at least one form");
         }
 
         const expr = items[1];
@@ -2908,7 +2946,7 @@ pub const Analyzer = struct {
     /// (mapv f coll) → (vec (map f coll))
     fn expandMapv(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "mapv requires 2 arguments", .{});
+            return self.analysisError(.invalid_arity, "mapv requires 2 arguments");
         }
         // (vec (map f coll))
         const map_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
@@ -2925,7 +2963,7 @@ pub const Analyzer = struct {
     /// (filterv f coll) → (vec (filter f coll))
     fn expandFilterv(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "filterv requires 2 arguments", .{});
+            return self.analysisError(.invalid_arity, "filterv requires 2 arguments");
         }
         const filter_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
         filter_forms[0] = Form{ .symbol = form_mod.Symbol.init("filter") };
@@ -2947,7 +2985,7 @@ pub const Analyzer = struct {
     ///         false))))
     fn expandEvery(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "every? requires 2 arguments", .{});
+            return self.analysisError(.invalid_arity, "every? requires 2 arguments");
         }
         const pred = items[1];
         const coll = items[2];
@@ -2985,7 +3023,7 @@ pub const Analyzer = struct {
     ///           (recur (seq (rest __s__))))))))
     fn expandSome(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "some requires 2 arguments", .{});
+            return self.analysisError(.invalid_arity, "some requires 2 arguments");
         }
         const pred = items[1];
         const coll = items[2];
@@ -3014,7 +3052,7 @@ pub const Analyzer = struct {
     /// (not-every? pred coll) → (not (every? pred coll))
     fn expandNotEvery(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "not-every? requires 2 arguments", .{});
+            return self.analysisError(.invalid_arity, "not-every? requires 2 arguments");
         }
         // 未展開の (every? pred coll) を構築（Analyzer が再帰的に展開する）
         const every_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
@@ -3027,7 +3065,7 @@ pub const Analyzer = struct {
     /// (not-any? pred coll) → (nil? (some pred coll))
     fn expandNotAny(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "not-any? requires 2 arguments", .{});
+            return self.analysisError(.invalid_arity, "not-any? requires 2 arguments");
         }
         // 未展開の (some pred coll) を構築（Analyzer が再帰的に展開する）
         const some_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
@@ -3045,11 +3083,11 @@ pub const Analyzer = struct {
     ///       (extend-type Type2 Proto (m [this] ...)))
     fn expandExtendProtocol(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "extend-protocol requires protocol name and at least one type extension", .{});
+            return self.analysisError(.invalid_arity, "extend-protocol requires protocol name and at least one type extension");
         }
 
         if (items[1] != .symbol) {
-            return err.parseError(.invalid_binding, "extend-protocol first argument must be a protocol name", .{});
+            return self.analysisError(.invalid_binding, "extend-protocol first argument must be a protocol name");
         }
 
         const proto_name = items[1];
@@ -3060,7 +3098,7 @@ pub const Analyzer = struct {
 
         while (idx < items.len) {
             if (items[idx] != .symbol) {
-                return err.parseError(.invalid_binding, "extend-protocol expects a type name symbol", .{});
+                return self.analysisError(.invalid_binding, "extend-protocol expects a type name symbol");
             }
             const type_sym = items[idx];
             idx += 1;
@@ -3101,7 +3139,7 @@ pub const Analyzer = struct {
     /// (update m k f args...) → (let [__um__ m __uk__ k] (assoc __um__ __uk__ (f (get __um__ __uk__) args...)))
     fn expandUpdate(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 4) {
-            return err.parseError(.invalid_arity, "update requires at least 3 arguments (update m k f)", .{});
+            return self.analysisError(.invalid_arity, "update requires at least 3 arguments (update m k f)");
         }
 
         const m_form = items[1];
@@ -3141,7 +3179,7 @@ pub const Analyzer = struct {
     /// fn-within-fn パターンで展開（VM の let-closure バグを回避）
     fn expandComplement(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "complement requires 1 argument", .{});
+            return self.analysisError(.invalid_arity, "complement requires 1 argument");
         }
 
         const f_form = items[1];
@@ -3189,7 +3227,7 @@ pub const Analyzer = struct {
     /// fn-within-fn パターンで展開（VM の let-closure バグを回避）
     fn expandConstantly(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "constantly requires 1 argument", .{});
+            return self.analysisError(.invalid_arity, "constantly requires 1 argument");
         }
 
         const v_form = items[1];
@@ -3225,7 +3263,7 @@ pub const Analyzer = struct {
     /// (defonce name expr) → (when-not (resolve (quote name)) (def name expr))
     fn expandDefonce(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "defonce requires a name and an expression", .{});
+            return self.analysisError(.invalid_arity, "defonce requires a name and an expression");
         }
 
         // (quote name)
@@ -3257,7 +3295,7 @@ pub const Analyzer = struct {
     fn expandDefnPrivate(self: *Analyzer, items: []const Form) err.Error!Form {
         // defn- → defn
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "defn- requires at least a name and body", .{});
+            return self.analysisError(.invalid_arity, "defn- requires at least a name and body");
         }
         const new_items = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
         new_items[0] = Form{ .symbol = form_mod.Symbol.init("defn") };
@@ -3268,7 +3306,7 @@ pub const Analyzer = struct {
     /// (declare name1 name2 ...) → (do (def name1) (def name2) ...)
     fn expandDeclare(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "declare requires at least one name", .{});
+            return self.analysisError(.invalid_arity, "declare requires at least one name");
         }
         const names = items[1..];
         const do_forms = self.allocator.alloc(Form, names.len + 1) catch return error.OutOfMemory;
@@ -3285,7 +3323,7 @@ pub const Analyzer = struct {
     /// (while test body...) → (loop [] (when test body... (recur)))
     fn expandWhile(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "while requires a test expression", .{});
+            return self.analysisError(.invalid_arity, "while requires a test expression");
         }
         const test_form = items[1];
         const body = items[2..];
@@ -3315,7 +3353,7 @@ pub const Analyzer = struct {
     /// → (let [__doto__ x] (method1 __doto__ args...) (method2 __doto__ args...) ... __doto__)
     fn expandDoto(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "doto requires at least an expression", .{});
+            return self.analysisError(.invalid_arity, "doto requires at least an expression");
         }
         const x = items[1];
         const calls = items[2..];
@@ -3362,12 +3400,12 @@ pub const Analyzer = struct {
     /// last=false → cond->, last=true → cond->>
     fn expandCondThread(self: *Analyzer, items: []const Form, last: bool) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "cond->/cond->> requires an expression", .{});
+            return self.analysisError(.invalid_arity, "cond->/cond->> requires an expression");
         }
         const expr = items[1];
         const pairs = items[2..];
         if (pairs.len % 2 != 0) {
-            return err.parseError(.invalid_arity, "cond->/cond->> requires an even number of test/form pairs", .{});
+            return self.analysisError(.invalid_arity, "cond->/cond->> requires an even number of test/form pairs");
         }
 
         const temp = form_mod.Symbol.init("__ct__");
@@ -3419,10 +3457,10 @@ pub const Analyzer = struct {
     /// → (let [__is__ expr] (if (not (nil? __is__)) (let [x __is__] then) else?))
     fn expandIfSome(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3 or items.len > 4) {
-            return err.parseError(.invalid_arity, "if-some requires a binding and then branch", .{});
+            return self.analysisError(.invalid_arity, "if-some requires a binding and then branch");
         }
         if (items[1] != .vector or items[1].vector.len != 2) {
-            return err.parseError(.invalid_arity, "if-some binding must be [sym expr]", .{});
+            return self.analysisError(.invalid_arity, "if-some binding must be [sym expr]");
         }
         const binding = items[1].vector;
         const sym = binding[0];
@@ -3472,7 +3510,7 @@ pub const Analyzer = struct {
     /// (when-some [x expr] body...) → (if-some [x expr] (do body...))
     fn expandWhenSome(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "when-some requires a binding and body", .{});
+            return self.analysisError(.invalid_arity, "when-some requires a binding and body");
         }
         const body = items[2..];
         const body_form = try self.wrapInDo(body);
@@ -3488,10 +3526,10 @@ pub const Analyzer = struct {
     /// → (when-let [__wf__ (seq coll)] (let [x (first __wf__)] body...))
     fn expandWhenFirst(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "when-first requires a binding and body", .{});
+            return self.analysisError(.invalid_arity, "when-first requires a binding and body");
         }
         if (items[1] != .vector or items[1].vector.len != 2) {
-            return err.parseError(.invalid_arity, "when-first binding must be [sym coll]", .{});
+            return self.analysisError(.invalid_arity, "when-first binding must be [sym coll]");
         }
         const binding = items[1].vector;
         const sym = binding[0];
@@ -3537,10 +3575,10 @@ pub const Analyzer = struct {
     /// 簡易版: 単一バインディング、:when/:let/:while 未対応
     fn expandFor(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "for requires a binding vector and body", .{});
+            return self.analysisError(.invalid_arity, "for requires a binding vector and body");
         }
         if (items[1] != .vector or items[1].vector.len < 2) {
-            return err.parseError(.invalid_arity, "for binding must be [sym coll ...]", .{});
+            return self.analysisError(.invalid_arity, "for binding must be [sym coll ...]");
         }
         const bindings = items[1].vector;
         const body = items[2..];
@@ -3598,13 +3636,13 @@ pub const Analyzer = struct {
             return Form{ .list = mapcat_forms };
         }
 
-        return err.parseError(.invalid_arity, "for requires even number of bindings", .{});
+        return self.analysisError(.invalid_arity, "for requires even number of bindings");
     }
 
     /// (some-fn f g h) → (fn [& __args__] (or (apply f __args__) (apply g __args__) (apply h __args__)))
     fn expandSomeFn(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "some-fn requires at least one function", .{});
+            return self.analysisError(.invalid_arity, "some-fn requires at least one function");
         }
         const fns = items[1..];
         const args_sym = form_mod.Symbol.init("__sfargs__");
@@ -3634,7 +3672,7 @@ pub const Analyzer = struct {
     /// (every-pred f g h) → (fn [& __args__] (and (apply f __args__) (apply g __args__) ...))
     fn expandEveryPred(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "every-pred requires at least one function", .{});
+            return self.analysisError(.invalid_arity, "every-pred requires at least one function");
         }
         const fns = items[1..];
         const args_sym = form_mod.Symbol.init("__epargs__");
@@ -3666,7 +3704,7 @@ pub const Analyzer = struct {
     /// 簡易版: 1〜3引数のみ対応
     fn expandFnil(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3 or items.len > 5) {
-            return err.parseError(.invalid_arity, "fnil requires a function and 1-3 defaults", .{});
+            return self.analysisError(.invalid_arity, "fnil requires a function and 1-3 defaults");
         }
         const f = items[1];
         const defaults = items[2..];
@@ -3710,7 +3748,7 @@ pub const Analyzer = struct {
     /// (keep f coll) → (filter some? (map f coll))
     fn expandKeep(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "keep requires a function and a collection", .{});
+            return self.analysisError(.invalid_arity, "keep requires a function and a collection");
         }
         // (map f coll)
         const map_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
@@ -3729,7 +3767,7 @@ pub const Analyzer = struct {
     /// (keep-indexed f coll) → (filter some? (map-indexed f coll))
     fn expandKeepIndexed(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "keep-indexed requires a function and a collection", .{});
+            return self.analysisError(.invalid_arity, "keep-indexed requires a function and a collection");
         }
         // (map-indexed f coll)
         const map_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
@@ -3748,7 +3786,7 @@ pub const Analyzer = struct {
     /// (mapcat f coll) → (apply concat (map f coll))
     fn expandMapcat(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "mapcat requires a function and a collection", .{});
+            return self.analysisError(.invalid_arity, "mapcat requires a function and a collection");
         }
         // (map f coll)
         const map_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
@@ -3767,7 +3805,7 @@ pub const Analyzer = struct {
     /// (run! f coll) → (doseq [__run_x__ coll] (f __run_x__)) nil
     fn expandRunBang(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "run! requires a function and a collection", .{});
+            return self.analysisError(.invalid_arity, "run! requires a function and a collection");
         }
         const f = items[1];
         const coll = items[2];
@@ -3795,7 +3833,7 @@ pub const Analyzer = struct {
     /// 簡易版: 全要素を強制評価（Eager なので実質 identity）
     fn expandDoall(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "doall requires a collection", .{});
+            return self.analysisError(.invalid_arity, "doall requires a collection");
         }
         // Eager 実装なので、コレクション自体を返すだけでよい
         // (let [__da__ coll] (doseq [__dax__ __da__]) __da__)
@@ -3826,7 +3864,7 @@ pub const Analyzer = struct {
     /// (dorun coll) → (doseq [_ coll] nil)
     fn expandDorun(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "dorun requires a collection", .{});
+            return self.analysisError(.invalid_arity, "dorun requires a collection");
         }
         const temp = form_mod.Symbol.init("__dr__");
 
@@ -3845,7 +3883,7 @@ pub const Analyzer = struct {
     /// (assert expr msg) → (when-not expr (throw msg))
     fn expandAssert(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2 or items.len > 3) {
-            return err.parseError(.invalid_arity, "assert requires 1-2 arguments", .{});
+            return self.analysisError(.invalid_arity, "assert requires 1-2 arguments");
         }
         const expr = items[1];
         const msg = if (items.len == 3) items[2] else Form{ .string = "Assert failed" };
@@ -3866,7 +3904,7 @@ pub const Analyzer = struct {
     /// (lazy-cat & colls) → (concat (lazy-seq (seq coll1)) (lazy-seq (seq coll2)) ...)
     fn expandLazyCat(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "lazy-cat requires at least one collection", .{});
+            return self.analysisError(.invalid_arity, "lazy-cat requires at least one collection");
         }
         const colls = items[1..];
 
@@ -3894,7 +3932,7 @@ pub const Analyzer = struct {
     /// (juxt f1 f2 ...) → (fn [& args] (vector (apply f1 args) (apply f2 args) ...))
     fn expandJuxt(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "juxt requires at least one function", .{});
+            return self.analysisError(.invalid_arity, "juxt requires at least one function");
         }
         const fns = items[1..];
 
@@ -3940,7 +3978,7 @@ pub const Analyzer = struct {
     /// (delay expr) → (__delay-create (fn [] expr))
     fn expandDelay(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "delay requires exactly one expression", .{});
+            return self.analysisError(.invalid_arity, "delay requires exactly one expression");
         }
 
         // (fn [] expr)
@@ -3960,7 +3998,7 @@ pub const Analyzer = struct {
 
     fn expandMemoize(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "memoize requires exactly one argument", .{});
+            return self.analysisError(.invalid_arity, "memoize requires exactly one argument");
         }
         // (memoize f) →
         // (let [__memo_f__ f
@@ -4067,7 +4105,7 @@ pub const Analyzer = struct {
     ///     (do (__time-end __t) __r)))
     fn expandTime(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
-            return err.parseError(.invalid_arity, "time requires exactly one expression", .{});
+            return self.analysisError(.invalid_arity, "time requires exactly one expression");
         }
         const a = self.allocator;
 
@@ -4115,7 +4153,7 @@ pub const Analyzer = struct {
     /// (defstruct name & keys) → (def name (create-struct keys...))
     fn expandDefstruct(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "defstruct requires name and at least one key", .{});
+            return self.analysisError(.invalid_arity, "defstruct requires name and at least one key");
         }
         // create-struct 呼び出しの Form を構築
         const cs_forms = self.allocator.alloc(Form, items.len - 1) catch return error.OutOfMemory;
@@ -4134,7 +4172,7 @@ pub const Analyzer = struct {
     /// (definline name & decl) → (defn name & decl)
     fn expandDefinline(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "definline requires name, args vector, and body", .{});
+            return self.analysisError(.invalid_arity, "definline requires name, args vector, and body");
         }
         // defn に書き換え
         const defn_forms = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
@@ -4150,7 +4188,7 @@ pub const Analyzer = struct {
     ///   (do body... (__end-capture __cap)))
     fn expandWithOutStr(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "with-out-str requires at least one expression", .{});
+            return self.analysisError(.invalid_arity, "with-out-str requires at least one expression");
         }
         const a = self.allocator;
 
@@ -4195,14 +4233,14 @@ pub const Analyzer = struct {
     ///     (try (do body1 body2) (finally (pop-thread-bindings))))
     fn expandBinding(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "binding requires bindings vector and body", .{});
+            return self.analysisError(.invalid_arity, "binding requires bindings vector and body");
         }
         const bindings = switch (items[1]) {
             .vector => |v| v,
-            else => return err.parseError(.invalid_binding, "binding requires a vector of bindings", .{}),
+            else => return self.analysisError(.invalid_binding, "binding requires a vector of bindings"),
         };
         if (bindings.len % 2 != 0) {
-            return err.parseError(.invalid_binding, "binding requires an even number of forms", .{});
+            return self.analysisError(.invalid_binding, "binding requires an even number of forms");
         }
 
         // マップ {(var *x*) 10, (var *y*) 20} を構築
@@ -4262,7 +4300,7 @@ pub const Analyzer = struct {
     /// (bound-fn [args] body) → (fn [args] body) スタブ
     fn expandBoundFn(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "bound-fn requires args and body", .{});
+            return self.analysisError(.invalid_arity, "bound-fn requires args and body");
         }
         const fn_forms = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
         fn_forms[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
@@ -4273,9 +4311,9 @@ pub const Analyzer = struct {
     }
 
     /// (bound-fn* f) → f スタブ
-    fn expandBoundFnStar(_: *Analyzer, items: []const Form) err.Error!Form {
+    fn expandBoundFnStar(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "bound-fn* requires a function argument", .{});
+            return self.analysisError(.invalid_arity, "bound-fn* requires a function argument");
         }
         return items[1]; // 関数をそのまま返す
     }
@@ -4305,14 +4343,14 @@ pub const Analyzer = struct {
     /// (with-redefs-fn {(var name) val ...} (fn [] body...))
     fn expandWithRedefs(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "with-redefs requires bindings vector and body", .{});
+            return self.analysisError(.invalid_arity, "with-redefs requires bindings vector and body");
         }
         const bindings = switch (items[1]) {
             .vector => |v| v,
-            else => return err.parseError(.invalid_binding, "with-redefs requires a vector of bindings", .{}),
+            else => return self.analysisError(.invalid_binding, "with-redefs requires a vector of bindings"),
         };
         if (bindings.len % 2 != 0) {
-            return err.parseError(.invalid_binding, "with-redefs requires an even number of forms", .{});
+            return self.analysisError(.invalid_binding, "with-redefs requires an even number of forms");
         }
 
         // マップ {(var name) val ...} を構築
@@ -4360,7 +4398,7 @@ pub const Analyzer = struct {
     /// (ns name & clauses) → (in-ns 'name) スタブ
     fn expandNs(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "ns requires a name", .{});
+            return self.analysisError(.invalid_arity, "ns requires a name");
         }
         const allocator = self.allocator;
 
@@ -4497,7 +4535,7 @@ pub const Analyzer = struct {
     /// シンボルを (var sym) に変換して set! 関数に渡す
     fn expandSetBang(self: *Analyzer, items: []const Form) err.Error!?Form {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "set! requires 2 arguments", .{});
+            return self.analysisError(.invalid_arity, "set! requires 2 arguments");
         }
         // items[1] がシンボルなら (var sym) に変換
         if (items[1] == .symbol) {
@@ -4517,17 +4555,17 @@ pub const Analyzer = struct {
     /// (var sym) → Var オブジェクト自体を返す定数ノード
     fn analyzeVarSpecial(self: *Analyzer, items: []const Form) err.Error!*Node {
         if (items.len < 2) {
-            return err.parseError(.invalid_arity, "var requires a symbol", .{});
+            return self.analysisError(.invalid_arity, "var requires a symbol");
         }
         const sym_form = items[1];
         const sym_name = switch (sym_form) {
             .symbol => |s| s.name,
-            else => return err.parseError(.invalid_binding, "var requires a symbol argument", .{}),
+            else => return self.analysisError(.invalid_binding, "var requires a symbol argument"),
         };
         // Env.resolve で NS + clojure.core フォールバック込みで解決
         const sym = value_mod.Symbol{ .name = sym_name, .namespace = null };
         const v = self.env.resolve(sym) orelse
-            return err.parseError(.undefined_symbol, "unable to resolve var", .{});
+            return self.analysisError(.undefined_symbol, "unable to resolve var");
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = node_mod.constantNode(Value{ .var_val = @ptrCast(v) });
         return node;
@@ -4536,7 +4574,7 @@ pub const Analyzer = struct {
     /// (instance? ClassName expr) — クラス名をシンボル定数として渡す
     fn analyzeInstanceCheck(self: *Analyzer, items: []const Form) err.Error!*Node {
         if (items.len != 3) {
-            return err.parseError(.invalid_arity, "instance? requires 2 arguments", .{});
+            return self.analysisError(.invalid_arity, "instance? requires 2 arguments");
         }
         // 第1引数: クラス名をシンボル定数として扱う（解決しない）
         const class_name = switch (items[1]) {
@@ -4550,7 +4588,7 @@ pub const Analyzer = struct {
                 sym_val.* = .{ .name = name, .namespace = null };
                 break :blk try self.makeConstant(.{ .symbol = sym_val });
             },
-            else => return err.parseError(.invalid_binding, "instance? first argument must be a class name", .{}),
+            else => return self.analysisError(.invalid_binding, "instance? first argument must be a class name"),
         };
         // 第2引数: 通常の式として解析
         const expr_node = try self.analyze(items[2]);
@@ -4565,14 +4603,14 @@ pub const Analyzer = struct {
     /// (defrecord Name [fields] & body) → (do (defn ->Name [fields] (hash-map ...)) nil) スタブ
     fn expandDefrecord(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
-            return err.parseError(.invalid_arity, "defrecord requires name and fields", .{});
+            return self.analysisError(.invalid_arity, "defrecord requires name and fields");
         }
         // name と fields を取得
         const name_form = items[1];
         const fields_form = items[2];
         const name_str = switch (name_form) {
             .symbol => |s| s.name,
-            else => return err.parseError(.invalid_binding, "defrecord name must be a symbol", .{}),
+            else => return self.analysisError(.invalid_binding, "defrecord name must be a symbol"),
         };
         // ->Name コンストラクタ名を生成
         const ctor_name = self.allocator.alloc(u8, name_str.len + 2) catch return error.OutOfMemory;
@@ -4584,7 +4622,7 @@ pub const Analyzer = struct {
         // fields はベクター
         const field_items = switch (fields_form) {
             .vector => |v| v,
-            else => return err.parseError(.invalid_binding, "defrecord fields must be a vector", .{}),
+            else => return self.analysisError(.invalid_binding, "defrecord fields must be a vector"),
         };
 
         // hash-map 引数を構築: :field field :field field ...
@@ -4728,7 +4766,7 @@ pub const Analyzer = struct {
                 }
                 break :blk Form{ .set = forms };
             },
-            .char_val, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq, .delay_val, .volatile_val, .reduced_val, .transient, .promise, .matcher, .wasm_module => return err.parseError(.invalid_token, "Cannot convert to form", .{}),
+            .char_val, .fn_val, .partial_fn, .comp_fn, .multi_fn, .fn_proto, .var_val, .atom, .protocol, .protocol_fn, .lazy_seq, .delay_val, .volatile_val, .reduced_val, .transient, .promise, .matcher, .wasm_module => return self.analysisError(.invalid_token, "Cannot convert to form"),
         };
     }
 };

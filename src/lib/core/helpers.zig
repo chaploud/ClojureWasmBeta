@@ -498,19 +498,31 @@ pub fn nsNameToPath(allocator: std.mem.Allocator, ns_name: []const u8, ext: []co
 
 /// ファイルをロードして評価する
 pub fn loadFileContent(allocator: std.mem.Allocator, content: []const u8) anyerror!Value {
+    return loadFileContentWithPath(allocator, content, null);
+}
+
+/// ファイルをロードして評価する（ファイルパス付き）
+pub fn loadFileContentWithPath(allocator: std.mem.Allocator, content: []const u8, source_file: ?[]const u8) anyerror!Value {
     const env = defs.current_env orelse return error.TypeError;
     var reader = Reader.init(allocator, content);
-    const forms = reader.readAll() catch |e| {
-        // 現在のリーダー位置を取得
-        const pos = reader.tokenizer.pos;
-        const line = reader.tokenizer.line;
-        debugLog("[reader-error] line {d} pos {d}: {any}", .{ line, pos, e });
-        return error.EvalError;
-    };
+    reader.source_file = source_file;
+
     var result: Value = value_mod.nil;
-    for (forms, 0..) |form, fi| {
+    var fi: usize = 0;
+    while (true) : (fi += 1) {
+        const located = reader.readLocated() catch |e| {
+            const pos = reader.tokenizer.pos;
+            const line = reader.tokenizer.line;
+            debugLog("[reader-error] line {d} pos {d}: {any}", .{ line, pos, e });
+            return error.EvalError;
+        };
+        const loc = located orelse break;
+
         var analyzer = Analyzer.init(allocator, env);
-        const node = analyzer.analyze(form) catch |e| {
+        analyzer.source_file = source_file;
+        analyzer.source_line = loc.line;
+        analyzer.source_column = loc.column;
+        const node = analyzer.analyze(loc.form) catch |e| {
             debugLog("[analyze-error] form #{d}: {any}", .{ fi, e });
             return error.EvalError;
         };
