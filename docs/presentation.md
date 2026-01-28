@@ -101,18 +101,19 @@ Source Code
 
 **環境**: Apple M4 Pro, 48 GB RAM, macOS
 
-### Cold start 比較 (コマンドライン実行)
+### Cold start 比較 (コマンドライン実行, hyperfine)
 
-| ベンチマーク     | C/Zig   | Java    | JVM Clj (cold) | babashka | Python  | Ruby    | ClojureWasmBeta |
-|------------------|---------|---------|----------------|----------|---------|---------|-----------------|
-| fib30            | 0.01s   | 0.03s   | 0.38s          | 0.16s    | 0.07s   | 0.16s   | 0.07s           |
-| sum_range        | 0.00s   | 0.04s   | 0.30s          | 0.02s    | 0.02s   | 0.10s   | 0.01s           |
-| map_filter       | 0.00s   | 0.05s   | 0.38s          | 0.01s    | 0.02s   | 0.10s   | 0.00s           |
-| string_ops       | 0.00s   | 0.05s   | 0.31s          | 0.01s    | 0.02s   | 0.10s   | 0.01s           |
-| data_transform   | 0.00s   | 0.04s   | 0.37s          | 0.01s    | 0.02s   | 0.10s   | 0.01s           |
+| ベンチマーク     | Zig     | Java    | JVM Clj (cold) | babashka | Python  | Ruby    | CWB     |
+|------------------|---------|---------|----------------|----------|---------|---------|---------|
+| fib30            | 3.6ms   | 33ms    | 384ms          | 152ms    | 76ms    | 140ms   | 69ms    |
+| sum_range        | 6.0ms   | 34ms    | 314ms          | 21ms     | 21ms    | 97ms    | 13ms    |
+| map_filter       | 3.4ms   | 45ms    | 391ms          | 13ms     | 15ms    | 98ms    | 1.8ms   |
+| string_ops       | 2.1ms   | 49ms    | 321ms          | 14ms     | 18ms    | 99ms    | 6.6ms   |
+| data_transform   | 5.2ms   | 38ms    | 386ms          | 16ms     | 17ms    | 105ms   | 10ms    |
 
-- JVM Clj (cold): `clojure -M file.clj`。0.3-0.4s の大部分は JVM 起動 + Clojure ランタイムロード
+- JVM Clj (cold): `clojure -M file.clj`。300-400ms の大部分は JVM 起動 + Clojure ランタイムロード
 - babashka: GraalVM ネイティブコンパイル済み Clojure (sci ベース)
+- CWB: ClojureWasmBeta (VM backend, ReleaseFast)
 
 ### JVM Clojure warm (JIT warm-up 後)
 
