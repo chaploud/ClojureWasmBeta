@@ -97,21 +97,34 @@ Source Code
 
 ## ベンチマーク: 5種比較
 
-5種のベンチマークで7言語と比較。
+5種のベンチマークで 8 言語/実行環境と比較。
 
 **環境**: Apple M4 Pro, 48 GB RAM, macOS
 
-### 全言語比較 (最適化後)
+### Cold start 比較 (コマンドライン実行)
 
-| ベンチマーク     | C/Zig   | Java    | JVM Clojure | Python  | Ruby    | ClojureWasmBeta |
-|------------------|---------|---------|-------------|---------|---------|-----------------|
-| fib30            | 0.01s   | 0.03s   | 0.38s       | 0.07s   | 0.16s   | 0.07s           |
-| sum_range        | 0.00s   | 0.04s   | 0.31s       | 0.02s   | 0.10s   | 0.01s           |
-| map_filter       | 0.00s   | 0.05s   | 0.38s       | 0.02s   | 0.10s   | 0.00s           |
-| string_ops       | 0.00s   | 0.05s   | 0.31s       | 0.02s   | 0.10s   | 0.01s           |
-| data_transform   | 0.00s   | 0.04s   | 0.39s       | 0.02s   | 0.10s   | 0.01s           |
+| ベンチマーク     | C/Zig   | Java    | JVM Clj (cold) | babashka | Python  | Ruby    | ClojureWasmBeta |
+|------------------|---------|---------|----------------|----------|---------|---------|-----------------|
+| fib30            | 0.01s   | 0.03s   | 0.38s          | 0.16s    | 0.07s   | 0.16s   | 0.07s           |
+| sum_range        | 0.00s   | 0.04s   | 0.30s          | 0.02s    | 0.02s   | 0.10s   | 0.01s           |
+| map_filter       | 0.00s   | 0.05s   | 0.38s          | 0.01s    | 0.02s   | 0.10s   | 0.00s           |
+| string_ops       | 0.00s   | 0.05s   | 0.31s          | 0.01s    | 0.02s   | 0.10s   | 0.01s           |
+| data_transform   | 0.00s   | 0.04s   | 0.37s          | 0.01s    | 0.02s   | 0.10s   | 0.01s           |
 
-※ JVM Clojure は同じ .clj ファイルを `clojure -M` で実行。0.3-0.4s の大部分は JVM 起動 + Clojure ランタイムロード。長期稼働 (JIT warm-up 後) では計算部分が大幅に高速化される。
+- JVM Clj (cold): `clojure -M file.clj`。0.3-0.4s の大部分は JVM 起動 + Clojure ランタイムロード
+- babashka: GraalVM ネイティブコンパイル済み Clojure (sci ベース)
+
+### JVM Clojure warm (JIT warm-up 後)
+
+1 JVM プロセスで全ベンチを warm-up 3回 + 計測 5回の中央値。純粋な計算時間。
+
+| ベンチマーク     | JVM Clj (warm) | ClojureWasmBeta | 比率      |
+|------------------|----------------|-----------------|-----------|
+| fib30            | 9.7ms          | 70ms            | JVM 7x速  |
+| sum_range        | 5.8ms          | 10ms            | JVM 2x速  |
+| map_filter       | 1.6ms          | <10ms           | 同等      |
+| string_ops       | 1.8ms          | <10ms           | 同等      |
+| data_transform   | 1.5ms          | 10ms            | JVM 7x速  |
 
 ### 最適化前後の改善
 
@@ -134,11 +147,11 @@ Source Code
 
 ### 分析
 
-- **全5ベンチで JVM Clojure より速度・メモリとも上位** (短期実行ベンチ限定)
-- fib30 以外で **純 Java (JIT) よりも高速**
-- fib30 は Python と同等、純 Java の 2.3x 遅 (JIT の壁)
-- メモリは全ベンチで Java / JVM Clojure より少ない
-- JVM Clojure との差の大部分は JVM 起動コスト。長期稼働 JIT warm-up 後は逆転の可能性あり
+- **Cold start**: 全5ベンチで JVM Clojure (cold) / babashka より速度・メモリとも上位
+- **Warm JVM**: JIT warm-up 後は JVM Clojure が fib30 で 7x、data_transform で 7x 速い
+- メモリは全条件で ClojureWasmBeta が最少 (2-22MB vs JVM 108-121MB)
+- fib30 以外で純 Java (JIT) よりも高速
+- **ポジショニング**: 起動が速くメモリが少ない CLI/スクリプト用途に強い。長期稼働サーバーでは JVM JIT が有利
 
 ---
 
