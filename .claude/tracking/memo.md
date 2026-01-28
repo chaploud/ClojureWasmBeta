@@ -231,9 +231,30 @@ map, set, symbol を Clojure 同様に関数として呼び出し可能に。
 - `--compare` モードで両バックエンド一致確認
 - 全テスト維持 (760/1 compat, 270/274 zig)
 
+### U2c: スタックトレース表示 — 完了
+
+エラー時にコールスタックを表示。TreeWalk と VM の両バックエンドで動作。
+
+- **error.zig**: `callstack_buf` (threadlocal、最大32フレーム) + `setCallstack()` ヘルパー
+- **evaluator.zig**: threadlocal callstack (push/pop) でコールスタック追跡
+  - エラー時はフレームを残し `attachCallstack()` で一括収集・リセット
+  - `try/catch` でのエラー回復時に `callstack_depth` をリセット (リーク防止)
+- **vm.zig**: `collectCallstack()` — `self.frames` 配列から `proto.name` を収集
+  - `run()` のエラーキャッチで自動収集
+- **main.zig**: `reportError` にスタックトレースセクション追加
+- 表示例:
+  ```
+  ----- Stack Trace --------------------------------------------------------------
+    + (builtin)
+    inner
+    middle
+    outer
+  ```
+- 全テスト維持 (760/1 compat, 270/274 zig)
+
 ### 推奨次回タスク
 
-1. **U2c: スタックトレース** — 関数名 + ソース位置のコールスタック表示
+1. **U2d: 周辺ソースコード表示** — エラー位置の前後数行を表示
 2. **G1: GC 改善** — 世代別 GC or MemoryPool
 3. **R3 残項目**: MultiArrayList / MemoryPool / switch exhaustiveness / エラー伝播改善
 
@@ -448,7 +469,7 @@ deftest body 内 (= defn body 内) で使えない構文:
 - ~~sets-as-functions 未対応~~ → U4a で修正済み (map/set/symbol を関数として呼び出し可能)
 - フル medley の `compare-and-set!`/`deref-swap!`/`deref-reset!` 未実装
 - ~~文字列表示で `!` がエスケープされる~~ → シェル環境の問題 (コードバグではない)
-- VM での `with-redefs` 後のユーザー関数呼び出しクラッシュ (Phase 23 由来)
+- ~~VM での `with-redefs` 後のユーザー関数呼び出しクラッシュ~~ → 再現不可、既に修正済みと推定
 
 ---
 

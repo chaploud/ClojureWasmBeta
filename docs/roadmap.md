@@ -284,7 +284,7 @@ user/-main    - user.clj:50:3
 |----------|-----------------------------------------------|------|-----------|
 | U2a      | "Expected X, got Y" 形式のエラーメッセージ    | なし | ✅ 完了   |
 | U2b      | ソース位置の表示 (SourceInfo 活用)             | U2a  | ✅ 完了   |
-| U2c      | スタックトレース (関数名 + ソース位置)         | U2b  |           |
+| U2c      | スタックトレース (関数名 + ソース位置)         | U2b  | ✅ 完了   |
 | U2d      | 周辺ソースコード表示                           | U2c  |           |
 
 **参考ドキュメント**: `docs/reference/error_design.md` (設計済み、未実装)
@@ -317,7 +317,7 @@ user/-main    - user.clj:50:3
 | ~~map-as-fn 2-arity~~         | ✅ 完了 (U4a) |        |
 | ~~symbol-as-fn~~              | ✅ 完了 (U4a) |        |
 | ~~sets-as-functions~~         | ✅ 完了 (U4a) |        |
-| with-redefs VM クラッシュ     | 高     | 高     |
+| ~~with-redefs VM クラッシュ~~ | ✅ 再現不可 (自然修正) |        |
 | ^:const 未対応                | 低     | 中     |
 | with-local-vars 未実装        | 低     | 中     |
 | add-watch on var 未実装       | 低     | 中     |
