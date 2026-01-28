@@ -23,11 +23,11 @@ git status
 ```
 
 Read ツールで読む:
-- `.claude/tracking/memo.md` — 現在地点・次回タスク
-- `.claude/tracking/notes.md` — 技術ノート（関連サブシステムの注意点）
+- `plan/memo.md` — 現在地点・次回タスク
+- `plan/notes.md` — 技術ノート（関連サブシステムの注意点）
 
 必要に応じて参照:
-- `docs/roadmap.md` — ポスト実装フェーズのロードマップ (R/P/G/U/S/D)
+- `plan/roadmap.md` — ポスト実装フェーズのロードマップ (R/P/G/U/S/D)
 - `docs/reference/architecture.md` — 全体設計・処理フロー
 - `status/vars.yaml` — 実装状況（yq で照会、関数追加時のみ）
 
@@ -40,7 +40,7 @@ Read ツールで読む:
 3. **関連ノート確認**: notes.md で対象サブシステムの注意点を把握
 4. **実装**: コードを書く
 5. **テスト・検証**:
-   - `zig build test` — 全テスト通過を確認 (760 pass が baseline)
+   - `zig build test` — 全テスト通過を確認 (1036 pass が baseline)
    - `zig build run -- --compare -e '(+ 1 2)'` — デュアルバックエンド回帰検出 (必要に応じて)
    - リファクタリング時: テスト数が減らないことを確認
    - 高速化時: ベンチマークで前後比較 (`test/bench/` 参照)

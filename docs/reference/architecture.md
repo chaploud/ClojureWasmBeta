@@ -52,13 +52,8 @@ Form → Analyzer → Node → [Backend切り替え] → Value
                                    (性能重視)
 ```
 
-- **TreeWalk**: 新機能の正しい振る舞いを確立
-- **VM**: TreeWalkと同じ結果を返すことを検証しながら実装
-- **`--compare`オプション**: 両バックエンドで実行し結果を比較
-
 ### コア vs ライブラリの区別
 
-Clojureでは多くの「標準関数」が実際にはコア実装を要求する。
 | 区分              | 例                     | 追加方法                    |
 |-------------------|------------------------|-----------------------------|
 | **純粋なlib追加** | println, str, subs     | core.zig に関数追加のみ     |
@@ -91,7 +86,7 @@ src/
 │   └── vm.zig          # VMメインループ
 │
 ├── runtime/            # 実行時サポート
-│   ├── value.zig       # Value型
+│   ├── value.zig       # Value型 (facade + 3 サブモジュール)
 │   ├── var.zig         # Var
 │   ├── namespace.zig   # Namespace
 │   ├── env.zig         # グローバル環境
@@ -103,12 +98,6 @@ src/
 ├── lib/                # Clojure標準ライブラリ
 │   ├── core.zig        # clojure.core facade (re-export)
 │   └── core/           # ドメイン別サブモジュール (18ファイル)
-│       ├── arithmetic.zig  # 算術+比較+bit-ops
-│       ├── collections.zig # コレクション操作
-│       ├── sequences.zig   # シーケンス HOF
-│       ├── strings.zig     # 文字列+regex
-│       ├── math_fns.zig    # clojure.math 数学関数
-│       └── ...             # predicates, io, meta, concurrency 等
 │
 ├── wasm/               # Wasm 連携 (zware)
 │   ├── types.zig       # Value ↔ Wasm 型変換
@@ -120,16 +109,13 @@ src/
 │
 ├── clj/                # Clojure ソースライブラリ
 │   └── clojure/        # clojure.* 名前空間 (.clj)
-│       ├── string.clj  # clojure.string
-│       ├── set.clj     # clojure.set
-│       ├── walk.clj    # clojure.walk
-│       ├── zip.clj     # clojure.zip
-│       ├── math.clj    # clojure.math
-│       ├── data.clj    # clojure.data
-│       └── ...         # edn, repl, stacktrace, template
 │
 ├── repl/               # REPL サポート
 │   └── line_editor.zig # readline/履歴 (自前実装)
+│
+├── nrepl/              # nREPL サーバー
+│   ├── bencode.zig     # bencode エンコード/デコード
+│   └── server.zig      # TCP サーバー + セッション + ops
 │
 ├── gc/                 # GC (セミスペース Arena)
 │   ├── gc.zig          # Mark フェーズ
@@ -140,106 +126,7 @@ src/
 │   ├── regex.zig       # パーサ+コンパイラ
 │   └── matcher.zig     # バックトラッキング実行
 │
-└── main.zig            # CLI (REPL, -e, file.clj, --dump-bytecode)
-```
-
----
-
-## ロードマップ
-
-### 完了フェーズ
-
-| Phase    | 内容                                                                                                                      |
-|----------|---------------------------------------------------------------------------------------------------------------------------|
-| 1-4      | Reader, Runtime基盤, Analyzer, TreeWalk評価器                                                                             |
-| 5        | ユーザー定義関数 (fn, クロージャ)                                                                                         |
-| 6        | マクロシステム (defmacro)                                                                                                 |
-| 7        | CLI (-e, 複数式, 状態保持)                                                                                                |
-| 8.0      | VM基盤 (Bytecode, Compiler, VM, --compare)                                                                                |
-| 8.1-8.20 | VM機能拡充（クロージャ、HOF、シーケンス、マクロ、例外、Atom、文字列、マルチメソッド、プロトコル、letfn、動的リテラル 等） |
-| 9-9.2    | LazySeq — 遅延シーケンス基盤、遅延 map/filter/concat、遅延ジェネレータ                                                    |
-| 11-18b   | PURE+DESIGN — 組み込み関数 (delay/volatile/reduced/transient/transduce/atom拡張/var操作/階層/promise等)                   |
-| 19a-19c  | struct/eval/read-string/sorted/dynamic-vars/NS操作/Reader/定義マクロ                                                      |
-| 20       | FINAL — binding/chunk/regex/IO/NS/defrecord/deftype/動的Var                                                               |
-| 21       | GC — Mark-Sweep at Expression Boundary                                                                                    |
-| 22       | 正規表現エンジン (フルスクラッチ Zig 実装)                                                                                |
-| 23       | 動的バインディング (本格実装)                                                                                             |
-| 24       | 名前空間 (本格実装)                                                                                                       |
-| 25       | REPL (対話型シェル)                                                                                                       |
-| 26       | Reader Conditionals + 外部ライブラリ統合テスト (medley v1.4.0)                                                            |
-| T1-T4    | テストフレームワーク + sci テストスイート移植 (678 pass)                                                                   |
-| Q1a-Q5a  | Wasm前品質修正 — 正規化/コンパイラ修正/letfn/with-out-str (729 pass)                                                       |
-| LAST     | Wasm 連携 (zware) — load/invoke/memory/host-fn/WASI/close (760 pass)                                                      |
-| R1-R6    | リファクタリング — core.zig/value.zig 分割、branchHint、死コード除去                                                       |
-| P1-P2c   | 高速化 — ベンチマーク基盤、VM最適化、Map ハッシュインデックス                                                              |
-| G1a-G1c  | GC — 計測基盤、セミスペース Arena (sweep 40x 高速化)                                                                       |
-| U1-U5    | UX — REPL readline、エラー表示、doc/dir、バグ修正、CLI拡充 (1036 pass)                                                     |
-| S1a-S1j  | セルフホスト — clojure.{string,set,walk,edn,math,repl,data,stacktrace,template,zip}                                        |
-
-> 詳細な完了フェーズ履歴: `.claude/tracking/memo.md`
-
-### ポスト実装フェーズ
-
-機能追加フェーズが完了し、リファクタリング・高速化・安定化フェーズへ移行。
-
-**詳細ロードマップ: `docs/roadmap.md`**
-
-| フェーズ | 内容                                                          | 状態         |
-|----------|---------------------------------------------------------------|--------------|
-| Phase R  | リファクタリング (core.zig/value.zig 分割、branchHint、死コード除去) | ✅ R1-R6 完了 |
-| Phase P  | 高速化 (ベンチマーク基盤、VM 最適化、Map ハッシュ)             | ✅ P1-P2c 完了 |
-| Phase G  | GC (計測基盤、セミスペース Arena 40x 高速化)                    | ✅ G1a-G1c 完了 |
-| Phase U  | UX (REPL readline、エラー表示、doc/dir、バグ修正、CLI拡充)      | ✅ U1-U5 完了 |
-| Phase S  | セルフホスト (.clj 名前空間: string/set/walk/zip/math/data 等)  | S1a-S1j 完了 |
-| Phase D  | ドキュメント整備                                               | 随時         |
-
-### Phase LAST: Wasm 連携 (zware) — 完了
-
-zware (pure Zig Wasm runtime) ベースの Wasm 連携。
-
-| Sub | 内容                              | 主要ファイル                            | 状態    |
-|-----|-----------------------------------|-----------------------------------------|---------|
-| La  | zware 導入 + load + invoke (数値) | build.zig, value.zig, wasm/*.zig        | ✅ 完了 |
-| Lb  | メモリ操作 + 文字列 interop       | wasm/interop.zig, core.zig              | ✅ 完了 |
-| Lc  | ホスト関数注入 (Clojure→Wasm)     | wasm/host_functions.zig, core.zig       | ✅ 完了 |
-| Ld  | WASI 基本サポート                 | wasm/wasi.zig, core.zig                 | ✅ 完了 |
-| Le  | エラー改善 + wasm/close + ドキュメント | core.zig, docs                       | ✅ 完了 |
-
-Wasm API (10 関数):
-```clojure
-;; 基本操作
-(def m (wasm/load-module "math.wasm"))
-(wasm/invoke m "add" 3 4)          ;=> 7
-(wasm/exports m)                    ;=> {:add {:type :func} ...}
-(wasm/module? m)                    ;=> true
-
-;; メモリ操作
-(wasm/memory-write m 256 "hello")
-(wasm/memory-read m 256 5)          ;=> "hello"
-(wasm/memory-size m)                ;=> 65536
-
-;; ホスト関数注入
-(def m2 (wasm/load-module "plugin.wasm"
-          {:imports {"env" {"log" (fn [n] (println n))}}}))
-
-;; WASI サポート
-(def wasi (wasm/load-wasi "hello.wasm"))
-(wasm/invoke wasi "_start")
-
-;; ライフサイクル
-(wasm/close m)
-(wasm/closed? m)                    ;=> true
-```
-
-ファイル構成:
-```
-src/wasm/
-├── types.zig            # 型変換 (Value ↔ Wasm u64)
-├── loader.zig           # .wasm ロード + インスタンス化
-├── runtime.zig          # invoke / exports
-├── interop.zig          # 線形メモリ読み書き
-├── host_functions.zig   # ホスト関数ブリッジ (Clojure→Wasm)
-└── wasi.zig             # WASI Preview 1 サポート
+└── main.zig            # CLI (REPL, -e, file.clj, --dump-bytecode, --nrepl-server)
 ```
 
 ---
@@ -273,13 +160,12 @@ src/wasm/
 
 ## 参考資料
 
-- ロードマップ: `docs/roadmap.md`
+- ロードマップ: `plan/roadmap.md`
+- 完了履歴: `docs/changelog.md`
 - 型設計: `docs/reference/type_design.md`
 - Zigガイド: `docs/reference/zig_guide.md`
 - メモリ戦略: `docs/reference/memory_strategy.md`
 - エラー設計: `docs/reference/error_design.md`
-- 進捗メモ: `.claude/tracking/memo.md`
-- 技術ノート: `.claude/tracking/notes.md`
+- 進捗メモ: `plan/memo.md`
+- 技術ノート: `plan/notes.md`
 - 実装状況: `status/vars.yaml`
-- sci: `~/Documents/OSS/sci`
-- 本家Clojure: `~/Documents/OSS/clojure`

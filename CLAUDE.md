@@ -2,7 +2,7 @@
 
 ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラックボックス）を目指す。
 
-現在の状態は `.claude/tracking/memo.md` を参照。
+現在の状態は `plan/memo.md` を参照。
 実装状況は `yq '.vars.clojure_core | to_entries | map(select(.value.status == "done")) | length' status/vars.yaml` で照会。
 
 ## 実装方針
@@ -15,7 +15,7 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 ## セッションの進め方
 
 ### 開始時
-1. `.claude/tracking/memo.md` を確認（必須）
+1. `plan/memo.md` を確認（必須）
 2. 現在のタスクと申し送りを把握
 
 ### 開発中
@@ -32,15 +32,16 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 
 | パス                                | 内容                                 | 参照タイミング         |
 |-------------------------------------|--------------------------------------|------------------------|
-| `.claude/tracking/memo.md`          | 現在地点・次回タスク                 | 毎セッション（必須）   |
-| `.claude/tracking/notes.md`         | 技術ノート・回避策・注意点           | 関連サブシステム作業時 |
-| `docs/roadmap.md`                   | ポスト実装ロードマップ (R/P/G/U/S/D) | タスク選択時           |
-| `docs/reference/architecture.md`    | 全体設計・完了フェーズ履歴           | 設計確認時             |
+| `plan/memo.md`                      | 現在地点・次回タスク                 | 毎セッション（必須）   |
+| `plan/notes.md`                     | 技術ノート・回避策・注意点           | 関連サブシステム作業時 |
+| `plan/roadmap.md`                   | 将来ロードマップ・残タスク           | タスク選択時           |
+| `docs/reference/architecture.md`    | 全体設計・ディレクトリ構成           | 設計確認時             |
 | `docs/reference/type_design.md`     | 3フェーズ型設計 (Form→Node→Value)    | 必要時のみ             |
 | `docs/reference/zig_guide.md`       | Zig 0.15.2 の落とし穴・パターン      | 必要時のみ             |
 | `docs/reference/vm_design.md`       | VM設計・スタック・クロージャ契約     | VM/コンパイラ変更時    |
 | `docs/reference/gc_design.md`       | GC設計・セミスペース・fixup          | GC/メモリ変更時        |
 | `docs/reference/lessons_learned.md` | バグ教訓集・横断的設計知見           | 設計判断時             |
+| `docs/changelog.md`                 | 完了フェーズ履歴                     | 参照用（普段読まない） |
 | `status/vars.yaml`                  | 実装状況（yq で照会）                | 関数追加時             |
 | `status/README.md`                  | status/ のスキーマ定義               | status/ 編集時         |
 

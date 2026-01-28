@@ -106,7 +106,7 @@
 
 ## Atom
 
-- `swap!` は特殊形式として実装されているが、Phase 13 以降の `call_fn` threadlocal パターンにより通常の BuiltinFn に移行可能 (vswap!/alter-var-root/trampoline と同パターン)。Phase Q1a で移行予定。
+- `swap!` は Q1a で通常の BuiltinFn に移行済み (vswap!/alter-var-root/trampoline と同じ call_fn threadlocal パターン)。
 - `atom`, `deref`, `reset!`, `atom?` は通常の組み込み関数
 
 ## VM: let-closure（修正済み）
