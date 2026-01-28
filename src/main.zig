@@ -171,9 +171,12 @@ pub fn main() !void {
         allocs.deinit();
     }
     allocs.gc_stats_enabled = gc_stats;
+    // Safe Point GC 用にグローバル参照を設定
+    clj.defs.current_allocators = &allocs;
+    defer clj.defs.current_allocators = null;
 
     // 環境を初期化（GPA を直接使用: Env/Namespace/Var/HashMap はインフラ）
-    // GcAllocator 経由にすると GC sweep がインフラの HashMap backing を解放してしまう
+    // GcAllocator 経由にすると GC sweep がインフラの HashMap backing を解放してしまる
     var env = Env.init(gpa_allocator);
     defer env.deinit();
     try env.setupBasic();
@@ -606,6 +609,9 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
         allocs.deinit();
     }
     allocs.gc_stats_enabled = gc_stats;
+    // Safe Point GC 用にグローバル参照を設定
+    clj.defs.current_allocators = &allocs;
+    defer clj.defs.current_allocators = null;
 
     var env = Env.init(gpa_allocator);
     defer env.deinit();

@@ -53,6 +53,27 @@ pub const GC = struct {
         return self.gc_alloc.shouldCollect();
     }
 
+    /// Safe Point GC: VM スタックもルートとして GC を実行
+    /// 式実行中 (call/recur 後) に呼び出される
+    pub fn safePointCollect(self: *GC, env: *Env, globals: GcGlobals, vm_stack: []Value) GcAllocator.SweepResult {
+        // 通常のルートをマーク
+        tracing.markRoots(self.gc_alloc, env, globals);
+        // VM スタックもマーク
+        tracing.markVmStack(self.gc_alloc, vm_stack);
+
+        var result = self.gc_alloc.sweep();
+
+        // ポインタ修正
+        if (result.forwarding.count() > 0) {
+            tracing.fixupRoots(&result.forwarding, self.gc_alloc.registry_alloc, env, globals);
+            tracing.fixupVmStack(&result.forwarding, self.gc_alloc.registry_alloc, vm_stack);
+        }
+
+        result.forwarding.deinit(self.gc_alloc.registry_alloc);
+        result.forwarding = .empty;
+        return result;
+    }
+
     /// 統計情報
     pub fn stats(self: *const GC) GcAllocator.Stats {
         return self.gc_alloc.stats();

@@ -30,6 +30,8 @@ const GcGlobals = gc_mod.GcGlobals;
 const tracing = @import("../gc/tracing.zig");
 const env_mod = @import("env.zig");
 const Env = env_mod.Env;
+const value_mod = @import("value.zig");
+const Value = value_mod.Value;
 
 /// 寿命別アロケータ
 pub const Allocators = struct {
@@ -121,6 +123,59 @@ pub const Allocators = struct {
     pub fn forceGC(self: *Allocators, env: *Env, globals: GcGlobals) void {
         if (self.gc) |gc_alloc| {
             self.runGc(gc_alloc, env, globals);
+        }
+    }
+
+    /// Safe Point GC: VM スタックもルートとして GC を実行
+    /// 式実行中 (recur/call 後) に呼び出す
+    /// 閾値超過時のみ実行
+    pub fn safePointCollect(self: *Allocators, env: *Env, globals: GcGlobals, vm_stack: []Value) void {
+        if (self.gc) |gc_alloc| {
+            if (gc_alloc.shouldCollect()) {
+                self.runSafePointGc(gc_alloc, env, globals, vm_stack);
+            }
+        }
+    }
+
+    /// Safe Point GC 実行（mark + sweep + fixup + VM スタック修正 + 計測）
+    fn runSafePointGc(self: *Allocators, gc_alloc: *GcAllocator, env: *Env, globals: GcGlobals, vm_stack: []Value) void {
+        var timer = std.time.Timer.start() catch {
+            // タイマー取得失敗時は計測なしで実行
+            tracing.markRoots(gc_alloc, env, globals);
+            tracing.markVmStack(gc_alloc, vm_stack);
+            var result = gc_alloc.sweep();
+            if (result.forwarding.count() > 0) {
+                tracing.fixupRoots(&result.forwarding, gc_alloc.registry_alloc, env, globals);
+                tracing.fixupVmStack(&result.forwarding, gc_alloc.registry_alloc, vm_stack);
+            }
+            result.forwarding.deinit(gc_alloc.registry_alloc);
+            if (self.gc_stats_enabled) {
+                logSweepResult(result, gc_alloc.total_collections, null, null);
+            }
+            return;
+        };
+
+        // Mark phase (通常ルート + VM スタック)
+        tracing.markRoots(gc_alloc, env, globals);
+        tracing.markVmStack(gc_alloc, vm_stack);
+        const mark_ns = timer.read();
+
+        // Sweep phase
+        var result = gc_alloc.sweep();
+        const sweep_ns = timer.read() - mark_ns;
+
+        // Fixup phase (通常ルート + VM スタック)
+        if (result.forwarding.count() > 0) {
+            tracing.fixupRoots(&result.forwarding, gc_alloc.registry_alloc, env, globals);
+            tracing.fixupVmStack(&result.forwarding, gc_alloc.registry_alloc, vm_stack);
+        }
+        result.forwarding.deinit(gc_alloc.registry_alloc);
+        const total_ns = timer.read();
+
+        gc_alloc.addPauseTime(total_ns);
+
+        if (self.gc_stats_enabled) {
+            logSweepResult(result, gc_alloc.total_collections, mark_ns, sweep_ns);
         }
     }
 

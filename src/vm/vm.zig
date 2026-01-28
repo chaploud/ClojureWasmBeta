@@ -19,6 +19,7 @@ const Env = env_mod.Env;
 const var_mod = @import("../runtime/var.zig");
 const Var = var_mod.Var;
 const core = @import("../lib/core.zig");
+const defs = @import("../lib/core/defs.zig");
 
 /// VM エラー
 pub const VMError = error{
@@ -505,6 +506,16 @@ pub const VM = struct {
                     // SP をループバインディング直後にリセット
                     // （loop body 内の let 等で追加されたローカルを破棄）
                     self.sp = frame.base + base_offset + arg_count;
+
+                    // Safe Point GC: recur 後に GC チェック
+                    // 長いループでメモリが膨張するのを防ぐ
+                    if (defs.current_allocators) |allocs| {
+                        allocs.safePointCollect(
+                            self.env,
+                            core.getGcGlobals(),
+                            self.stack[0..self.sp],
+                        );
+                    }
 
                     // 次の命令（jump）がループ先頭に戻る
                 },

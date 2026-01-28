@@ -25,6 +25,8 @@ pub const wasm_wasi = @import("../../wasm/wasi.zig");
 pub const engine_mod = @import("../../runtime/engine.zig");
 pub const EvalEngine = engine_mod.EvalEngine;
 pub const Backend = engine_mod.Backend;
+pub const allocators_mod = @import("../../runtime/allocators.zig");
+pub const Allocators = allocators_mod.Allocators;
 
 // ============================================================
 // 型定義
@@ -67,6 +69,10 @@ pub threadlocal var current_env: ?*Env = null;
 /// 現在の評価バックエンド（load-file 等で使用）
 /// main.zig で --backend オプションに応じて設定される
 pub threadlocal var current_backend: Backend = .tree_walk;
+
+/// 現在の Allocators（Safe Point GC で使用）
+/// main.zig で allocs 初期化後に設定される
+pub threadlocal var current_allocators: ?*Allocators = null;
 
 /// with-out-str 用: stdout キャプチャバッファ
 /// non-null のとき、print/println/pr/prn/printf/newline の出力をここに蓄積する

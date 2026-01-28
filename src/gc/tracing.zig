@@ -897,6 +897,40 @@ fn fixupArrayListBuf(comptime T: type, fwd: *ForwardingTable, list: *std.ArrayLi
     }
 }
 
+// ============================================================
+// Safe Point GC: VM スタックのルートマーク/ポインタ修正
+// ============================================================
+
+/// VM スタック上の Value をルートとして mark する
+/// Safe Point GC (式実行中の GC) で使用
+pub fn markVmStack(gc: *GcAllocator, stack: []Value) void {
+    var gray_stack: std.ArrayListUnmanaged(Value) = .empty;
+    defer gray_stack.deinit(gc.registry_alloc);
+
+    // スタック上の全 Value をキューに追加
+    for (stack) |val| {
+        gray_stack.append(gc.registry_alloc, val) catch continue;
+    }
+
+    // ワークスタックを処理
+    while (gray_stack.items.len > 0) {
+        const val = gray_stack.pop().?;
+        traceValue(gc, val, &gray_stack);
+    }
+}
+
+/// VM スタック上の Value ポインタを修正する
+/// セミスペース GC 後に呼び出し
+pub fn fixupVmStack(fwd: *ForwardingTable, alloc: std.mem.Allocator, stack: []Value) void {
+    var visited: std.AutoHashMapUnmanaged(*anyopaque, void) = .empty;
+    defer visited.deinit(alloc);
+
+    // スタック上の全 Value を更新
+    for (stack) |*val| {
+        fixupValue(fwd, val, &visited, alloc);
+    }
+}
+
 // === テスト ===
 
 test "traceValue インライン値はno-op" {
