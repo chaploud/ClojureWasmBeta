@@ -1,5 +1,6 @@
 #!/bin/bash
-# fib(38) ベンチマーク — 全言語比較
+# fib(30) ベンチマーク — 全言語比較
+# fib(30) は ClojureWasmBeta で 152秒かかるため fib(30) を採用
 # 使い方: bash bench/run_bench.sh
 
 set -euo pipefail
@@ -9,7 +10,7 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUNS=5
 
 echo "=========================================="
-echo " fib(38) ベンチマーク"
+echo " fib(30) ベンチマーク"
 echo "=========================================="
 echo ""
 echo "--- 環境情報 ---"
@@ -136,7 +137,7 @@ echo "${LANG_TIME[Python]}s / ${LANG_MEM[Python]} MB"
 
 echo ""
 echo "=========================================="
-echo " 結果サマリ: fib(38) — 中央値 ($RUNS runs)"
+echo " 結果サマリ: fib(30) — 中央値 ($RUNS runs)"
 echo "=========================================="
 echo ""
 printf "%-20s %-12s %-10s %s\n" "言語" "時間(s)" "メモリ(MB)" "バージョン"

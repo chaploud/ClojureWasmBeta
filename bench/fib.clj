@@ -3,4 +3,5 @@
     n
     (+ (fib (- n 1)) (fib (- n 2)))))
 
-(println (fib 38))
+;; fib(30): 約2秒。fib(35)=108秒, fib(38)=152秒は定期計測には長すぎる
+(println (fib 30))

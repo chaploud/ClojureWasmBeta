@@ -1,0 +1,69 @@
+# ベンチマーク結果
+#
+# 変遷を記録して最適化の効果を追跡する。
+# ClojureWasmBeta のみ履歴を蓄積。他言語は baseline として一度だけ記録。
+
+# 計測環境
+env:
+  cpu: Apple M4 Pro
+  ram: 48 GB
+  os: Darwin 25.2.0 (arm64)
+  zig: 0.15.2
+
+# ベンチマーク定義
+benchmarks:
+  fib30:
+    description: "再帰フィボナッチ fib(30) — 関数呼び出しオーバーヘッド"
+    file: fib.clj
+    expected_result: 832040
+  sum_range:
+    description: "遅延シーケンス (range 1000000) + reduce"
+    file: sum_range.clj
+    expected_result: 499999500000
+  map_filter:
+    description: "HOF チェイン — filter/map/take/reduce"
+    file: map_filter.clj
+    expected_result: 1333333330000
+  string_ops:
+    description: "文字列操作 — 10000回の upper-case + 結合"
+    file: string_ops.clj
+    expected_result: 88890
+  data_transform:
+    description: "マップ変換 — 10000個のマップを作成・変換"
+    file: data_transform.clj
+    expected_result: 10000
+
+# 他言語ベースライン (一度だけ記録, 2026-01-28)
+baseline:
+  c:
+    version: "Apple clang 17.0.0"
+    fib30: 0.00  # <0.01s
+  zig:
+    version: "0.15.2"
+    fib30: 0.00  # <0.01s
+  java:
+    version: "OpenJDK 21.0.9"
+    fib30: 0.06
+  ruby:
+    version: "3.3.6 (YJIT)"
+    fib30: 0.13
+    sum_range: 0.10
+    map_filter: 0.09
+  python:
+    version: "3.14.2"
+    fib30: 0.07
+    sum_range: 0.02
+    map_filter: 0.02
+
+# ClojureWasmBeta 履歴
+history:
+  - date: 2026-01-28
+    version: "R7+D (post セミスペース GC)"
+    build: ReleaseFast
+    results:
+      fib30: 9.79
+      sum_range: 0.52
+      map_filter: 1.85
+      string_ops: 0.18
+      data_transform: 0.14
+    notes: "初回計測。fib(38) は 152秒のため fib(30) を採用。"

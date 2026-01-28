@@ -6,7 +6,8 @@ long fib(long n) {
 }
 
 int main(void) {
-    long result = fib(38);
+    // fib(30): baseline用
+    long result = fib(30);
     printf("%ld\n", result);
     return 0;
 }

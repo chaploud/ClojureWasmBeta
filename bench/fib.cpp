@@ -6,7 +6,8 @@ long fib(long n) {
 }
 
 int main() {
-    long result = fib(38);
+    // fib(30): baseline用
+    long result = fib(30);
     std::cout << result << std::endl;
     return 0;
 }

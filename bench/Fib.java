@@ -9,7 +9,8 @@ public class Fib {
         for (int i = 0; i < 3; i++) {
             fib(30);
         }
-        long result = fib(38);
+        // fib(30): baseline用
+        long result = fib(30);
         System.out.println(result);
     }
 }

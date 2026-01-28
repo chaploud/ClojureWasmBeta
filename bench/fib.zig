@@ -6,7 +6,8 @@ fn fib(n: i64) i64 {
 }
 
 pub fn main() !void {
-    const result = fib(38);
+    // fib(30): baseline用
+    const result = fib(30);
     var buf: [4096]u8 = undefined;
     var writer = std.fs.File.stdout().writer(&buf);
     const stdout = &writer.interface;

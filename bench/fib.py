@@ -3,4 +3,5 @@ def fib(n):
         return n
     return fib(n - 1) + fib(n - 2)
 
-print(fib(38))
+# fib(30): baseline用。fib(38) は長時間テスト用
+print(fib(30))
