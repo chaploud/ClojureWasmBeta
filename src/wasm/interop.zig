@@ -13,8 +13,7 @@ const WasmModule = value_mod.WasmModule;
 /// Instance から線形メモリを取得
 fn getMemory(wm: *WasmModule) !*zware.Memory {
     if (wm.closed) return error.WasmModuleClosed;
-    const instance: *zware.Instance = @ptrCast(@alignCast(wm.instance));
-    return instance.getMemory(0) catch {
+    return wm.instance.getMemory(0) catch {
         return error.WasmMemoryError;
     };
 }

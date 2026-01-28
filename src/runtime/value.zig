@@ -228,10 +228,30 @@ pub const Value = union(enum) {
                 h.update(&set_bytes);
             },
             else => {
-                // 関数・参照等はポインタベースのハッシュ
+                // 関数・参照等はポインタベースのハッシュ (アイデンティティ)
                 h.update("p");
                 const ptr_int: usize = switch (self) {
-                    .fn_val => |p| @intFromPtr(p),
+                    inline .fn_val,
+                    .partial_fn,
+                    .comp_fn,
+                    .multi_fn,
+                    .protocol,
+                    .protocol_fn,
+                    .fn_proto,
+                    .lazy_seq,
+                    .var_val,
+                    .atom,
+                    .delay_val,
+                    .volatile_val,
+                    .reduced_val,
+                    .transient,
+                    .promise,
+                    .regex,
+                    .matcher,
+                    .wasm_module,
+                    => |p| @intFromPtr(p),
+                    // nil/bool/int/float/char/string/keyword/symbol/list/vector/map/set
+                    // は上の分岐で処理済み
                     else => 0,
                 };
                 const bytes: [8]u8 = @bitCast(ptr_int);

@@ -348,11 +348,13 @@ pub const CompFn = struct {
 
 // === Wasm ===
 
+const zware = @import("zware");
+
 /// ロード済み Wasm モジュール
 pub const WasmModule = struct {
     path: ?[]const u8, // ファイルパス (デバッグ用)
-    store: *anyopaque, // *zware.Store
-    instance: *anyopaque, // *zware.Instance
-    module_ptr: *anyopaque, // *zware.Module
+    store: *zware.Store,
+    instance: *zware.Instance,
+    module_ptr: *zware.Module,
     closed: bool,
 };

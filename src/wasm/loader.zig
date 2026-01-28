@@ -63,9 +63,9 @@ pub fn loadModuleCore(
     const path_copy = try allocator.dupe(u8, path);
     wm.* = .{
         .path = path_copy,
-        .store = @ptrCast(store),
-        .instance = @ptrCast(instance),
-        .module_ptr = @ptrCast(module),
+        .store = store,
+        .instance = instance,
+        .module_ptr = module,
         .closed = false,
     };
 

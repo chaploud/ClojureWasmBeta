@@ -123,3 +123,23 @@
 | S1h   | clojure.stacktrace (print-stack-trace 等)                     |
 | S1i   | clojure.template (apply-template/do-template)                 |
 | S1j   | clojure.zip (zipper ツリー操作)                               |
+
+## リファクタリング追加 (Phase R7)
+
+| Phase | 内容                                                          |
+|-------|---------------------------------------------------------------|
+| R7    | Zig イディオム改善 — WasmModule anyopaque→zware具体型, valueHash switch 改善 |
+
+## ドキュメントフェーズ (Phase D)
+
+| Phase | 内容                                                          |
+|-------|---------------------------------------------------------------|
+| D1    | presentation.md — shibuya.lisp 発表用 (15分+デモ, ベンチ結果) |
+| D2    | getting_started.md — 利用者向け導入ガイド                     |
+| D3    | developer_guide.md — 開発者向け技術ガイド                     |
+
+## ベンチマーク基盤
+
+| Phase | 内容                                                          |
+|-------|---------------------------------------------------------------|
+| Bench | fib(38) 全言語比較基盤 (C/C++/Zig/Java/Python/Ruby/ClojureWasmBeta) |

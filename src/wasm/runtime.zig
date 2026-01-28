@@ -4,7 +4,6 @@
 //! getExports: エクスポート一覧を取得
 
 const std = @import("std");
-const zware = @import("zware");
 const value_mod = @import("../runtime/value.zig");
 const Value = value_mod.Value;
 const WasmModule = value_mod.WasmModule;
@@ -19,14 +18,11 @@ pub fn invoke(
 ) !Value {
     if (wm.closed) return error.WasmModuleClosed;
 
-    const instance: *zware.Instance = @ptrCast(@alignCast(wm.instance));
-    const module: *zware.Module = @ptrCast(@alignCast(wm.module_ptr));
-
     // 関数の戻り値数を事前に取得
-    const funcidx = module.getExport(.Func, func_name) catch {
+    const funcidx = wm.module_ptr.getExport(.Func, func_name) catch {
         return error.WasmInvokeError;
     };
-    const function = instance.getFunc(funcidx) catch {
+    const function = wm.instance.getFunc(funcidx) catch {
         return error.WasmInvokeError;
     };
     const result_count = function.results.len;
@@ -45,7 +41,7 @@ pub fn invoke(
     const out_slice = out_vals[0..result_count];
 
     // 呼び出し
-    instance.invoke(func_name, in_vals, out_slice, .{}) catch {
+    wm.instance.invoke(func_name, in_vals, out_slice, .{}) catch {
         return error.WasmInvokeError;
     };
 
@@ -61,10 +57,8 @@ pub fn invoke(
 pub fn getExports(wm: *WasmModule, allocator: std.mem.Allocator) !Value {
     if (wm.closed) return error.WasmModuleClosed;
 
-    const module: *zware.Module = @ptrCast(@alignCast(wm.module_ptr));
-
     // exports セクションを走査
-    const exports = module.exports.list.items;
+    const exports = wm.module_ptr.exports.list.items;
     if (exports.len == 0) {
         const empty = try allocator.create(value_mod.PersistentMap);
         empty.* = .{ .entries = &[_]Value{} };

@@ -23,10 +23,16 @@
 | 標準 NS               | string/set/walk/edn/math/repl/data/stacktrace/template/zip/test |
 | nREPL                 | CIDER/Calva/Conjure 互換              |
 
+### 直近の完了
+
+- **R3 (R7)**: Zig イディオム改善 — WasmModule anyopaque → zware 具体型, valueHash switch 改善
+- **D1-D3**: ドキュメント — presentation.md, getting_started.md, developer_guide.md
+- **ベンチマーク**: bench/ に fib(38) 全言語比較基盤を構築
+
 ### 推奨次回タスク
 
-1. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
-2. **P3**: VM 最適化 (ベンチマーク駆動)
+1. **P3**: VM 最適化 (NaN boxing が最有力、ベンチマーク駆動)
+2. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
 3. **新規 S1 候補**: clojure.pprint 等
 
 ---
