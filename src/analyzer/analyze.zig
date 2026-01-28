@@ -2327,6 +2327,13 @@ pub const Analyzer = struct {
             args[i] = try self.analyze(item);
         }
 
+        // 定数畳み込み: pure 関数で全引数が定数なら事前計算
+        if (self.tryConstantFold(fn_node, args)) |const_val| {
+            const node = self.allocator.create(Node) catch return error.OutOfMemory;
+            node.* = .{ .constant = const_val };
+            return node;
+        }
+
         const call_data = self.allocator.create(node_mod.CallNode) catch return error.OutOfMemory;
         call_data.* = .{
             .fn_node = fn_node,
@@ -2337,6 +2344,232 @@ pub const Analyzer = struct {
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = .{ .call_node = call_data };
         return node;
+    }
+
+    /// 定数畳み込み: pure 関数で全引数が定数なら事前計算
+    /// 対象: +, -, *, /, mod, quot, rem, inc, dec, <, >, <=, >=, =, not=
+    fn tryConstantFold(self: *Analyzer, fn_node: *const Node, args: []*Node) ?Value {
+        _ = self;
+
+        // 関数が var_ref であることを確認
+        if (fn_node.* != .var_ref) return null;
+        const var_ref_node = fn_node.var_ref;
+        const v = var_ref_node.var_ref;
+
+        // clojure.core の特定の pure 関数のみ対象
+        if (!std.mem.eql(u8, v.ns_name, "clojure.core")) return null;
+
+        // 全引数が定数 (int or float) であることを確認
+        for (args) |arg| {
+            if (arg.* != .constant) return null;
+            const val = arg.constant;
+            if (val != .int and val != .float) return null;
+        }
+
+        // 関数名に応じて計算
+        const name = v.sym.name;
+
+        // 2 引数の算術演算
+        if (args.len == 2) {
+            const a = args[0].constant;
+            const b = args[1].constant;
+
+            if (std.mem.eql(u8, name, "+")) {
+                return foldAdd(a, b);
+            } else if (std.mem.eql(u8, name, "-")) {
+                return foldSub(a, b);
+            } else if (std.mem.eql(u8, name, "*")) {
+                return foldMul(a, b);
+            } else if (std.mem.eql(u8, name, "/")) {
+                return foldDiv(a, b);
+            } else if (std.mem.eql(u8, name, "mod")) {
+                return foldMod(a, b);
+            } else if (std.mem.eql(u8, name, "quot")) {
+                return foldQuot(a, b);
+            } else if (std.mem.eql(u8, name, "rem")) {
+                return foldRem(a, b);
+            } else if (std.mem.eql(u8, name, "<")) {
+                return foldLt(a, b);
+            } else if (std.mem.eql(u8, name, ">")) {
+                return foldGt(a, b);
+            } else if (std.mem.eql(u8, name, "<=")) {
+                return foldLte(a, b);
+            } else if (std.mem.eql(u8, name, ">=")) {
+                return foldGte(a, b);
+            } else if (std.mem.eql(u8, name, "=")) {
+                return foldEq(a, b);
+            } else if (std.mem.eql(u8, name, "not=")) {
+                return foldNotEq(a, b);
+            }
+        }
+
+        // 1 引数の算術演算
+        if (args.len == 1) {
+            const a = args[0].constant;
+
+            if (std.mem.eql(u8, name, "inc")) {
+                return foldInc(a);
+            } else if (std.mem.eql(u8, name, "dec")) {
+                return foldDec(a);
+            }
+        }
+
+        return null;
+    }
+
+    // 定数畳み込みヘルパー関数
+    fn foldAdd(a: Value, b: Value) ?Value {
+        if (a == .int and b == .int) {
+            return Value{ .int = a.int + b.int };
+        }
+        if (a == .float or b == .float) {
+            const af: f64 = if (a == .float) a.float else @floatFromInt(a.int);
+            const bf: f64 = if (b == .float) b.float else @floatFromInt(b.int);
+            return Value{ .float = af + bf };
+        }
+        return null;
+    }
+
+    fn foldSub(a: Value, b: Value) ?Value {
+        if (a == .int and b == .int) {
+            return Value{ .int = a.int - b.int };
+        }
+        if (a == .float or b == .float) {
+            const af: f64 = if (a == .float) a.float else @floatFromInt(a.int);
+            const bf: f64 = if (b == .float) b.float else @floatFromInt(b.int);
+            return Value{ .float = af - bf };
+        }
+        return null;
+    }
+
+    fn foldMul(a: Value, b: Value) ?Value {
+        if (a == .int and b == .int) {
+            return Value{ .int = a.int * b.int };
+        }
+        if (a == .float or b == .float) {
+            const af: f64 = if (a == .float) a.float else @floatFromInt(a.int);
+            const bf: f64 = if (b == .float) b.float else @floatFromInt(b.int);
+            return Value{ .float = af * bf };
+        }
+        return null;
+    }
+
+    fn foldDiv(a: Value, b: Value) ?Value {
+        // 0 除算は畳み込まない
+        if (b == .int and b.int == 0) return null;
+        if (b == .float and b.float == 0.0) return null;
+
+        if (a == .int and b == .int) {
+            // 整数除算（Clojure の / は有理数だが、ここでは整数で処理）
+            if (@mod(a.int, b.int) == 0) {
+                return Value{ .int = @divTrunc(a.int, b.int) };
+            }
+            // 割り切れない場合は float
+            const af: f64 = @floatFromInt(a.int);
+            const bf: f64 = @floatFromInt(b.int);
+            return Value{ .float = af / bf };
+        }
+        if (a == .float or b == .float) {
+            const af: f64 = if (a == .float) a.float else @floatFromInt(a.int);
+            const bf: f64 = if (b == .float) b.float else @floatFromInt(b.int);
+            return Value{ .float = af / bf };
+        }
+        return null;
+    }
+
+    fn foldMod(a: Value, b: Value) ?Value {
+        if (b == .int and b.int == 0) return null;
+        if (a == .int and b == .int) {
+            return Value{ .int = @mod(a.int, b.int) };
+        }
+        return null;
+    }
+
+    fn foldQuot(a: Value, b: Value) ?Value {
+        if (b == .int and b.int == 0) return null;
+        if (a == .int and b == .int) {
+            return Value{ .int = @divTrunc(a.int, b.int) };
+        }
+        return null;
+    }
+
+    fn foldRem(a: Value, b: Value) ?Value {
+        if (b == .int and b.int == 0) return null;
+        if (a == .int and b == .int) {
+            return Value{ .int = @rem(a.int, b.int) };
+        }
+        return null;
+    }
+
+    fn foldInc(a: Value) ?Value {
+        if (a == .int) {
+            return Value{ .int = a.int + 1 };
+        }
+        if (a == .float) {
+            return Value{ .float = a.float + 1.0 };
+        }
+        return null;
+    }
+
+    fn foldDec(a: Value) ?Value {
+        if (a == .int) {
+            return Value{ .int = a.int - 1 };
+        }
+        if (a == .float) {
+            return Value{ .float = a.float - 1.0 };
+        }
+        return null;
+    }
+
+    // 比較演算の畳み込み
+    fn foldLt(a: Value, b: Value) ?Value {
+        const af = toFloat(a) orelse return null;
+        const bf = toFloat(b) orelse return null;
+        return Value{ .bool_val = af < bf };
+    }
+
+    fn foldGt(a: Value, b: Value) ?Value {
+        const af = toFloat(a) orelse return null;
+        const bf = toFloat(b) orelse return null;
+        return Value{ .bool_val = af > bf };
+    }
+
+    fn foldLte(a: Value, b: Value) ?Value {
+        const af = toFloat(a) orelse return null;
+        const bf = toFloat(b) orelse return null;
+        return Value{ .bool_val = af <= bf };
+    }
+
+    fn foldGte(a: Value, b: Value) ?Value {
+        const af = toFloat(a) orelse return null;
+        const bf = toFloat(b) orelse return null;
+        return Value{ .bool_val = af >= bf };
+    }
+
+    fn foldEq(a: Value, b: Value) ?Value {
+        if (a == .int and b == .int) {
+            return Value{ .bool_val = a.int == b.int };
+        }
+        if (a == .float and b == .float) {
+            return Value{ .bool_val = a.float == b.float };
+        }
+        // int と float の比較
+        const af = toFloat(a) orelse return null;
+        const bf = toFloat(b) orelse return null;
+        return Value{ .bool_val = af == bf };
+    }
+
+    fn foldNotEq(a: Value, b: Value) ?Value {
+        if (foldEq(a, b)) |eq_result| {
+            return Value{ .bool_val = !eq_result.bool_val };
+        }
+        return null;
+    }
+
+    fn toFloat(v: Value) ?f64 {
+        if (v == .int) return @floatFromInt(v.int);
+        if (v == .float) return v.float;
+        return null;
     }
 
     // === ヘルパー ===

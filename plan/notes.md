@@ -42,6 +42,16 @@
     fixupRoots() で全ルートのポインタを新アドレスに更新。
     sweep 性能: 1,146ms → 29ms (~40x 高速化)。
     GcGlobals.hierarchy は `*?Value` (ポインタ) で fixup writeback に対応。
+  - **世代別 GC 基盤 (G2a-c)**: Nursery (Young) + GcAllocator (Old) の2世代構成。
+    - `Nursery`: 4MB bump allocator。高速な連続メモリ割り当て。
+    - `GenerationalGC`: Young+Old 統合。`minorCollect()` で生存オブジェクトを Old に promotion。
+    - ForwardingTable でポインタ更新。Remembered Set 基盤あり (write barrier 用)。
+    - 現在は未統合 (Allocators は従来の GcAllocator を使用)。
+  - **世代別 GC 統合の課題 (G2d-e)**:
+    - Write barrier: Old オブジェクトが Young を参照する場合に Remembered Set に記録が必要。
+    - 全代入箇所 (`swap!`, `reset!`, `assoc`, `conj` 等) に barrier を挿入する必要あり。
+    - 式境界 GC では効果が限定的かもしれない (式内で Young が Old を参照することは稀)。
+    - パフォーマンス効果を確認してから本格統合を検討。
 
 ## Analyzer
 
