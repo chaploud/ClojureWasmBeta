@@ -335,6 +335,10 @@ pub const VM = struct {
                 .def_macro => {
                     try self.runDef(constants[instr.operand], true);
                 },
+                .def_doc => {
+                    // スタックトップの Var に doc/arglists を設定
+                    self.runDefDoc(constants[instr.operand]);
+                },
                 .defmulti => {
                     try self.runDefmulti(constants[instr.operand]);
                 },
@@ -1237,6 +1241,31 @@ pub const VM = struct {
 
         // Var を push（戻り値 — #'ns/name 形式）
         try self.push(Value{ .var_val = @ptrCast(v) });
+    }
+
+    /// def_doc: スタックトップの Var に doc/arglists を設定
+    /// スタック変化なし（peek して設定）
+    fn runDefDoc(self: *VM, meta_val: Value) void {
+        // スタックトップは直前の def が push した Var
+        const top = self.peek(0) catch return;
+        if (top != .var_val) return;
+        const v: *var_mod.Var = @ptrCast(@alignCast(top.var_val));
+
+        // meta_val は [doc_string, arglists_string] のベクター
+        const vec = switch (meta_val) {
+            .vector => |vec| vec,
+            else => return,
+        };
+        if (vec.items.len < 2) return;
+
+        // doc
+        if (vec.items[0] == .string) {
+            v.doc = vec.items[0].string.data;
+        }
+        // arglists
+        if (vec.items[1] == .string) {
+            v.arglists = vec.items[1].string.data;
+        }
     }
 
     /// defmulti を実行

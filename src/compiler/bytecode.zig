@@ -111,7 +111,11 @@ pub const OpCode = enum(u8) {
     /// extend-type メソッド登録（オペランド: 定数インデックス u16 → [type, proto, method] 情報）
     /// スタック: [method_fn] → [nil]
     extend_type_method = 0x47,
-    // 0x48-0x4F: 予約
+    /// def_doc: def 直後に doc/arglists を Var に設定
+    /// オペランド: 定数インデックス u16 → [doc_string, arglists_string] (nil の場合は設定しない)
+    /// スタック変化なし (直前の def の戻り値 Var を peek して設定)
+    def_doc = 0x48,
+    // 0x49-0x4F: 予約
 
     // ═══════════════════════════════════════════════════════
     // [F] 制御フロー (0x50-0x5F)

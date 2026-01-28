@@ -485,6 +485,30 @@ pub const Compiler = struct {
         } else {
             try self.chunk.emit(.def, idx);
         }
+
+        // doc/arglists がある場合は def_doc 命令を追加
+        if (node.doc != null or node.arglists != null) {
+            const doc_val = if (node.doc) |doc| blk: {
+                const s = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+                s.* = value_mod.String.init(doc);
+                break :blk Value{ .string = s };
+            } else Value.nil;
+            const arglists_val = if (node.arglists) |al| blk: {
+                const s = self.allocator.create(value_mod.String) catch return error.OutOfMemory;
+                s.* = value_mod.String.init(al);
+                break :blk Value{ .string = s };
+            } else Value.nil;
+
+            // 2要素ベクターを定数として追加
+            const vec = self.allocator.create(value_mod.PersistentVector) catch return error.OutOfMemory;
+            const entries = self.allocator.alloc(Value, 2) catch return error.OutOfMemory;
+            entries[0] = doc_val;
+            entries[1] = arglists_val;
+            vec.* = .{ .items = entries };
+            const vec_val = Value{ .vector = vec };
+            const doc_idx = self.chunk.addConstant(vec_val) catch return error.TooManyConstants;
+            try self.chunk.emit(.def_doc, doc_idx);
+        }
     }
 
     /// defmulti
