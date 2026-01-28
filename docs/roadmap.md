@@ -289,24 +289,19 @@ user/-main    - user.clj:50:3
 
 **参考ドキュメント**: `docs/reference/error_design.md` (設計済み、未実装)
 
-### U3: doc / dir / apropos
+### U3: doc / dir / apropos — ✅ 完了
 
-**本家 clj CLI 機能との対応**:
+doc / dir / find-doc / apropos を実装。defn の docstring と arglists を Var に保存。
+doc/dir はマクロ展開、find-doc/apropos は builtin 関数。
 
-| 本家機能             | 説明                         | 優先度 |
-|----------------------|------------------------------|--------|
-| `(doc fn-name)`      | docstring 表示               | 高     |
-| `(dir ns-name)`      | NS の public var 一覧        | 高     |
-| `(find-doc "pat")`   | docstring パターン検索       | 中     |
-| `(apropos "pat")`    | 名前パターン Var 検索        | 中     |
-| `(source fn-name)`   | ソースコード表示             | 低     |
-| Tab 補完             | NS/Var 名の補完              | 低     |
-
-**実装方針**:
-- `doc`: Var の meta に :doc を格納。`(doc fn)` で表示
-  - 現状 `def` の 3-arg (docstring) 形式が未完全対応 → 先に修正
-- `dir`: `ns-publics` は実装済み。表示用ラッパー追加
-- `find-doc` / `apropos`: 全 NS の Var を走査 + パターンマッチ
+| 本家機能             | 説明                         | 状態      |
+|----------------------|------------------------------|-----------|
+| `(doc fn-name)`      | docstring 表示               | ✅ 完了   |
+| `(dir ns-name)`      | NS の public var 一覧        | ✅ 完了   |
+| `(find-doc "pat")`   | docstring パターン検索       | ✅ 完了   |
+| `(apropos "pat")`    | 名前パターン Var 検索        | ✅ 完了   |
+| `(source fn-name)`   | ソースコード表示             | 未実装    |
+| Tab 補完             | NS/Var 名の補完              | 未実装    |
 
 ### U4: 既知バグの修正
 

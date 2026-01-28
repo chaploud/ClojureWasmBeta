@@ -275,11 +275,29 @@ map, set, symbol を Clojure 同様に関数として呼び出し可能に。
   ```
 - 全テスト維持 (760/1 compat, 270/274 zig)
 
+### U3: doc/dir/find-doc/apropos — 完了
+
+REPL ドキュメント閲覧機能。
+
+- **Var.doc / Var.arglists**: defn の docstring と引数リストを Var に保存
+  - DefNode に doc/arglists フィールド追加
+  - Analyzer: expandDefn で抽出、analyzeDef で DefNode に設定
+  - evaluator: runDef で Var に設定
+- **`(doc name)`**: マクロ展開 → `(__doc "name")` builtin 呼び出し
+  - Var の ns/name, arglists, docstring を stdout に表示
+- **`(dir ns-name)`**: マクロ展開 → `(__dir "ns-name")` builtin 呼び出し
+  - 名前空間の public var をソートして一覧表示
+- **`(find-doc "pattern")`**: builtin 関数
+  - 全名前空間の docstring/var名からパターン文字列を検索
+- **`(apropos "pattern")`**: builtin 関数
+  - 全名前空間の var 名からパターン文字列を検索
+- 全テスト維持 (760/1 compat, 270/274 zig)
+
 ### 推奨次回タスク
 
-1. **U3: doc/dir/apropos** — REPL ドキュメント閲覧機能
-2. **G1: GC 改善** — 世代別 GC or MemoryPool
-3. **R3 残項目**: MultiArrayList / MemoryPool / switch exhaustiveness / エラー伝播改善
+1. **G1: GC 改善** — 世代別 GC or MemoryPool
+2. **R3 残項目**: MultiArrayList / MemoryPool / switch exhaustiveness / エラー伝播改善
+3. **U4 残項目**: 既知バグ修正
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
