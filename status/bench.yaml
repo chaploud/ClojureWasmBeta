@@ -32,14 +32,18 @@ benchmarks:
 results:
   c:
     version: "Apple clang 17.0.0"
-    fib30: {time_ms: 4.65, mem_mb: 1.8}
-    sum_range: # C版なし
-    map_filter: # C版なし
-    string_ops: # C版なし
-    data_transform: # C版なし
+    fib30: {time_ms: 6.43, mem_mb: 1.8}
+    sum_range: {time_ms: 4.11, mem_mb: 1.8}
+    map_filter: {time_ms: 3.23, mem_mb: 1.8}
+    string_ops: {time_ms: 5.13, mem_mb: 1.8}
+    data_transform: {time_ms: 3.76, mem_mb: 1.8}
   cpp:
     version: "Apple clang 17.0.0"
-    fib30: {time_ms: 5.61, mem_mb: 1.8}
+    fib30: {time_ms: 5.19, mem_mb: 1.8}
+    sum_range: {time_ms: 6.99, mem_mb: 1.8}
+    map_filter: {time_ms: 3.95, mem_mb: 1.8}
+    string_ops: {time_ms: 2.22, mem_mb: 1.8}
+    data_transform: {time_ms: 3.94, mem_mb: 1.8}
   zig:
     version: "0.15.2"
     fib30: {time_ms: 3.62, mem_mb: 1.8}

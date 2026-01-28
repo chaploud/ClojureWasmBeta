@@ -105,11 +105,11 @@ Source Code
 
 | ベンチマーク     | C       | Zig     | Java    | JVM Clj (cold) | babashka | Python  | Ruby    | CWB     |
 |------------------|---------|---------|---------|----------------|----------|---------|---------|---------|
-| fib30            | 4.7ms   | 3.6ms   | 33ms    | 384ms          | 152ms    | 76ms    | 140ms   | 69ms    |
-| sum_range        | —       | 6.0ms   | 34ms    | 314ms          | 21ms     | 21ms    | 97ms    | 13ms    |
-| map_filter       | —       | 3.4ms   | 45ms    | 391ms          | 13ms     | 15ms    | 98ms    | 1.8ms   |
-| string_ops       | —       | 2.1ms   | 49ms    | 321ms          | 14ms     | 18ms    | 99ms    | 6.6ms   |
-| data_transform   | —       | 5.2ms   | 38ms    | 386ms          | 16ms     | 17ms    | 105ms   | 10ms    |
+| fib30            | 6.4ms   | 4.5ms   | 33ms    | 384ms          | 152ms    | 77ms    | 135ms   | 69ms    |
+| sum_range        | 4.1ms   | 3.8ms   | 35ms    | 307ms          | 22ms     | 20ms    | 103ms   | 13ms    |
+| map_filter       | 3.2ms   | 4.0ms   | 44ms    | 383ms          | 13ms     | 15ms    | 97ms    | 2.3ms   |
+| string_ops       | 5.1ms   | 3.9ms   | 49ms    | 320ms          | 13ms     | 18ms    | 98ms    | 6.4ms   |
+| data_transform   | 3.8ms   | 3.3ms   | 32ms    | 385ms          | 13ms     | 17ms    | 100ms   | 11ms    |
 
 - JVM Clj (cold): `clojure -M file.clj`。300-400ms の大部分は JVM 起動 + Clojure ランタイムロード
 - babashka: GraalVM ネイティブコンパイル済み Clojure (sci ベース)

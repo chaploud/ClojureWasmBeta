@@ -109,15 +109,15 @@ build_benchmark() {
     local bench="$1"
     local dir="$SCRIPT_DIR/$bench"
 
-    # C
-    [[ -f "$dir/fib.c" ]] && cc -O3 -o "$dir/bench_c" "$dir/fib.c" 2>/dev/null
-    [[ -f "$dir/sum.c" ]] && cc -O3 -o "$dir/bench_c" "$dir/sum.c" 2>/dev/null
-    [[ -f "$dir/main.c" ]] && cc -O3 -o "$dir/bench_c" "$dir/main.c" 2>/dev/null
+    # C (ディレクトリ内の .c ファイルを検索)
+    for cfile in "$dir"/*.c; do
+        [[ -f "$cfile" ]] && cc -O3 -o "$dir/bench_c" "$cfile" 2>/dev/null && break
+    done
 
     # C++
-    [[ -f "$dir/fib.cpp" ]] && c++ -O3 -o "$dir/bench_cpp" "$dir/fib.cpp" 2>/dev/null
-    [[ -f "$dir/sum.cpp" ]] && c++ -O3 -o "$dir/bench_cpp" "$dir/sum.cpp" 2>/dev/null
-    [[ -f "$dir/main.cpp" ]] && c++ -O3 -o "$dir/bench_cpp" "$dir/main.cpp" 2>/dev/null
+    for cppfile in "$dir"/*.cpp; do
+        [[ -f "$cppfile" ]] && c++ -O3 -o "$dir/bench_cpp" "$cppfile" 2>/dev/null && break
+    done
 
     # Zig
     for zigfile in "$dir"/*.zig; do
