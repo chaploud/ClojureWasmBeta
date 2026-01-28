@@ -3798,10 +3798,13 @@ vars:
   clojure_edn:
     read:
       type: function
-      status: todo
+      status: skip
+      note: PushbackReader 未実装のため skip
     read-string:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.core/read-string のラッパー
   clojure_data:
     diff:
       type: function

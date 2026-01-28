@@ -436,6 +436,13 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 - 3段ネスト `(fn [x] (mapv (fn [y] (mapv (fn [z] [x y z]) ...)) ...))` が VM で正常動作
 - 274/274 Zig, 885/886 compat
 
+### S1d: clojure.edn 名前空間 — 完了
+
+- **`src/clj/clojure/edn.clj`**: `read-string` のラッパー NS
+  - clojure.core/read-string をそのまま委譲 (#= 評価リーダー未実装のため既に EDN 安全)
+- **テスト**: `test/compat/clojure_edn.clj` — 9 assertions (map/vector/list/set/string/number/keyword/true/nil)
+- TreeWalk / VM / --compare 全 PASS
+
 ### 推奨次回タスク
 
 1. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
@@ -564,7 +571,11 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 | `test/compat/wasm_memory.clj`            | 7            | PASS |
 | `test/compat/wasm_host.clj`              | 5            | PASS |
 | `test/compat/wasm_wasi.clj`              | 4            | PASS |
-| **compat 合計**                          | **564**      |      |
+| `test/compat/clojure_string.clj`         | 37           | PASS |
+| `test/compat/clojure_set.clj`            | 24           | PASS |
+| `test/compat/clojure_walk.clj`           | 9            | PASS |
+| `test/compat/clojure_edn.clj`            | 9            | PASS |
+| **compat 合計**                          | **643**      |      |
 
 ### テスト基盤
 

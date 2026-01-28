@@ -351,6 +351,15 @@ doc/dir はマクロ展開、find-doc/apropos は builtin 関数。
 - Zig builtin → Clojure 関数呼び出しでオーバーヘッド発生
 - ベンチマークで「呼び出し頻度 × オーバーヘッド」を測定してから移行判断
 
+### S1 完了サブタスク: 標準名前空間の .clj 提供
+
+| Sub  | 内容                                         | 状態      |
+|------|----------------------------------------------|-----------|
+| S1a  | clojure.string (19 関数)                     | ✅ 完了   |
+| S1b  | clojure.set (11 関数)                        | ✅ 完了   |
+| S1c  | clojure.string 完全化 + clojure.walk (7 関数) | ✅ 完了   |
+| S1d  | clojure.edn (read-string)                    | ✅ 完了   |
+
 **長期ビジョン**:
 - ブートストラップ `.clj` ファイル群を `src/clj/` に配置
 - 起動時に `load-file` で自動読み込み
