@@ -141,6 +141,20 @@ pub threadlocal var last_error: ?Info = null;
 /// evaluator/vm 側で Value* にキャストして使用
 pub threadlocal var thrown_value: ?*anyopaque = null;
 
+/// エラー表示時の周辺ソースコード表示用
+/// 評価開始時にソーステキストを設定しておく
+pub threadlocal var source_text: ?[]const u8 = null;
+
+/// ソーステキストを設定
+pub fn setSourceText(text: ?[]const u8) void {
+    source_text = text;
+}
+
+/// ソーステキストを取得
+pub fn getSourceText() ?[]const u8 {
+    return source_text;
+}
+
 /// ユーザー例外を設定し UserException エラーを返す
 pub fn throwValue(val_ptr: *anyopaque) Error {
     thrown_value = val_ptr;

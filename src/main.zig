@@ -148,19 +148,26 @@ pub fn main() !void {
         // scratch をリセット（前回の Form/Node を解放）
         allocs.resetScratch();
 
+        // エラー表示用にソーステキストを設定
+        base_error.setSourceText(expr);
+
         if (compare_mode) {
             const compare_out = runCompare(&allocs, &env, expr, vm_snapshot, stdout, stderr) catch |err| {
                 reportError(err, stderr);
+                base_error.setSourceText(null);
                 std.process.exit(1);
             };
             vm_snapshot = compare_out;
         } else {
             runWithBackend(&allocs, &env, expr, backend, stdout) catch |err| {
                 reportError(err, stderr);
+                base_error.setSourceText(null);
                 std.process.exit(1);
             };
         }
         stdout.flush() catch {};
+
+        base_error.setSourceText(null);
 
         // 式境界で GC（閾値超過時のみ）
         allocs.collectGarbage(&env, core.getGcGlobals());
@@ -521,9 +528,13 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
         // scratch リセット
         allocs.resetScratch();
 
+        // エラー表示用にソーステキストを設定
+        base_error.setSourceText(source);
+
         if (compare_mode) {
             const compare_out = runCompare(&allocs, &env, source, vm_snapshot, stdout, stderr) catch |err| {
                 reportError(err, stderr);
+                base_error.setSourceText(null);
                 ve.bindRoot(Value.nil);
                 continue;
             };
@@ -532,6 +543,7 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
             // 評価
             const result = evalForRepl(&allocs, &env, source, backend) catch |err| {
                 reportError(err, stderr);
+                base_error.setSourceText(null);
                 continue;
             };
 
@@ -547,6 +559,8 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
         }
 
         stdout.flush() catch {};
+
+        base_error.setSourceText(null);
 
         // 式境界で GC
         allocs.collectGarbage(&env, core.getGcGlobals());
@@ -654,6 +668,10 @@ fn reportError(err: anyerror, writer: *std.Io.Writer) void {
             const file = info.location.file orelse "NO_SOURCE_PATH";
             writer.print("{s}:{d}:{d}\n", .{ file, info.location.line, info.location.column }) catch {};
         }
+        // 周辺ソースコード表示
+        if (info.location.line > 0) {
+            showSourceContext(writer, info.location);
+        }
         // スタックトレース
         if (info.callstack) |frames| {
             writer.writeAll("----- Stack Trace --------------------------------------------------------------\n") catch {};
@@ -670,6 +688,103 @@ fn reportError(err: anyerror, writer: *std.Io.Writer) void {
         writer.print("Error: {s}\n", .{@errorName(err)}) catch {};
     }
     writer.flush() catch {};
+}
+
+/// エラー位置の周辺ソースコードを表示
+/// ファイルパスがあればファイルを読み込み、なければ threadlocal のソーステキストを使用
+fn showSourceContext(writer: *std.Io.Writer, location: base_error.SourceLocation) void {
+    const source = getSourceForLocation(location) orelse return;
+    const error_line = location.line; // 1-based
+
+    // 行を分割してエラー行の前後2行を表示
+    var lines: [512][]const u8 = undefined; // 最大512行
+    var line_count: usize = 0;
+    var iter = std.mem.splitScalar(u8, source, '\n');
+    while (iter.next()) |line| {
+        if (line_count >= lines.len) break;
+        lines[line_count] = line;
+        line_count += 1;
+    }
+
+    if (error_line == 0 or error_line > line_count) return;
+
+    // 表示範囲: エラー行の前後2行
+    const context_lines: u32 = 2;
+    const start = if (error_line > context_lines) error_line - context_lines else 1;
+    const end = @min(error_line + context_lines, @as(u32, @intCast(line_count)));
+
+    // 行番号の最大桁数を計算
+    const max_digits = countDigits(end);
+
+    writer.writeByte('\n') catch {};
+    var line_num: u32 = start;
+    while (line_num <= end) : (line_num += 1) {
+        const line_text = lines[line_num - 1];
+        // 行番号を右寄せで表示
+        writeLineNumber(writer, line_num, max_digits);
+        writer.print(" | {s}\n", .{line_text}) catch {};
+        // エラー行にはポインタを付与
+        if (line_num == error_line) {
+            writeErrorPointer(writer, max_digits, location.column);
+        }
+    }
+    writer.writeByte('\n') catch {};
+}
+
+/// 行番号を右寄せで表示（"  " + 右寄せ行番号）
+fn writeLineNumber(writer: *std.Io.Writer, line_num: u32, width: u32) void {
+    const digits = countDigits(line_num);
+    writer.writeAll("  ") catch {};
+    // パディング
+    var pad: u32 = 0;
+    while (pad + digits < width) : (pad += 1) {
+        writer.writeByte(' ') catch {};
+    }
+    writer.print("{d}", .{line_num}) catch {};
+}
+
+/// エラーカラム位置にポインタを表示
+fn writeErrorPointer(writer: *std.Io.Writer, max_digits: u32, column: u32) void {
+    // "  " + digits + " | " の分のスペース
+    const prefix_len = 2 + max_digits + 3;
+    var i: u32 = 0;
+    while (i < prefix_len + column) : (i += 1) {
+        writer.writeByte(' ') catch {};
+    }
+    writer.writeAll("^--- error here\n") catch {};
+}
+
+/// 数値の桁数を返す
+fn countDigits(n: u32) u32 {
+    if (n == 0) return 1;
+    var count: u32 = 0;
+    var v = n;
+    while (v > 0) : (v /= 10) {
+        count += 1;
+    }
+    return count;
+}
+
+/// エラー位置に対応するソースコードを取得
+/// ファイルパスがあればファイル読み込み、なければ threadlocal を参照
+fn getSourceForLocation(location: base_error.SourceLocation) ?[]const u8 {
+    // ファイルパスからの読み込みを優先
+    if (location.file) |file_path| {
+        if (readFileForError(file_path)) |content| {
+            return content;
+        }
+    }
+    // フォールバック: threadlocal のソーステキスト（-e 引数やREPL入力）
+    return base_error.getSourceText();
+}
+
+/// エラー表示用にファイルを読み込む（静的バッファ使用）
+var file_read_buf: [64 * 1024]u8 = undefined; // 64KB
+fn readFileForError(path: []const u8) ?[]const u8 {
+    const file = std.fs.cwd().openFile(path, .{}) catch return null;
+    defer file.close();
+    const bytes_read = file.readAll(&file_read_buf) catch return null;
+    return file_read_buf[0..bytes_read];
 }
 
 test "simple test" {
