@@ -149,6 +149,9 @@ pub fn main() !void {
     try core.registerCore(&env, allocs.persistent());
     core.initLoadedLibs(allocs.persistent());
 
+    // デフォルトクラスパス: src/clj (clojure.string 等の標準ライブラリ)
+    core.addClasspathRoot("src/clj");
+
     // 各式を評価
     var vm_snapshot: ?engine_mod.VarSnapshot = null;
     for (expressions.items) |expr| {
@@ -458,6 +461,9 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
     try env.setupBasic();
     try core.registerCore(&env, allocs.persistent());
     core.initLoadedLibs(allocs.persistent());
+
+    // デフォルトクラスパス
+    core.addClasspathRoot("src/clj");
 
     // 行エディタ初期化
     var editor = LineEditor.init(gpa_allocator);

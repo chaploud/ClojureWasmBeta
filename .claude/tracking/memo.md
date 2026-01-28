@@ -323,7 +323,7 @@ REPL ドキュメント閲覧機能。
 - `dir` で private 関数が非表示になることを確認
 - `defn-` が実際に private Var を生成するよう修正 (従来は defn と同等だった)
 
-### G1a: GC 統計ログ — 完了
+### G1a-b: GC 計測基盤 — 完了
 
 `--gc-stats` CLI フラグで GC 実行ごとの統計と終了時サマリを stderr に出力。
 
@@ -342,13 +342,31 @@ REPL ドキュメント閲覧機能。
     final heap        : 39416 bytes, 452 objects
     final threshold   : 262144 bytes
   ```
+- G1b: mark/sweep 時間計測追加 (std.time.Timer)
+- 計測結果: mark ~0.3ms vs sweep ~9s (1.2M objects) — sweep が GC 停止の 99.9%
 - 全テスト維持 (815/1 compat, 270/274 zig)
+
+### S1a: clojure.string 名前空間 — 完了
+
+`(require 'clojure.string)` で標準的な clojure.string 関数名を提供。
+実装は全て Zig builtin へのラッパー (.clj にロジックなし)。
+
+- **新規 builtin 5 関数** (strings.zig): capitalize, string-reverse, index-of, last-index-of, escape
+- **`src/clj/clojure/string.clj`**: 17 関数のラッパー NS
+  - upper-case, lower-case, capitalize, trim, triml, trimr
+  - blank?, starts-with?, ends-with?, includes?
+  - index-of, last-index-of, replace, replace-first
+  - split, join, reverse, escape, re-quote-replacement
+- **デフォルト classpath**: `src/clj` を自動追加 (main.zig)
+- **テスト**: `test/compat/clojure_string.clj` — 32 assertions
+- 全テスト 847 pass / 1 fail (意図的)
 
 ### 推奨次回タスク
 
-1. **G1b: GC 計測分析** — `--gc-stats` の結果を基に MemoryPool 導入判断
-2. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
-3. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars, add-watch 等)
+1. **S1b: clojure.set 名前空間** — union/intersection/difference 等
+2. **G1c: sweep 高速化** — バルク解放 or Arena ベース GC
+3. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
+4. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars, add-watch 等)
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 

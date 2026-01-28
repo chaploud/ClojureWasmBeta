@@ -3356,31 +3356,49 @@ vars:
   clojure_string:
     blank?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     capitalize:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     ends-with?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     escape:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     includes?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     index-of:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     join:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: string-join ラッパー経由
     last-index-of:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     lower-case:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     re-quote-replacement:
       type: function
       status: done
@@ -3389,15 +3407,17 @@ vars:
       type: function
       status: done
       impl_type: builtin
-      note: string-replace として実装（regex/string 両対応）
+      note: string-replace builtin + clojure.string NS ラッパー
     replace-first:
       type: function
       status: done
       impl_type: builtin
-      note: string-replace-first として実装
+      note: string-replace-first builtin + clojure.string NS ラッパー
     reverse:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: string-reverse ラッパー経由
     split:
       type: function
       status: done
@@ -3408,22 +3428,32 @@ vars:
       status: todo
     starts-with?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     trim:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     trim-newline:
       type: function
       status: todo
     triml:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     trimr:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     upper-case:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
   clojure_set:
     difference:
       type: function

@@ -926,6 +926,161 @@ pub fn reGroupsFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Va
 }
 
 // ============================================================
+// clojure.string 追加関数
+// ============================================================
+
+/// str/capitalize: 先頭を大文字、残りを小文字
+pub fn capitalize(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    if (s.len == 0) return args[0];
+    const result = try allocator.alloc(u8, s.len);
+    result[0] = std.ascii.toUpper(s[0]);
+    for (s[1..], 1..) |c, i| {
+        result[i] = std.ascii.toLower(c);
+    }
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = result };
+    return Value{ .string = str_obj };
+}
+
+/// str/reverse: 文字列を反転
+pub fn stringReverse(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    if (s.len == 0) return args[0];
+    const result = try allocator.alloc(u8, s.len);
+    for (s, 0..) |c, i| {
+        result[s.len - 1 - i] = c;
+    }
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = result };
+    return Value{ .string = str_obj };
+}
+
+/// str/index-of: 部分文字列の最初の位置 (0-based)、見つからなければ nil
+/// (index-of s value) or (index-of s value from-index)
+pub fn indexOf(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    var char_buf: [1]u8 = undefined;
+    const substr = switch (args[1]) {
+        .string => |str| str.data,
+        .char_val => |c| blk: {
+            if (c > 127) return error.TypeError; // ASCII のみ対応
+            char_buf[0] = @intCast(c);
+            break :blk &char_buf;
+        },
+        else => return error.TypeError,
+    };
+    const from: usize = if (args.len == 3) blk: {
+        const idx = switch (args[2]) {
+            .int => |v| v,
+            else => return error.TypeError,
+        };
+        break :blk if (idx < 0) 0 else @intCast(idx);
+    } else 0;
+    if (from >= s.len) return Value.nil;
+    if (std.mem.indexOfPos(u8, s, from, substr)) |pos| {
+        return Value{ .int = @intCast(pos) };
+    }
+    return Value.nil;
+}
+
+/// str/last-index-of: 部分文字列の最後の位置、見つからなければ nil
+/// (last-index-of s value) or (last-index-of s value from-index)
+pub fn lastIndexOf(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len < 2 or args.len > 3) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    var char_buf2: [1]u8 = undefined;
+    const substr = switch (args[1]) {
+        .string => |str| str.data,
+        .char_val => |c| blk: {
+            if (c > 127) return error.TypeError;
+            char_buf2[0] = @intCast(c);
+            break :blk &char_buf2;
+        },
+        else => return error.TypeError,
+    };
+    // from-index は検索範囲の上限
+    const search_end: usize = if (args.len == 3) blk: {
+        const idx = switch (args[2]) {
+            .int => |v| v,
+            else => return error.TypeError,
+        };
+        if (idx < 0) break :blk 0;
+        const ui: usize = @intCast(idx);
+        // Clojure: from-index は開始位置を含む → +substr.len で末尾まで検索
+        break :blk @min(ui + substr.len, s.len);
+    } else s.len;
+    if (search_end == 0) return Value.nil;
+    // 後ろから検索
+    const search_in = s[0..search_end];
+    if (std.mem.lastIndexOf(u8, search_in, substr)) |pos| {
+        return Value{ .int = @intCast(pos) };
+    }
+    return Value.nil;
+}
+
+/// str/escape: 文字ごとにマップで置換
+/// (escape s cmap) — cmap は {char replacement-string} のマップ
+pub fn escapeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+    const cmap = switch (args[1]) {
+        .map => |m| m,
+        else => return error.TypeError,
+    };
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(allocator);
+
+    for (s) |c| {
+        // cmap からキャラクタをルックアップ
+        const char_val = Value{ .char_val = c };
+        var found = false;
+        // entries は [key0, val0, key1, val1, ...] のフラット配列
+        var ei: usize = 0;
+        while (ei + 1 < cmap.entries.len) : (ei += 2) {
+            if (cmap.entries[ei].eql(char_val)) {
+                // 置換文字列を追加
+                switch (cmap.entries[ei + 1]) {
+                    .string => |rep| try buf.appendSlice(allocator, rep.data),
+                    .nil => {}, // nil → 削除
+                    else => try helpers.valueToString(allocator, &buf, cmap.entries[ei + 1]),
+                }
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            try buf.append(allocator, c);
+        }
+    }
+
+    const str_obj = try allocator.create(value_mod.String);
+    str_obj.* = .{ .data = try buf.toOwnedSlice(allocator) };
+    return Value{ .string = str_obj };
+}
+
+// ============================================================
 // builtins 登録
 // ============================================================
 
@@ -951,6 +1106,11 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "re-quote-replacement", .func = reQuoteReplacement },
     .{ .name = "char-at", .func = charAt },
     .{ .name = "string-split", .func = stringSplit },
+    .{ .name = "capitalize", .func = capitalize },
+    .{ .name = "string-reverse", .func = stringReverse },
+    .{ .name = "index-of", .func = indexOf },
+    .{ .name = "last-index-of", .func = lastIndexOf },
+    .{ .name = "escape", .func = escapeFn },
     .{ .name = "format", .func = formatFn },
     .{ .name = "char-escape-string", .func = charEscapeStringFn },
     .{ .name = "char-name-string", .func = charNameStringFn },
