@@ -108,7 +108,7 @@ Source Code
 | fib30            | 0.01s   | 0.03s   | 0.07s   | 0.16s   | 0.07s           |
 | sum_range        | 0.00s   | 0.04s   | 0.02s   | 0.10s   | 0.01s           |
 | map_filter       | 0.00s   | 0.05s   | 0.02s   | 0.10s   | 0.00s           |
-| string_ops       | 0.00s   | 0.05s   | 0.02s   | 0.10s   | 0.03s           |
+| string_ops       | 0.00s   | 0.05s   | 0.02s   | 0.10s   | 0.01s           |
 | data_transform   | 0.00s   | 0.04s   | 0.02s   | 0.10s   | 0.01s           |
 
 ### 最適化前後の改善
@@ -118,7 +118,7 @@ Source Code
 | fib30            | 1.90s / 1.5GB   | 0.07s / 2.1MB   | 27x速           |
 | sum_range        | 0.07s / 133MB   | 0.01s / 2.1MB   | 7x速            |
 | map_filter       | 1.75s / 27GB    | 0.00s / 2.1MB   | 12857x省メモリ  |
-| string_ops       | 0.09s / 1.3GB   | 0.03s / 508MB   | 3x速            |
+| string_ops       | 0.09s / 1.3GB   | 0.01s / 14MB    | 9x速            |
 | data_transform   | 0.06s / 782MB   | 0.01s / 22.5MB  | 6x速            |
 
 ### 実施した最適化
@@ -134,7 +134,7 @@ Source Code
 
 - fib30 以外で **Java (JIT) より高速**
 - fib30 は Python と同等、Java の 2.3x 遅 (JIT の壁)
-- メモリは string_ops 以外で Java より少ない (string_ops の 508MB は O(n²) 不変文字列結合が本質)
+- メモリは全ベンチで Java より少ない
 - 動的言語インタプリタ VM としては十分な性能
 
 ---

@@ -354,7 +354,7 @@ VM バックエンドでの最終結果 (Apple M4 Pro):
 | fib30            | 1.90s / 1.5GB   | 0.07s / 2.1MB   | 27x速           |
 | sum_range        | 0.07s / 133MB   | 0.01s / 2.1MB   | 7x速            |
 | map_filter       | 1.75s / 27GB    | 0.00s / 2.1MB   | 12857x省メモリ  |
-| string_ops       | 0.09s / 1.3GB   | 0.03s / 508MB   | 3x速            |
+| string_ops       | 0.09s / 1.3GB   | 0.01s / 14MB    | 9x速            |
 | data_transform   | 0.06s / 782MB   | 0.01s / 22.5MB  | 6x速            |
 
 ### 保留中の最適化

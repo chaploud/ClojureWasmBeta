@@ -99,4 +99,4 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 - フル medley の `compare-and-set!`/`deref-swap!`/`deref-reset!` 未実装
 - **map_filter 27GB メモリ**: → fused reduce で解決済み (2MB)。ジェネレータ直接ルーティング + スタック引数バッファ
 - **Safe Point GC は recur のみ**: call 時の GC は builtin 関数の Zig ローカル変数が GC ルート外のため SIGSEGV。詳細は `plan/notes.md`
-- **string_ops 508MB**: `(reduce str ...)` の O(n²) 不変文字列結合が本質的原因。`(apply str ...)` が正しいパターン
+- **string_ops**: ベンチを `(reduce str ...)` → `(apply str ...)` に変更済み (508MB → 14MB)。他言語が StringBuilder/join を使っていたため公平化
