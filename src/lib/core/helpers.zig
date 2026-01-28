@@ -526,8 +526,9 @@ pub fn loadFileContentWithPath(allocator: std.mem.Allocator, content: []const u8
             debugLog("[analyze-error] form #{d}: {any}", .{ fi, e });
             return error.EvalError;
         };
-        var ctx = Context.init(allocator, env);
-        result = tree_walk.run(node, &ctx) catch |e| {
+        // current_backend 設定に従ってバックエンドを選択
+        var engine = defs.EvalEngine.init(allocator, env, defs.current_backend);
+        result = engine.run(node) catch |e| {
             debugLog("[eval-error] form #{d}: {any}", .{ fi, e });
             return error.EvalError;
         };

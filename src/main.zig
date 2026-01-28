@@ -149,6 +149,9 @@ pub fn main() !void {
         }
     }
 
+    // グローバルバックエンド設定を更新（load-file 等で使用）
+    clj.defs.current_backend = backend;
+
     if (nrepl_mode) {
         // nREPL サーバーモード
         return nrepl_server.startServer(gpa_allocator, nrepl_port, backend);

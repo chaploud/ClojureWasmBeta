@@ -73,6 +73,9 @@ pub const engine = @import("runtime/engine.zig");
 pub const EvalEngine = engine.EvalEngine;
 pub const Backend = engine.Backend;
 
+// === Core Defs (グローバル状態) ===
+pub const defs = @import("lib/core/defs.zig");
+
 // === GC ===
 pub const gc = @import("gc/gc.zig");
 pub const gc_allocator = @import("gc/gc_allocator.zig");

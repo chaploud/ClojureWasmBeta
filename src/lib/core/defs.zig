@@ -22,6 +22,9 @@ pub const wasm_loader = @import("../../wasm/loader.zig");
 pub const wasm_runtime = @import("../../wasm/runtime.zig");
 pub const wasm_interop = @import("../../wasm/interop.zig");
 pub const wasm_wasi = @import("../../wasm/wasi.zig");
+pub const engine_mod = @import("../../runtime/engine.zig");
+pub const EvalEngine = engine_mod.EvalEngine;
+pub const Backend = engine_mod.Backend;
 
 // ============================================================
 // 型定義
@@ -60,6 +63,10 @@ pub threadlocal var force_lazy_seq_fn: ?ForceFn = null;
 pub threadlocal var call_fn: ?CallFn = null;
 /// 現在の Env（find-var, intern 等で使用）
 pub threadlocal var current_env: ?*Env = null;
+
+/// 現在の評価バックエンド（load-file 等で使用）
+/// main.zig で --backend オプションに応じて設定される
+pub threadlocal var current_backend: Backend = .tree_walk;
 
 /// with-out-str 用: stdout キャプチャバッファ
 /// non-null のとき、print/println/pr/prn/printf/newline の出力をここに蓄積する
