@@ -126,10 +126,17 @@ O(n) リニアスキャン → O(log n) バイナリサーチ (ハッシュイ�
 - 全テスト維持 (760/1 compat, 270/274 zig)
 - ベンチマーク: map lookup で ~7% 改善
 
+### R3a: builtin レジストリ comptime 検証 — 完了
+
+- registry.zig に `validateNoDuplicates` comptime 関数追加
+- 重複 2 件を発見・修正: `atom?`, `realized?`
+- `realized?` の predicates 版を concurrency 版の実装に更新 (delay/promise 対応)
+
 ### 推奨次回タスク
 
-1. **R3: Zig イディオム再点検** — MultiArrayList, MemoryPool 等
-2. **G1: GC 改善** — 世代別 GC or 改善
+1. **R3b: @branchHint 適用** — hot path に .unlikely/.likely を追加
+2. **R4: テスト整理** — 命名規約統一、テスト分類
+3. **G1: GC 改善** — 世代別 GC or MemoryPool
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
