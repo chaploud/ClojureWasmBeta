@@ -438,6 +438,76 @@ pub fn dirFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
     return value_mod.nil;
 }
 
+/// find-doc: パターン文字列で docstring を検索
+pub fn findDocFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const pattern = switch (args[0]) {
+        .string => |s| s.data,
+        else => return value_mod.nil,
+    };
+
+    const env = defs.current_env orelse return value_mod.nil;
+
+    // 全名前空間を走査
+    var ns_iter = env.getAllNamespaces();
+    while (ns_iter.next()) |ns_entry| {
+        const ns = ns_entry.value_ptr.*;
+        var var_iter = ns.getAllVars();
+        while (var_iter.next()) |var_entry| {
+            const v = var_entry.value_ptr.*;
+            const var_name = var_entry.key_ptr.*;
+            // docstring にパターンが含まれるか
+            if (v.doc) |doc| {
+                if (std.mem.indexOf(u8, doc, pattern) != null or
+                    std.mem.indexOf(u8, var_name, pattern) != null)
+                {
+                    helpers.writeToOutput("-------------------------\n");
+                    helpers.writeToOutput(v.ns_name);
+                    helpers.writeToOutput("/");
+                    helpers.writeToOutput(var_name);
+                    helpers.writeToOutput("\n");
+                    if (v.arglists) |al| {
+                        helpers.writeToOutput(al);
+                        helpers.writeToOutput("\n");
+                    }
+                    helpers.writeToOutput("  ");
+                    helpers.writeToOutput(doc);
+                    helpers.writeToOutput("\n");
+                }
+            }
+        }
+    }
+    return value_mod.nil;
+}
+
+/// apropos: パターン文字列で var 名を検索
+pub fn aproposFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const pattern = switch (args[0]) {
+        .string => |s| s.data,
+        else => return value_mod.nil,
+    };
+
+    const env = defs.current_env orelse return value_mod.nil;
+
+    // 全名前空間を走査
+    var ns_iter = env.getAllNamespaces();
+    while (ns_iter.next()) |ns_entry| {
+        const ns = ns_entry.value_ptr.*;
+        var var_iter = ns.getAllVars();
+        while (var_iter.next()) |var_entry| {
+            const var_name = var_entry.key_ptr.*;
+            if (std.mem.indexOf(u8, var_name, pattern) != null) {
+                helpers.writeToOutput(ns.name);
+                helpers.writeToOutput("/");
+                helpers.writeToOutput(var_name);
+                helpers.writeToOutput("\n");
+            }
+        }
+    }
+    return value_mod.nil;
+}
+
 // ============================================================
 // builtins
 // ============================================================
@@ -468,7 +538,9 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "tap>", .func = tapSendFn },
     // test
     .{ .name = "test", .func = testFn },
-    // doc / dir
+    // doc / dir / find-doc / apropos
     .{ .name = "__doc", .func = docFn },
     .{ .name = "__dir", .func = dirFn },
+    .{ .name = "find-doc", .func = findDocFn },
+    .{ .name = "apropos", .func = aproposFn },
 };
