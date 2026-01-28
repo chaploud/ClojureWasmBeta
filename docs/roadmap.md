@@ -15,7 +15,7 @@
 | Zig ソースコード         | ~32,000 行 (src/ 以下)         |
 | clojure.core 対応状況    | 545 done / 169 skip / 714 total |
 | テスト                   | 760 pass / 1 fail(意図的)      |
-| 最大ファイル             | core.zig 11,095 行             |
+| 最大ファイル             | core/sequences.zig 1,328 行    |
 | デュアルバックエンド     | TreeWalk + BytecodeVM          |
 | GC                       | 式境界 Mark-Sweep              |
 | Wasm                     | zware (10 API 関数)            |
@@ -63,27 +63,11 @@ D1-D3 (ドキュメント)      ←── 各フェーズ完了後に随時
 
 > 目的: 変更の意図が追える、壊れにくい、読みやすい構造へ段階的に改善
 
-### R1: core.zig ファイル分割
+### R1: core.zig ファイル分割 — ✅ 完了
 
-**現状**: core.zig が 11,095 行で単一ファイル最大。変更時の認知負荷が高い。
-
-**方針**: ドメイン別に分割し、comptime テーブルは維持。
-
-| 分割先ファイル          | 責務                                              | 目安行数 |
-|-------------------------|---------------------------------------------------|----------|
-| `core/arithmetic.zig`   | +, -, *, /, mod, rem, quot, inc, dec, 比較演算     | ~800     |
-| `core/collections.zig`  | conj, assoc, dissoc, get, nth, count, keys, vals   | ~1500    |
-| `core/sequences.zig`    | map, filter, reduce, take, drop, range, lazy系     | ~2000    |
-| `core/strings.zig`      | str, subs, clojure.string/*, format, regex         | ~1000    |
-| `core/predicates.zig`   | nil?, number?, string?, every?, some 等            | ~500     |
-| `core/io.zig`           | println, pr, prn, slurp, spit, printf              | ~400     |
-| `core/wasm.zig`         | wasm/load-module, invoke, memory-*, close 等       | ~600     |
-| `core/meta.zig`         | with-meta, meta, alter-meta!, vary-meta            | ~300     |
-| `core/concurrency.zig`  | atom, swap!, reset!, deref, promise, volatile      | ~600     |
-| `core/interop.zig`      | type, class, instance?, ancestors, hierarchy       | ~500     |
-| `core/registry.zig`     | builtins comptime テーブル、ルックアップ           | ~500     |
-
-**完了基準**: 全テスト 760 pass 維持。`zig build` 成功。
+11,095 行の core.zig を 18 ドメイン別サブモジュール + 181 行 facade に分割完了。
+全テスト 760 pass 維持。Zig 0.15.2 では `pub usingnamespace` が廃止されたため、
+threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 
 ### R2: value.zig の分割
 
@@ -138,29 +122,11 @@ D1-D3 (ドキュメント)      ←── 各フェーズ完了後に随時
 
 > 方針: ベンチマークを先に置き、「前後差分」で進める。効果が測定できない最適化はやらない。
 
-### P1: ベンチマーク基盤整備
+### P1: ベンチマーク基盤整備 — ✅ 完了
 
-**現状**: `test/bench/basic.clj` が存在するが、計測が `time` コマンドのみ。
-
-**整備内容**:
-
-| 項目                   | 内容                                                   |
-|------------------------|--------------------------------------------------------|
-| ベンチマークスイート   | fib(30), fib-iter(40), reduce(100k), str-concat(1k),  |
-|                        | atom-inc(10k), sort(10k), map-filter-reduce(100k)      |
-| 計測方法               | Clojure 側 `(time ...)` + Zig 側 `std.time` 内部計測   |
-| 出力形式               | JSON/TSV で baseline 記録、diff 比較スクリプト          |
-| 実行モード             | `--backend=treewalk` と `--backend=vm` の両方           |
-| ビルドモード           | Debug, ReleaseSafe, ReleaseFast の3モード比較           |
-
-**Zig ビルドモード比較** (参考):
-
-| モード        | 安全チェック | 最適化レベル | 用途           |
-|---------------|-------------|-------------|----------------|
-| Debug         | 全有効       | なし         | 開発中         |
-| ReleaseSafe   | 全有効       | O2相当       | テスト・計測   |
-| ReleaseFast   | 無効         | O3相当       | 性能測定・本番 |
-| ReleaseSmall  | 無効         | サイズ最適化 | 組み込み向け   |
+- `time` マクロを実装 (スタブ → `std.time.nanoTimestamp` による実タイミング計測)
+- `test/bench/basic.clj`: 10 ベンチマーク (fib, recur, reduce, str, atom, loop, map, assoc)
+- `test/bench/run_bench.sh`: 両バックエンド自動実行, 表形式出力, `--save`/`--compare` 対応
 
 ### P2: Zig レベル最適化
 

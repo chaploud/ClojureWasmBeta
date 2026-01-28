@@ -42,9 +42,21 @@
 threadlocal 変数は inline アクセサ関数 (get/set) で提供。
 外部 3 ファイル (evaluator.zig, vm.zig, host_functions.zig) に軽微な変更あり。
 
+### P1: ベンチマーク基盤整備 — 完了
+
+- `time` マクロを実装 (スタブ → 実タイミング計測)
+  - `__time-start` / `__time-end` builtin を `src/lib/core/io.zig` に追加
+  - `expandTime` in `analyze.zig` を let/do 展開に書き換え
+  - stderr に `"Elapsed time: X.YYY msecs"` を出力、式の値を返す
+- `test/bench/basic.clj` を 10 ベンチマークに拡充 (全て `time` マクロ使用)
+- `test/bench/run_bench.sh` を新規作成
+  - 両バックエンド自動実行、表形式出力
+  - `--save` でベースライン保存、`--compare` で差分比較 (±5% 閾値)
+  - `--backend=vm` / `--backend=tree_walk` でバックエンド指定可能
+
 ### 推奨次回タスク
 
-1. **P1: ベンチマーク基盤整備** — 全最適化の前提
+1. **P2: VM 最適化** — ベンチマーク基盤を使って計測しながら
 2. **U1: REPL readline/履歴** — 独立して着手可能
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)

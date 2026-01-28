@@ -206,6 +206,33 @@ pub fn lineSeqFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value 
     return Value{ .list = l };
 }
 
+/// __time-start : nanoTimestamp を記録して int として返す
+pub fn timeStartFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const ts: i64 = @intCast(@as(i128, @bitCast(std.time.nanoTimestamp())));
+    return Value{ .int = ts };
+}
+
+/// __time-end : 開始時刻を受け取り、経過時間を stderr に出力。nil を返す
+pub fn timeEndFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len < 1) return error.TypeError;
+    const start_ns: i128 = switch (args[0]) {
+        .int => |v| @as(i128, v),
+        else => return error.TypeError,
+    };
+    const end_ns: i128 = @bitCast(std.time.nanoTimestamp());
+    const elapsed_ns = end_ns - start_ns;
+    const elapsed_ms_whole: u64 = @intCast(@divTrunc(@as(u128, @bitCast(elapsed_ns)), 1_000_000));
+    const elapsed_us_frac: u64 = @intCast(@rem(@divTrunc(@as(u128, @bitCast(elapsed_ns)), 1_000), 1_000));
+
+    // stderr に出力
+    var buf: [256]u8 = undefined;
+    var writer = std.fs.File.stderr().writer(&buf);
+    const stderr = &writer.interface;
+    stderr.print("\"Elapsed time: {d}.{d:0>3} msecs\"\n", .{ elapsed_ms_whole, elapsed_us_frac }) catch {};
+    stderr.flush() catch {};
+    return value_mod.nil;
+}
+
 // ============================================================
 // Builtin 定義
 // ============================================================
@@ -227,4 +254,6 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "spit", .func = spitFn },
     .{ .name = "file-seq", .func = fileSeqFn },
     .{ .name = "line-seq", .func = lineSeqFn },
+    .{ .name = "__time-start", .func = timeStartFn },
+    .{ .name = "__time-end", .func = timeEndFn },
 };

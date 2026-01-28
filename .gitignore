@@ -16,5 +16,8 @@ zig-cache/
 .DS_Store
 Thumbs.db
 
+# Benchmark baselines
+test/bench/.baseline/
+
 # Claude Code
 .claude/settings.local.json

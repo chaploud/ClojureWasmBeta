@@ -4058,14 +4058,55 @@ pub const Analyzer = struct {
         return Form{ .list = outer_let };
     }
 
-    /// (time expr) → (let [start (System/nanoTime)] (let [ret expr] (println "Elapsed time:" ...) ret))
-    /// 簡易実装: 式をそのまま返す（タイミング情報なし）
-    fn expandTime(_: *Analyzer, items: []const Form) err.Error!Form {
+    /// (time expr) →
+    /// (let [__t (__time-start)]
+    ///   (let [__r expr]
+    ///     (do (__time-end __t) __r)))
+    fn expandTime(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len != 2) {
             return err.parseError(.invalid_arity, "time requires exactly one expression", .{});
         }
-        // 簡易実装: 式をそのまま評価（タイミング出力は後で）
-        return items[1];
+        const a = self.allocator;
+
+        // (__time-start)
+        const start_forms = a.alloc(Form, 1) catch return error.OutOfMemory;
+        start_forms[0] = Form{ .symbol = form_mod.Symbol.init("__time-start") };
+        const start_call = Form{ .list = start_forms };
+
+        // (__time-end __t)
+        const end_forms = a.alloc(Form, 2) catch return error.OutOfMemory;
+        end_forms[0] = Form{ .symbol = form_mod.Symbol.init("__time-end") };
+        end_forms[1] = Form{ .symbol = form_mod.Symbol.init("__t") };
+        const end_call = Form{ .list = end_forms };
+
+        // (do (__time-end __t) __r)
+        const do_forms = a.alloc(Form, 3) catch return error.OutOfMemory;
+        do_forms[0] = Form{ .symbol = form_mod.Symbol.init("do") };
+        do_forms[1] = end_call;
+        do_forms[2] = Form{ .symbol = form_mod.Symbol.init("__r") };
+        const do_expr = Form{ .list = do_forms };
+
+        // 内側 let: (let [__r expr] (do ...))
+        const inner_bind = a.alloc(Form, 2) catch return error.OutOfMemory;
+        inner_bind[0] = Form{ .symbol = form_mod.Symbol.init("__r") };
+        inner_bind[1] = items[1];
+
+        const inner_let = a.alloc(Form, 3) catch return error.OutOfMemory;
+        inner_let[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        inner_let[1] = Form{ .vector = inner_bind };
+        inner_let[2] = do_expr;
+
+        // 外側 let: (let [__t (__time-start)] (let [__r expr] ...))
+        const outer_bind = a.alloc(Form, 2) catch return error.OutOfMemory;
+        outer_bind[0] = Form{ .symbol = form_mod.Symbol.init("__t") };
+        outer_bind[1] = start_call;
+
+        const outer_let = a.alloc(Form, 3) catch return error.OutOfMemory;
+        outer_let[0] = Form{ .symbol = form_mod.Symbol.init("let") };
+        outer_let[1] = Form{ .vector = outer_bind };
+        outer_let[2] = Form{ .list = inner_let };
+
+        return Form{ .list = outer_let };
     }
 
     /// (defstruct name & keys) → (def name (create-struct keys...))
