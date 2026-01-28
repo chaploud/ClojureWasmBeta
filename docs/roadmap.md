@@ -90,8 +90,12 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
   - Zig コンパイラ自身がほぼ全ての構造体を MultiArrayList で格納
   - キャッシュ局所性とメモリ効率の大幅改善が期待できる
 - `MemoryPool` の適用 (同一型の頻繁な alloc/free: Value, Node 等)
-- `@branch(.likely, ...)` / `@branch(.unlikely, ...)` の hot path 適用
-- `comptime` 検証強化 (builtin テーブルの名前重複チェック等)
+- ✅ `@branchHint(.cold)` の hot path 適用 (R3b)
+  - vm.zig: execute ループ、push/pop/peek、callValue、tryInlineCall のエラーパス
+  - evaluator.zig: callWithArgs のエラーパス、throw/internalErrorToValue
+  - core/arithmetic.zig: add/sub/inc/dec/eq/lt/gt/lte/gte のアリティ・型エラー
+  - core/helpers.zig: compareNumbers の型エラー
+- ✅ `comptime` 検証強化 — builtin テーブルの名前重複チェック (R3a)
 - switch exhaustiveness の統合 (新型追加時の更新箇所を減らす)
 - エラー伝播の改善 (`catch { return error.X }` → `try` 活用)
 - `anyopaque` キャスト削減 (wasm 周りで zware 型を直接使える箇所)

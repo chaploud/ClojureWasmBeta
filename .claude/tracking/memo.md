@@ -132,11 +132,35 @@ O(n) リニアスキャン → O(log n) バイナリサーチ (ハッシュイ�
 - 重複 2 件を発見・修正: `atom?`, `realized?`
 - `realized?` の predicates 版を concurrency 版の実装に更新 (delay/promise 対応)
 
+### R3b: @branchHint 適用 — 完了
+
+hot path のエラー分岐に `@branchHint(.cold)` を適用。
+コンパイラに「正常パスの命令配置を優先」するヒントを提供。
+
+- **vm.zig** (主要ターゲット):
+  - execute ループ: コード終端チェック、未実装 opcode
+  - push/pop/peek: StackOverflow/Underflow
+  - callValue: ArityError, StackOverflow, TypeError (else分岐)
+  - tryInlineCall: 同上のエラーパス
+  - handleThrow/internalErrorToValue/handleThrowFromError: 例外処理全体
+  - recur: heap 割り当てフォールバック (> 16 引数)
+- **evaluator.zig**:
+  - callWithArgs: builtin エラーパス、ArityError、TypeError (else分岐)
+  - runThrow/internalErrorToValue
+- **core/arithmetic.zig**:
+  - add/sub: TypeError (非数値引数)
+  - inc/dec: ArityError + TypeError
+  - eq/lt/gt/lte/gte: ArityError
+- **core/helpers.zig**:
+  - compareNumbers: TypeError (非数値引数)
+
+全テスト維持 (760/1 compat, 270/274 zig)。
+
 ### 推奨次回タスク
 
-1. **R3b: @branchHint 適用** — hot path に .unlikely/.likely を追加
-2. **R4: テスト整理** — 命名規約統一、テスト分類
-3. **G1: GC 改善** — 世代別 GC or MemoryPool
+1. **R4: テスト整理** — 命名規約統一、テスト分類
+2. **G1: GC 改善** — 世代別 GC or MemoryPool
+3. **U2: エラーメッセージ改善** — "Expected X, got Y" 形式
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 

@@ -38,7 +38,10 @@ pub fn add(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
                 }
                 float_result += f;
             },
-            else => return error.TypeError,
+            else => {
+                @branchHint(.cold);
+                return error.TypeError;
+            },
         }
     }
 
@@ -51,7 +54,10 @@ pub fn add(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// - : 減算
 pub fn sub(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
-    if (args.len == 0) return error.ArityError;
+    if (args.len == 0) {
+        @branchHint(.cold);
+        return error.ArityError;
+    }
 
     var has_float = false;
     var result: i64 = 0;
@@ -170,24 +176,36 @@ pub fn div(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// inc : 1加算
 pub fn inc(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
-    if (args.len != 1) return error.ArityError;
+    if (args.len != 1) {
+        @branchHint(.cold);
+        return error.ArityError;
+    }
 
     return switch (args[0]) {
         .int => |n| Value{ .int = n + 1 },
         .float => |f| Value{ .float = f + 1.0 },
-        else => error.TypeError,
+        else => {
+            @branchHint(.cold);
+            return error.TypeError;
+        },
     };
 }
 
 /// dec : 1減算
 pub fn dec(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
-    if (args.len != 1) return error.ArityError;
+    if (args.len != 1) {
+        @branchHint(.cold);
+        return error.ArityError;
+    }
 
     return switch (args[0]) {
         .int => |n| Value{ .int = n - 1 },
         .float => |f| Value{ .float = f - 1.0 },
-        else => error.TypeError,
+        else => {
+            @branchHint(.cold);
+            return error.TypeError;
+        },
     };
 }
 
@@ -197,7 +215,10 @@ pub fn dec(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 
 /// = : 等価比較
 pub fn eq(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len < 2) return error.ArityError;
+    if (args.len < 2) {
+        @branchHint(.cold);
+        return error.ArityError;
+    }
 
     for (args[0 .. args.len - 1], args[1..]) |a, b| {
         // lazy-seq は実体化してから比較
@@ -213,7 +234,10 @@ pub fn eq(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// < : 小なり
 pub fn lt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
-    if (args.len < 2) return error.ArityError;
+    if (args.len < 2) {
+        @branchHint(.cold);
+        return error.ArityError;
+    }
 
     for (args[0 .. args.len - 1], args[1..]) |a, b| {
         const cmp = try helpers.compareNumbers(a, b);
@@ -225,7 +249,10 @@ pub fn lt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// > : 大なり
 pub fn gt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
-    if (args.len < 2) return error.ArityError;
+    if (args.len < 2) {
+        @branchHint(.cold);
+        return error.ArityError;
+    }
 
     for (args[0 .. args.len - 1], args[1..]) |a, b| {
         const cmp = try helpers.compareNumbers(a, b);
@@ -237,7 +264,10 @@ pub fn gt(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// <= : 小なりイコール
 pub fn lte(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
-    if (args.len < 2) return error.ArityError;
+    if (args.len < 2) {
+        @branchHint(.cold);
+        return error.ArityError;
+    }
 
     for (args[0 .. args.len - 1], args[1..]) |a, b| {
         const cmp = try helpers.compareNumbers(a, b);
@@ -249,7 +279,10 @@ pub fn lte(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
 /// >= : 大なりイコール
 pub fn gte(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     _ = allocator;
-    if (args.len < 2) return error.ArityError;
+    if (args.len < 2) {
+        @branchHint(.cold);
+        return error.ArityError;
+    }
 
     for (args[0 .. args.len - 1], args[1..]) |a, b| {
         const cmp = try helpers.compareNumbers(a, b);

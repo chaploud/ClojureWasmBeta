@@ -290,6 +290,7 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
                 // anyopaque から BuiltinFn にキャスト
                 const builtin: core.BuiltinFn = @ptrCast(@alignCast(builtin_ptr));
                 break :blk builtin(ctx.allocator, args) catch |e| {
+                    @branchHint(.cold);
                     return switch (e) {
                         error.ArityError => error.ArityError,
                         error.DivisionByZero => error.DivisionByZero,
@@ -301,7 +302,10 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
             }
 
             // ユーザー定義関数
-            const arity = f.findArity(args.len) orelse return error.ArityError;
+            const arity = f.findArity(args.len) orelse {
+                @branchHint(.cold);
+                return error.ArityError;
+            };
 
             // 新しいコンテキストを作成
             var fn_ctx = Context.init(ctx.allocator, ctx.env);
@@ -458,12 +462,16 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
             const v: *var_mod.Var = @ptrCast(@alignCast(vp));
             return callWithArgs(v.deref(), args, ctx);
         },
-        else => error.TypeError,
+        else => {
+            @branchHint(.cold);
+            return error.TypeError;
+        },
     };
 }
 
 /// throw 評価
 fn runThrow(node: *const node_mod.ThrowNode, ctx: *Context) EvalError!Value {
+    @branchHint(.cold);
     // 式を評価
     const val = try run(node.expr, ctx);
 
@@ -533,6 +541,7 @@ fn runFinallyIgnoreResult(finally_body: ?*const Node, ctx: *Context) EvalError!v
 /// 内部エラーを Value マップに変換
 /// {:type :type-error, :message "..."} 形式
 fn internalErrorToValue(e: EvalError, ctx: *Context) Value {
+    @branchHint(.cold);
     const type_str: []const u8 = switch (e) {
         error.TypeError => "type-error",
         error.ArityError => "arity-error",

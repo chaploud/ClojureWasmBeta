@@ -170,6 +170,7 @@ pub const VM = struct {
         while (true) {
             const frame = &self.frames[self.frame_count - 1];
             if (frame.ip >= code.len) {
+                @branchHint(.cold);
                 // コード終端
                 return if (self.sp > 0) self.pop() else value_mod.nil;
             }
@@ -203,7 +204,10 @@ pub const VM = struct {
                     try self.push(val);
                 },
                 .swap => {
-                    if (self.sp < 2) return error.StackUnderflow;
+                    if (self.sp < 2) {
+                        @branchHint(.cold);
+                        return error.StackUnderflow;
+                    }
                     const tmp = self.stack[self.sp - 1];
                     self.stack[self.sp - 1] = self.stack[self.sp - 2];
                     self.stack[self.sp - 2] = tmp;
@@ -223,7 +227,10 @@ pub const VM = struct {
                 // ═══════════════════════════════════════════════════════
                 .local_load => {
                     const idx = frame.base + instr.operand;
-                    if (idx >= self.sp) return error.StackUnderflow;
+                    if (idx >= self.sp) {
+                        @branchHint(.cold);
+                        return error.StackUnderflow;
+                    }
                     try self.push(self.stack[idx]);
                 },
                 .local_store => {
@@ -232,19 +239,31 @@ pub const VM = struct {
                     self.stack[idx] = val;
                 },
                 .local_load_0 => {
-                    if (frame.base >= self.sp) return error.StackUnderflow;
+                    if (frame.base >= self.sp) {
+                        @branchHint(.cold);
+                        return error.StackUnderflow;
+                    }
                     try self.push(self.stack[frame.base]);
                 },
                 .local_load_1 => {
-                    if (frame.base + 1 >= self.sp) return error.StackUnderflow;
+                    if (frame.base + 1 >= self.sp) {
+                        @branchHint(.cold);
+                        return error.StackUnderflow;
+                    }
                     try self.push(self.stack[frame.base + 1]);
                 },
                 .local_load_2 => {
-                    if (frame.base + 2 >= self.sp) return error.StackUnderflow;
+                    if (frame.base + 2 >= self.sp) {
+                        @branchHint(.cold);
+                        return error.StackUnderflow;
+                    }
                     try self.push(self.stack[frame.base + 2]);
                 },
                 .local_load_3 => {
-                    if (frame.base + 3 >= self.sp) return error.StackUnderflow;
+                    if (frame.base + 3 >= self.sp) {
+                        @branchHint(.cold);
+                        return error.StackUnderflow;
+                    }
                     try self.push(self.stack[frame.base + 3]);
                 },
 
@@ -252,7 +271,7 @@ pub const VM = struct {
                 // [D] クロージャ変数（未実装）
                 // ═══════════════════════════════════════════════════════
                 .upvalue_load, .upvalue_store => {
-                    // TODO: Phase 8.1 で実装
+                    @branchHint(.cold);
                     return error.InvalidInstruction;
                 },
 
@@ -261,14 +280,20 @@ pub const VM = struct {
                 // ═══════════════════════════════════════════════════════
                 .var_load => {
                     const var_val = constants[instr.operand];
-                    if (var_val != .var_val) return error.InvalidInstruction;
+                    if (var_val != .var_val) {
+                        @branchHint(.cold);
+                        return error.InvalidInstruction;
+                    }
                     const v: *Var = @ptrCast(@alignCast(var_val.var_val));
                     try self.push(v.deref());
                 },
                 .var_load_dynamic => {
                     // Var.deref() が動的バインディングフレームを参照する
                     const var_val = constants[instr.operand];
-                    if (var_val != .var_val) return error.InvalidInstruction;
+                    if (var_val != .var_val) {
+                        @branchHint(.cold);
+                        return error.InvalidInstruction;
+                    }
                     const v: *Var = @ptrCast(@alignCast(var_val.var_val));
                     try self.push(v.deref());
                 },
@@ -423,8 +448,10 @@ pub const VM = struct {
                     var temp_buf: [16]Value = undefined;
                     const temp_values = if (arg_count <= 16)
                         temp_buf[0..arg_count]
-                    else
-                        self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
+                    else blk: {
+                        @branchHint(.cold);
+                        break :blk self.allocator.alloc(Value, arg_count) catch return error.OutOfMemory;
+                    };
                     defer if (arg_count > 16) self.allocator.free(temp_values);
 
                     // 後ろから取り出す
@@ -450,7 +477,7 @@ pub const VM = struct {
                 // [I] コレクション生成（未実装）
                 // ═══════════════════════════════════════════════════════
                 .list_new, .vec_new, .map_new, .set_new => {
-                    // TODO: Phase 8.2 で実装
+                    @branchHint(.cold);
                     return error.InvalidInstruction;
                 },
 
@@ -458,7 +485,7 @@ pub const VM = struct {
                 // [J] コレクション操作（未実装）
                 // ═══════════════════════════════════════════════════════
                 .nth, .get, .first, .rest, .conj, .assoc, .count => {
-                    // TODO: 将来最適化で実装
+                    @branchHint(.cold);
                     return error.InvalidInstruction;
                 },
 
@@ -467,7 +494,10 @@ pub const VM = struct {
                 // ═══════════════════════════════════════════════════════
                 .try_begin => {
                     // ハンドラを登録
-                    if (self.handler_count >= HANDLERS_MAX) return error.StackOverflow;
+                    if (self.handler_count >= HANDLERS_MAX) {
+                        @branchHint(.cold);
+                        return error.StackOverflow;
+                    }
                     const catch_ip = frame.ip + instr.operand; // catch 節の位置
                     self.handlers[self.handler_count] = .{
                         .catch_ip = catch_ip,
@@ -491,6 +521,7 @@ pub const VM = struct {
                     // マーカーのみ
                 },
                 .throw_ex => {
+                    @branchHint(.cold);
                     // スタックトップを例外として投げる
                     const thrown = self.pop();
                     if (!self.handleThrow(thrown)) {
@@ -508,7 +539,7 @@ pub const VM = struct {
                 // [L] メタデータ（未実装）
                 // ═══════════════════════════════════════════════════════
                 .with_meta, .meta => {
-                    // TODO: Phase 10 で実装
+                    @branchHint(.cold);
                     return error.InvalidInstruction;
                 },
 
@@ -537,6 +568,7 @@ pub const VM = struct {
                     const builtin: core.BuiltinFn = @ptrCast(@alignCast(builtin_ptr));
                     const args = self.stack[fn_idx + 1 .. self.sp];
                     const result = builtin(self.allocator, args) catch |e| {
+                        @branchHint(.cold);
                         return switch (e) {
                             error.ArityError => error.ArityError,
                             error.DivisionByZero => error.DivisionByZero,
@@ -553,8 +585,14 @@ pub const VM = struct {
                 }
 
                 // ユーザー定義関数
-                const arity = f.findArity(arg_count) orelse return error.ArityError;
-                if (self.frame_count >= FRAMES_MAX) return error.StackOverflow;
+                const arity = f.findArity(arg_count) orelse {
+                    @branchHint(.cold);
+                    return error.ArityError;
+                };
+                if (self.frame_count >= FRAMES_MAX) {
+                    @branchHint(.cold);
+                    return error.StackOverflow;
+                }
 
                 // body から FnProto を取得（VM では body は FnProto へのポインタ）
                 const proto: *const FnProto = @ptrCast(@alignCast(arity.body));
@@ -573,7 +611,10 @@ pub const VM = struct {
                     if (args_count_actual > 0 and closure_vals.len > 0) {
                         // 新しいスタック位置を計算
                         const new_sp = args_start + closure_vals.len + args_count_actual;
-                        if (new_sp >= STACK_MAX) return error.StackOverflow;
+                        if (new_sp >= STACK_MAX) {
+                            @branchHint(.cold);
+                            return error.StackOverflow;
+                        }
 
                         // 引数を後ろに移動（後ろから前に向かってコピー）
                         var i = args_count_actual;
@@ -632,8 +673,14 @@ pub const VM = struct {
             },
             .fn_proto => |proto_ptr| {
                 const proto: *const FnProto = @ptrCast(@alignCast(proto_ptr));
-                if (arg_count != proto.arity) return error.ArityError;
-                if (self.frame_count >= FRAMES_MAX) return error.StackOverflow;
+                if (arg_count != proto.arity) {
+                    @branchHint(.cold);
+                    return error.ArityError;
+                }
+                if (self.frame_count >= FRAMES_MAX) {
+                    @branchHint(.cold);
+                    return error.StackOverflow;
+                }
 
                 // 新しいフレームを作成
                 self.frames[self.frame_count] = .{
@@ -813,7 +860,10 @@ pub const VM = struct {
                 self.stack[fn_idx] = derefed;
                 try self.callValue(arg_count);
             },
-            else => return error.TypeError,
+            else => {
+                @branchHint(.cold);
+                return error.TypeError;
+            },
         }
     }
 
@@ -834,8 +884,14 @@ pub const VM = struct {
                 }
 
                 // ユーザー定義関数: フレームを積むだけ (execute 再帰なし)
-                const arity = f.findArity(arg_count) orelse return error.ArityError;
-                if (self.frame_count >= FRAMES_MAX) return error.StackOverflow;
+                const arity = f.findArity(arg_count) orelse {
+                    @branchHint(.cold);
+                    return error.ArityError;
+                };
+                if (self.frame_count >= FRAMES_MAX) {
+                    @branchHint(.cold);
+                    return error.StackOverflow;
+                }
 
                 const proto: *const FnProto = @ptrCast(@alignCast(arity.body));
 
@@ -847,7 +903,10 @@ pub const VM = struct {
 
                     if (args_count_actual > 0 and closure_vals.len > 0) {
                         const new_sp = args_start + closure_vals.len + args_count_actual;
-                        if (new_sp >= STACK_MAX) return error.StackOverflow;
+                        if (new_sp >= STACK_MAX) {
+                            @branchHint(.cold);
+                            return error.StackOverflow;
+                        }
                         var i = args_count_actual;
                         while (i > 0) {
                             i -= 1;
@@ -891,8 +950,14 @@ pub const VM = struct {
             .fn_proto => |proto_ptr| {
                 // fn_proto も同様にインライン化
                 const proto: *const FnProto = @ptrCast(@alignCast(proto_ptr));
-                if (arg_count != proto.arity) return error.ArityError;
-                if (self.frame_count >= FRAMES_MAX) return error.StackOverflow;
+                if (arg_count != proto.arity) {
+                    @branchHint(.cold);
+                    return error.ArityError;
+                }
+                if (self.frame_count >= FRAMES_MAX) {
+                    @branchHint(.cold);
+                    return error.StackOverflow;
+                }
 
                 self.frames[self.frame_count] = .{
                     .proto = proto,
@@ -1313,6 +1378,7 @@ pub const VM = struct {
     /// 例外を処理: ハンドラを検索して catch 節にジャンプ
     /// ハンドラがあれば true を返し、なければ false を返す
     fn handleThrow(self: *VM, thrown: Value) bool {
+        @branchHint(.cold);
         if (self.handler_count == 0) {
             // ハンドラなし: pending に設定して呼び出し元に伝搬
             self.pending_exception = true;
@@ -1371,6 +1437,7 @@ pub const VM = struct {
     /// 内部エラーを Value マップに変換（TreeWalk の internalErrorToValue と同等）
     /// {:type :type-error, :message "..."} 形式
     fn internalErrorToValue(self: *VM, e: VMError) Value {
+        @branchHint(.cold);
         const type_str: []const u8 = switch (e) {
             error.TypeError => "type-error",
             error.ArityError => "arity-error",
@@ -1414,6 +1481,7 @@ pub const VM = struct {
     /// UserException エラーから例外値を取得してハンドラに転送
     /// ハンドラで処理できた場合 true を返す
     fn handleThrowFromError(self: *VM) bool {
+        @branchHint(.cold);
         // pending_exception が設定されていればそれを使う
         if (self.pending_exception) {
             const thrown = self.pending_exception_value;
@@ -1435,19 +1503,28 @@ pub const VM = struct {
     // === スタック操作 ===
 
     fn push(self: *VM, val: Value) VMError!void {
-        if (self.sp >= STACK_MAX) return error.StackOverflow;
+        if (self.sp >= STACK_MAX) {
+            @branchHint(.cold);
+            return error.StackOverflow;
+        }
         self.stack[self.sp] = val;
         self.sp += 1;
     }
 
     fn pop(self: *VM) Value {
-        if (self.sp == 0) return value_mod.nil;
+        if (self.sp == 0) {
+            @branchHint(.cold);
+            return value_mod.nil;
+        }
         self.sp -= 1;
         return self.stack[self.sp];
     }
 
     fn peek(self: *VM, distance: usize) VMError!Value {
-        if (self.sp <= distance) return error.StackUnderflow;
+        if (self.sp <= distance) {
+            @branchHint(.cold);
+            return error.StackUnderflow;
+        }
         return self.stack[self.sp - 1 - distance];
     }
 };

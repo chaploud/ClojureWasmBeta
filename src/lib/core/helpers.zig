@@ -413,12 +413,18 @@ pub fn compareNumbers(a: Value, b: Value) CoreError!i8 {
     const fa: f64 = switch (a) {
         .int => |n| @as(f64, @floatFromInt(n)),
         .float => |f| f,
-        else => return error.TypeError,
+        else => {
+            @branchHint(.cold);
+            return error.TypeError;
+        },
     };
     const fb: f64 = switch (b) {
         .int => |n| @as(f64, @floatFromInt(n)),
         .float => |f| f,
-        else => return error.TypeError,
+        else => {
+            @branchHint(.cold);
+            return error.TypeError;
+        },
     };
 
     if (fa < fb) return -1;
