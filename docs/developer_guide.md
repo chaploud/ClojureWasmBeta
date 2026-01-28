@@ -271,6 +271,103 @@ return switch (self) { .nil => true, else => false };
 
 ---
 
+## パフォーマンス最適化
+
+ClojureWasmBeta に施された最適化の全体像。変更時は `bash bench/run_bench.sh --quick` で回帰チェック。
+
+### VM 算術 opcode 化 (P3)
+
+`+`, `-`, `<`, `>` 等の算術・比較演算を汎用 `call` 命令ではなく専用 opcode で実行。
+関数ルックアップと引数配列作成をスキップする。
+
+- コンパイラ (`emit.zig`) が `(+ a b)` を `add` opcode に変換
+- VM が opcode を直接ディスパッチ
+- 対象ファイル: `src/compiler/emit.zig`, `src/vm/vm.zig`, `src/vm/opcodes.zig`
+
+### 定数畳み込み (P3)
+
+Analyzer 段階で `(+ 1 2)` → `3` のように定数式を事前計算。
+
+- 対象ファイル: `src/analyzer/analyze.zig`
+
+### Safe Point GC (P1a)
+
+式境界でしか動かなかった GC を、VM の `recur` opcode 実行時にもチェック。
+長い再帰ループ中のメモリ膨張を抑制する。
+
+- 対象ファイル: `src/vm/vm.zig` (recur ハンドラ), `src/runtime/allocators.zig`
+
+**重要な制約**: `call` 時の GC は実装できない。builtin 関数のローカル変数
+(Zig スタック上の `Value`) は GC ルートとして追跡されないため、GC がオブジェクトを
+移動するとローカル変数が dangling pointer になり SIGSEGV を引き起こす。
+`recur` は VM フレームのスタック上にのみ値が存在するため安全。
+詳細は `plan/notes.md` の「Safe Point GC の制約」を参照。
+
+### Fused Reduce (P1c)
+
+`(reduce + (take N (map f (filter pred (range M)))))` のようなパターンで、
+lazy-seq チェーンを解析して単一ループに展開する。
+
+仕組み:
+1. `reduceLazy` が lazy-seq のネスト構造を走査 (take → map/filter → source)
+2. `reduceFused` が base source を直接イテレーション
+3. transform (map/filter) をインラインで適用
+4. 中間 LazySeq 構造体を一切作成しない
+
+- 対象ファイル: `src/lib/core/sequences.zig` (reduceLazy, reduceFused)
+
+### ジェネレータ直接ルーティング (P1c)
+
+`(reduce + (range 1000000))` のように transform も take もない素のジェネレータも
+`reduceFused` で処理。`reduceIterative` (毎ステップ LazySeq 生成) を回避。
+
+- 対象ファイル: `src/lib/core/sequences.zig` (reduceLazy の条件分岐)
+
+### スタック引数バッファ (P1c)
+
+reduce ループ内の `call(fn, args)` で毎回 `allocator.alloc(Value, 2)` していたのを
+スタック変数 `var call_args_buf: [2]Value` で再利用。
+
+- 対象ファイル: `src/lib/core/sequences.zig` (reduceSlice, reduceFused, reduceIterative)
+
+### 遅延 Take / 遅延 Range (P1b)
+
+- `(take N lazy-seq)` が具体化せず `LazySeq.Take` を返す
+- `(range N)` が N > 256 で `LazySeq.initRangeFinite` (遅延ジェネレータ) を返す
+- Fused Reduce と組み合わせて中間コレクション生成を排除
+
+- 対象ファイル: `src/lib/core/sequences.zig`, `src/runtime/value/lazy_seq.zig`, `src/lib/core/lazy.zig`
+
+### TreeWalk 高速算術 (P3)
+
+TreeWalk 評価器にも算術のファストパスを追加。`+`, `-`, `*` の2引数 int 同士の場合に
+汎用関数呼び出しを回避。
+
+- 対象ファイル: `src/runtime/evaluator.zig`
+
+### ベンチマーク結果
+
+VM バックエンドでの最終結果 (Apple M4 Pro):
+
+| ベンチマーク     | 初期値          | 最終値          | 改善            |
+|------------------|-----------------|-----------------|-----------------|
+| fib30            | 1.90s / 1.5GB   | 0.07s / 2.1MB   | 27x速           |
+| sum_range        | 0.07s / 133MB   | 0.01s / 2.1MB   | 7x速            |
+| map_filter       | 1.75s / 27GB    | 0.00s / 2.1MB   | 12857x省メモリ  |
+| string_ops       | 0.09s / 1.3GB   | 0.03s / 508MB   | 3x速            |
+| data_transform   | 0.06s / 782MB   | 0.01s / 22.5MB  | 6x速            |
+
+### 保留中の最適化
+
+| 最適化             | 保留理由                                           |
+|--------------------|----------------------------------------------------|
+| NaN boxing         | Value 24B→8B。全ファイル影響の大規模変更           |
+| 世代別 GC 統合     | 基盤は G2a-c で実装済み。式境界 GC では効果限定的  |
+| Inline caching     | tryInlineCall で既に実装済み、追加効果小           |
+| Tail call dispatch | Zig では computed goto 不可、効果限定的            |
+
+---
+
 ## 参照ドキュメント
 
 | ドキュメント                     | 内容                              |

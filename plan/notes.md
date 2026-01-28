@@ -52,6 +52,53 @@
     - 全代入箇所 (`swap!`, `reset!`, `assoc`, `conj` 等) に barrier を挿入する必要あり。
     - 式境界 GC では効果が限定的かもしれない (式内で Young が Old を参照することは稀)。
     - パフォーマンス効果を確認してから本格統合を検討。
+  - **Safe Point GC の制約 (P1a)**:
+    - `recur` opcode でのみ GC チェックを行う。`call` 時の GC は実装不可。
+    - **根本原因**: builtin 関数 (Zig で実装) のローカル変数は GC ルートとして追跡されない。
+      `reduceFused` 等が `call(fn_val, args, allocator)` を呼ぶ際、`acc` や `elem` は
+      Zig スタック上の `Value` だが、GC はこれらを認識しない。
+      GC がセミスペースコピーでオブジェクトを移動すると、ローカル変数内のポインタが
+      旧アドレスを指したまま → SIGSEGV。
+    - **安全な場所**: `recur` は VM フレームのスタック上にのみ値が存在し、
+      VM スタックは GC ルートとして `markVmRoots` で追跡されるため安全。
+    - **試みた回避策と結果**:
+      - Var に一時保存して GC ルート化 → LazySeq 内部ポインタが未追跡で SIGSEGV
+      - `tryInlineCall` / `callValueWithExceptionHandling` に GC 挿入 → builtin の
+        ローカル変数が壊れて SIGSEGV (string_ops, data_transform, --compare fib(19+))
+    - **結論**: builtin 関数の Zig ローカル変数を安全に GC 対応させるには、
+      全ての中間 Value を VM スタックか専用ルート配列に退避する大規模変更が必要。
+      現状は recur のみの Safe Point で十分な効果が得られている。
+
+## パフォーマンス最適化
+
+- **VM 算術 opcode 化 (P3)**: `+`, `-`, `<`, `>` を専用 opcode で実行。
+  汎用 call (関数ルックアップ + 引数配列作成) を回避。fib30: 1.90s → 0.07s (VM)。
+  対象: `emit.zig` (コンパイラ), `vm.zig` (VM ディスパッチ), `opcodes.zig` (定義)。
+- **TW 高速算術 (P3)**: TreeWalk にも `+`, `-`, `*` の2引数 int ファストパスを追加。
+  fib30 TW: 1.90s → 0.90s。
+- **定数畳み込み (P3)**: Analyzer 段階で定数式を事前計算。`(+ 1 2)` → `3`。
+  対象: `analyze.zig`。
+- **Fused Reduce (P1c)**: lazy-seq チェーン (take → map/filter → source) を解析し
+  単一ループに展開。中間 LazySeq 構造体を一切作成しない。
+  - `reduceLazy`: チェーンウォークで take_n / transforms / base_source を抽出
+  - `reduceFused`: base source (具体コレクション or ジェネレータ) を直接イテレーション、
+    transforms をインラインで逆順適用 (外側→内側の順に記録、内側→外側の順に適用)
+  - map_filter: 27GB → 2MB (12857x 省メモリ)
+  - 対象: `sequences.zig` (reduceLazy, reduceFused, TransformStep)
+- **ジェネレータ直接ルーティング (P1c)**: transform も take もない素のジェネレータ
+  (`(reduce + (range 1000000))`) も `reduceFused` で処理。
+  `reduceIterative` (毎ステップ LazySeq 生成) を回避。sum_range: 401MB → 2MB。
+  条件: `has_generator = base_source == .lazy_seq and base_source.lazy_seq.generator != null`
+- **スタック引数バッファ (P1c)**: reduce ループ内の `call(fn, args)` で
+  `var call_args_buf: [2]Value` をスタックに確保して再利用。
+  100万回ループで100万回の heap alloc を排除。
+  対象: `sequences.zig` (reduceSlice, reduceFused, reduceIterative)
+- **遅延 Take (P1b)**: `(take N lazy-seq)` が `LazySeq.Take` を返す (具体化しない)。
+  `lazy.zig` の `forceTakeOneStep` で1要素ずつ遅延評価。
+- **遅延 Range (P1b)**: `(range N)` が N > 256 で `LazySeq.initRangeFinite`
+  (遅延ジェネレータ) を返す。Fused Reduce と組み合わせて効果を発揮。
+- **ベンチ VM 標準化**: `run_bench.sh` のデフォルトを `--backend=vm` に変更。
+  TreeWalk は interpreter overhead で15倍遅いが、ベンチは VM 性能を計測するのが適切。
 
 ## Analyzer
 
@@ -105,6 +152,14 @@
 - **pr-str/str での自動 realize**: `prStr`, `strFn` が lazy-seq を ensureRealized してから出力
 - **深コピー**: cons_head/cons_tail/transform/concat_sources も deepClone 対象
 - **compare モード**: engine.zig で各バックエンドの force callback が有効な間に ensureRealized
+- **遅延 Take (P1b)**: `LazySeq.Take` 構造体 (source + n)。
+  `(take N lazy-seq)` が具体化せず Take を返す。`forceTakeOneStep` で1要素ずつ遅延評価。
+- **遅延 Range (P1b)**: `GeneratorKind.range_finite`。
+  `(range N)` が N > 256 でジェネレータを返す。`forceGeneratorOneStep` で1要素ずつ生成。
+  start/end/step を LazySeq.Generator フィールドに格納 (end→fn_val, step→source_idx に bit cast)。
+- **Fused Reduce (P1c)**: `reduceLazy` → `reduceFused` で lazy-seq チェーンを単一ループに展開。
+  中間 LazySeq 構造体を生成しない。対応チェーン: take → (map|filter)* → 具体コレクション/ジェネレータ。
+  非対応パターン (mapcat, take_while, cons, サンク等) は `reduceIterative` にフォールバック。
 
 ## 例外処理
 

@@ -75,9 +75,10 @@ Source Code
 ### 2. GC
 
 - セミスペース Arena Mark-Sweep
-- 式境界でのみ GC 実行 (pause time 予測可能)
+- 式境界 + Safe Point (recur opcode) で GC 実行
 - Clojure Value のみ追跡。インフラ (Env/Namespace/Var) は GPA 直接管理
 - セミスペース導入で sweep 40x 高速化 (1,146ms → 29ms)
+- 世代別 GC 基盤 (Nursery bump allocator) は実装済み、統合は保留
 
 ### 3. 正規表現エンジン
 
@@ -94,31 +95,47 @@ Source Code
 
 ---
 
-## ベンチマーク: fib(38)
+## ベンチマーク: 5種比較
 
-素朴な二重再帰フィボナッチで関数呼び出しオーバーヘッドを比較。
+5種のベンチマークで7言語と比較。
 
 **環境**: Apple M4 Pro, 48 GB RAM, macOS
 
-| 言語                      | 時間(s) | メモリ(MB) |
-|---------------------------|---------|------------|
-| C (clang -O3)             | 0.06    | 1.8        |
-| C++ (clang -O3)           | 0.06    | 1.8        |
-| Zig (ReleaseFast)         | 0.06    | 1.8        |
-| Java (OpenJDK 21, JIT)    | 0.08    | 40.7       |
-| Ruby 3.3.6 (YJIT)        | 0.42    | 17.3       |
-| Python 3.14               | 2.89    | 14.3       |
-| **ClojureWasmBeta (VM)**  | 152.94  | 31,389     |
+### 全言語比較 (最適化後)
+
+| ベンチマーク     | C/Zig   | Java    | Python  | Ruby    | ClojureWasmBeta |
+|------------------|---------|---------|---------|---------|-----------------|
+| fib30            | 0.01s   | 0.03s   | 0.07s   | 0.16s   | 0.07s           |
+| sum_range        | 0.00s   | 0.04s   | 0.02s   | 0.10s   | 0.01s           |
+| map_filter       | 0.00s   | 0.05s   | 0.02s   | 0.10s   | 0.00s           |
+| string_ops       | 0.00s   | 0.05s   | 0.02s   | 0.10s   | 0.03s           |
+| data_transform   | 0.00s   | 0.04s   | 0.02s   | 0.10s   | 0.01s           |
+
+### 最適化前後の改善
+
+| ベンチマーク     | 最適化前        | 最適化後        | 改善            |
+|------------------|-----------------|-----------------|-----------------|
+| fib30            | 1.90s / 1.5GB   | 0.07s / 2.1MB   | 27x速           |
+| sum_range        | 0.07s / 133MB   | 0.01s / 2.1MB   | 7x速            |
+| map_filter       | 1.75s / 27GB    | 0.00s / 2.1MB   | 12857x省メモリ  |
+| string_ops       | 0.09s / 1.3GB   | 0.03s / 508MB   | 3x速            |
+| data_transform   | 0.06s / 782MB   | 0.01s / 22.5MB  | 6x速            |
+
+### 実施した最適化
+
+1. **VM 算術 opcode 化**: `+`, `-`, `<`, `>` を専用 opcode で実行。汎用 call を回避
+2. **定数畳み込み**: Analyzer 段階で `(+ 1 2)` → `3` に事前計算
+3. **Safe Point GC**: `recur` opcode で GC チェック。長い再帰中のメモリ膨張を抑制
+4. **Fused Reduce**: lazy-seq チェーン (take→map→filter→range) を単一ループに展開。中間 LazySeq 構造体を排除
+5. **遅延 Take/Range**: `(take N lazy-seq)` と大きい `(range N)` を遅延ジェネレータ化
+6. **スタック引数バッファ**: reduce ループ内の引数 alloc をスタック変数で再利用
 
 ### 分析
 
-- ネイティブコンパイラ (C/C++/Zig) は圧倒的。JIT (Java) もほぼ同等。
-- ClojureWasmBeta は **動的言語のインタプリタ VM** であり:
-  - 全 Value が tagged union (GC 追跡対象)
-  - 関数呼び出しごとにフレーム生成
-  - 式境界ごとに GC 実行 (fib(38) は ~6億回の再帰呼び出し)
-- メモリ使用量が大きいのは GC セミスペースの特性 (2x + 整数の都度アロケーション)
-- **最適化の余地**: NaN boxing, インラインキャッシュ, 定数畳み込み, tail call 最適化
+- fib30 以外で **Java (JIT) より高速**
+- fib30 は Python と同等、Java の 2.3x 遅 (JIT の壁)
+- メモリは string_ops 以外で Java より少ない (string_ops の 508MB は O(n²) 不変文字列結合が本質)
+- 動的言語インタプリタ VM としては十分な性能
 
 ---
 
@@ -208,10 +225,9 @@ $ clj-wasm --nrepl-server --port=7888
 
 ## 今後の展望
 
-- **NaN boxing**: Value サイズ縮小で大幅高速化 (最優先)
-- **世代別 GC**: Young generation の bump allocator で短命オブジェクトを高速回収
+- **NaN boxing**: Value 24B→8B でキャッシュ効率向上 (大規模変更のため保留中)
+- **世代別 GC 統合**: 基盤 (G2a-c) は実装済み。式境界 GC からの統合が残課題
 - **Wasm ターゲット**: 処理系自体を Wasm にコンパイル (ブラウザで Clojure)
-- **clojure.pprint**: 実用上重要な欠けている名前空間
 
 ---
 
