@@ -206,10 +206,17 @@ pub fn lineSeqFn(allocator: std.mem.Allocator, _: []const Value) anyerror!Value 
     return Value{ .list = l };
 }
 
-/// __time-start : nanoTimestamp を記録して int として返す
+/// __time-start / System/nanoTime : nanoTimestamp を記録して int として返す
 pub fn timeStartFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
     const ts: i64 = @intCast(@as(i128, @bitCast(std.time.nanoTimestamp())));
     return Value{ .int = ts };
+}
+
+/// System/currentTimeMillis : エポックからのミリ秒を返す
+pub fn currentTimeMillisFn(_: std.mem.Allocator, _: []const Value) anyerror!Value {
+    const ts_ns: i128 = @bitCast(std.time.nanoTimestamp());
+    const ts_ms: i64 = @intCast(@divTrunc(ts_ns, 1_000_000));
+    return Value{ .int = ts_ms };
 }
 
 /// __time-end : 開始時刻を受け取り、経過時間を stderr に出力。nil を返す
@@ -256,4 +263,6 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "line-seq", .func = lineSeqFn },
     .{ .name = "__time-start", .func = timeStartFn },
     .{ .name = "__time-end", .func = timeEndFn },
+    .{ .name = "__nano-time", .func = timeStartFn },
+    .{ .name = "__current-time-millis", .func = currentTimeMillisFn },
 };

@@ -271,7 +271,7 @@ pub const Analyzer = struct {
             }
 
             // Java 互換シンボル変換
-            if (self.tryJavaInterop(sym_name, items)) |expanded| {
+            if (self.tryJavaInterop(first.symbol, items)) |expanded| {
                 return self.analyze(expanded);
             }
         }
@@ -3035,32 +3035,54 @@ pub const Analyzer = struct {
     /// (.getMessage e) → (ex-message e)
     /// (java.util.UUID/randomUUID) → (random-uuid)
     /// (java.util.UUID/fromString s) → (parse-uuid s)
+    /// (System/nanoTime) → (__nano-time)
+    /// (System/currentTimeMillis) → (__current-time-millis)
     /// (clojure.lang.MapEntry. k v) → (vector k v) — 2要素ベクタとして
-    fn tryJavaInterop(self: *Analyzer, sym_name: []const u8, items: []const Form) ?Form {
+    fn tryJavaInterop(self: *Analyzer, sym: FormSymbol, items: []const Form) ?Form {
         _ = self;
+        const sym_name = sym.name;
+        const sym_ns = sym.namespace;
 
         // ドットメソッド呼び出し: (.method obj args...)
-        if (sym_name.len > 1 and sym_name[0] == '.') {
+        // namespace なしで名前が "." で始まる場合
+        if (sym_ns == null and sym_name.len > 1 and sym_name[0] == '.') {
             const method = sym_name[1..];
             if (std.mem.eql(u8, method, "getMessage")) {
-                // (.getMessage e) → (ex-message e)
                 return Form{ .list = replaceHead(items, "ex-message") orelse return null };
             } else if (std.mem.eql(u8, method, "getCause")) {
-                // (.getCause e) → (ex-cause e)
                 return Form{ .list = replaceHead(items, "ex-cause") orelse return null };
             }
         }
 
-        // Java static メソッド/フィールド: Class/method
-        if (std.mem.eql(u8, sym_name, "java.util.UUID/randomUUID")) {
-            return Form{ .list = replaceHead(items, "random-uuid") orelse return null };
-        } else if (std.mem.eql(u8, sym_name, "java.util.UUID/fromString")) {
-            return Form{ .list = replaceHead(items, "parse-uuid") orelse return null };
+        // Java static メソッド/フィールド: namespace/name 形式
+        if (sym_ns) |ns| {
+            // java.util.UUID/randomUUID → (random-uuid)
+            if (std.mem.eql(u8, ns, "java.util.UUID")) {
+                if (std.mem.eql(u8, sym_name, "randomUUID")) {
+                    return Form{ .list = replaceHead(items, "random-uuid") orelse return null };
+                } else if (std.mem.eql(u8, sym_name, "fromString")) {
+                    return Form{ .list = replaceHead(items, "parse-uuid") orelse return null };
+                }
+            }
+
+            // System/nanoTime, java.lang.System/nanoTime → (__nano-time)
+            if (std.mem.eql(u8, ns, "System") or std.mem.eql(u8, ns, "java.lang.System")) {
+                if (std.mem.eql(u8, sym_name, "nanoTime")) {
+                    return Form{ .list = replaceHead(items, "__nano-time") orelse return null };
+                } else if (std.mem.eql(u8, sym_name, "currentTimeMillis")) {
+                    return Form{ .list = replaceHead(items, "__current-time-millis") orelse return null };
+                }
+            }
+
+            // コンストラクタ: clojure.lang.MapEntry. → (vector ...)
+            // "clojure.lang" が ns で "MapEntry." が name
+            if (std.mem.eql(u8, ns, "clojure.lang") and std.mem.eql(u8, sym_name, "MapEntry.")) {
+                return Form{ .list = replaceHead(items, "vector") orelse return null };
+            }
         }
 
-        // コンストラクタ: Class. args
-        if (std.mem.eql(u8, sym_name, "clojure.lang.MapEntry.")) {
-            // (clojure.lang.MapEntry. k v) → (vector k v)
+        // namespace なしのコンストラクタ: clojure.lang.MapEntry. (ドット付き全名)
+        if (sym_ns == null and std.mem.eql(u8, sym_name, "clojure.lang.MapEntry.")) {
             return Form{ .list = replaceHead(items, "vector") orelse return null };
         }
 
