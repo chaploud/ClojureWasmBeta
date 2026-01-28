@@ -1,7 +1,9 @@
 #!/bin/bash
 # 全言語・全ベンチマーク計測スクリプト
-# 使い方: bash bench/run_bench.sh [--yaml]
-#   --yaml: YAML フォーマットで出力 (status/bench.yaml への転記用)
+# 使い方: bash bench/run_bench.sh [OPTIONS]
+#   --yaml:      YAML フォーマットで出力 (status/bench.yaml への転記用)
+#   --hyperfine: hyperfine を使用して高精度計測 (要: brew install hyperfine)
+#   --bench=NAME: 特定のベンチマークのみ実行 (fib30, sum_range, map_filter, string_ops, data_transform)
 
 set -euo pipefail
 
@@ -9,8 +11,22 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUNS=3
 YAML_MODE=false
+HYPERFINE_MODE=false
+BENCH_FILTER=""
 
-[[ "${1:-}" == "--yaml" ]] && YAML_MODE=true
+for arg in "$@"; do
+    case "$arg" in
+        --yaml) YAML_MODE=true ;;
+        --hyperfine) HYPERFINE_MODE=true ;;
+        --bench=*) BENCH_FILTER="${arg#--bench=}" ;;
+    esac
+done
+
+# hyperfine チェック
+if $HYPERFINE_MODE && ! command -v hyperfine &> /dev/null; then
+    echo "Error: hyperfine not found. Install with: brew install hyperfine" >&2
+    exit 1
+fi
 
 # --- ヘルパー関数 ---
 
@@ -34,6 +50,27 @@ measure_mem() {
     local mem_bytes
     mem_bytes=$( /usr/bin/time -l sh -c "$cmd > /dev/null 2>&1" 2>&1 | grep 'maximum resident set size' | awk '{print $1}' )
     echo "scale=1; $mem_bytes / 1048576" | bc
+}
+
+# hyperfine による高精度計測 (時間のみ、秒単位で返す)
+measure_hyperfine() {
+    local cmd="$1"
+    local tmpfile
+    tmpfile=$(mktemp)
+    hyperfine --warmup 2 --runs 5 --export-json "$tmpfile" "$cmd" >/dev/null 2>&1
+    # jq があれば使う、なければ grep/sed でパース
+    if command -v jq &> /dev/null; then
+        jq -r '.results[0].mean' "$tmpfile"
+    else
+        grep -o '"mean": *[0-9.e+-]*' "$tmpfile" | head -1 | sed 's/.*: *//'
+    fi
+    rm -f "$tmpfile"
+}
+
+# hyperfine の結果をミリ秒表示用にフォーマット (小数点2桁)
+format_ms() {
+    local secs="$1"
+    printf "%.2f" "$(echo "$secs * 1000" | bc -l)"
 }
 
 # --- ビルド ---
@@ -102,12 +139,23 @@ run_clj() {
 
 # --- メイン ---
 
-BENCHMARKS=(fib30 sum_range map_filter string_ops data_transform)
+ALL_BENCHMARKS=(fib30 sum_range map_filter string_ops data_transform)
 LANGUAGES=(c cpp zig java ruby python clojurewasmbeta)
+
+# ベンチマークフィルタ適用
+if [[ -n "$BENCH_FILTER" ]]; then
+    BENCHMARKS=("$BENCH_FILTER")
+else
+    BENCHMARKS=("${ALL_BENCHMARKS[@]}")
+fi
 
 if ! $YAML_MODE; then
     echo "=========================================="
-    echo " 全言語ベンチマーク ($RUNS runs 中央値)"
+    if $HYPERFINE_MODE; then
+        echo " 全言語ベンチマーク (hyperfine 高精度)"
+    else
+        echo " 全言語ベンチマーク ($RUNS runs 中央値)"
+    fi
     echo "=========================================="
     echo ""
     echo "環境: $(uname -m), $(sysctl -n machdep.cpu.brand_string 2>/dev/null)"
@@ -144,13 +192,25 @@ for bench in "${BENCHMARKS[@]}"; do
             clojurewasmbeta) cmd="$CLJ_CMD" ;;
         esac
 
-        t=$(measure "$cmd")
-        m=$(measure_mem "$cmd")
-        RESULTS_TIME["${bench}_${lang}"]=$t
-        RESULTS_MEM["${bench}_${lang}"]=$m
+        if $HYPERFINE_MODE; then
+            t=$(measure_hyperfine "$cmd")
+            t_ms=$(format_ms "$t")
+            m=$(measure_mem "$cmd")
+            RESULTS_TIME["${bench}_${lang}"]=$t
+            RESULTS_MEM["${bench}_${lang}"]=$m
 
-        if ! $YAML_MODE; then
-            printf "  %-16s %6ss / %7s MB\n" "$lang" "$t" "$m"
+            if ! $YAML_MODE; then
+                printf "  %-16s %8s ms / %7s MB\n" "$lang" "$t_ms" "$m"
+            fi
+        else
+            t=$(measure "$cmd")
+            m=$(measure_mem "$cmd")
+            RESULTS_TIME["${bench}_${lang}"]=$t
+            RESULTS_MEM["${bench}_${lang}"]=$m
+
+            if ! $YAML_MODE; then
+                printf "  %-16s %6ss / %7s MB\n" "$lang" "$t" "$m"
+            fi
         fi
     done
 
