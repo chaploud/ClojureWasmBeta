@@ -283,6 +283,7 @@ REPL ドキュメント閲覧機能。
   - DefNode に doc/arglists フィールド追加
   - Analyzer: expandDefn で抽出、analyzeDef で DefNode に設定
   - evaluator: runDef で Var に設定
+  - VM: def_doc opcode (0x48) で Var に doc/arglists を設定
 - **`(doc name)`**: マクロ展開 → `(__doc "name")` builtin 呼び出し
   - Var の ns/name, arglists, docstring を stdout に表示
 - **`(dir ns-name)`**: マクロ展開 → `(__dir "ns-name")` builtin 呼び出し
@@ -293,11 +294,27 @@ REPL ドキュメント閲覧機能。
   - 全名前空間の var 名からパターン文字列を検索
 - 全テスト維持 (760/1 compat, 270/274 zig)
 
+### U4b: doc/arglists ダングリングポインタ修正 — 完了
+
+`defn` の docstring/arglists が scratch arena に割り当てられ、式境界の
+`resetScratch()` でメモリ解放 → 後続の `(doc fn-name)` でセグフォルト。
+`ctx.allocator.dupe()` で persistent memory にコピーするよう修正。
+
+### T5: テストカバレッジ拡充 — 完了
+
+3つの新規テストファイルで 55 テスト追加 (815 pass / 1 fail(意図的)):
+
+| テストファイル                  | テスト数 | 対象機能                                                |
+|---------------------------------|----------|---------------------------------------------------------|
+| `test/compat/protocols.clj`     | 23       | defprotocol, extend-type, extend-protocol, satisfies?, defrecord |
+| `test/compat/documentation.clj` | 14       | doc, dir, find-doc, apropos (U3 機能の検証)             |
+| `test/compat/namespaces.clj`    | 18       | all-ns, find-ns, create-ns, in-ns, the-ns, ns-publics, ns-resolve, alias, remove-ns |
+
 ### 推奨次回タスク
 
 1. **G1: GC 改善** — 世代別 GC or MemoryPool
-2. **R3 残項目**: MultiArrayList / MemoryPool / switch exhaustiveness / エラー伝播改善
-3. **U4 残項目**: 既知バグ修正
+2. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
+3. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars, add-watch 等)
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
@@ -387,7 +404,7 @@ REPL ドキュメント閲覧機能。
 
 ### テスト全体結果
 
-**760 pass, 1 fail(意図的), 0 error** (total: 761)
+**815 pass, 1 fail(意図的), 0 error** (total: 816)
 
 ### sci テストスイート移植
 

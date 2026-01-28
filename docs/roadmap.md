@@ -14,7 +14,7 @@
 |--------------------------|--------------------------------|
 | Zig ソースコード         | ~32,000 行 (src/ 以下)         |
 | clojure.core 対応状況    | 545 done / 169 skip / 714 total |
-| テスト                   | 760 pass / 1 fail(意図的)      |
+| テスト                   | 815 pass / 1 fail(意図的)      |
 | 最大ファイル             | core/sequences.zig 1,328 行    |
 | デュアルバックエンド     | TreeWalk + BytecodeVM          |
 | GC                       | 式境界 Mark-Sweep              |
