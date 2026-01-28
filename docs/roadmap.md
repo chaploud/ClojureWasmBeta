@@ -247,24 +247,11 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 
 > 目的: REPL 体験とエラー体験を実用レベルに引き上げる
 
-### U1: REPL readline / 履歴
+### U1: REPL readline / 履歴 — ✅ 完了
 
-**現状**: 基本的な REPL は Phase 25 で実装済み。ただし readline/履歴なし。
-
-**選択肢**:
-
-| 方式                | 説明                                    | 難易度 |
-|---------------------|-----------------------------------------|--------|
-| linenoise (C lib)   | 軽量 readline 互換。~1,200 行。Zig 組込可 | 中     |
-| 自前実装            | 最低限の行編集 + 履歴。外部依存なし     | 中     |
-| Zig ecosystem lib   | ziglang コミュニティの readline 実装     | 要調査 |
-
-**最低限の機能**:
-- 上下キーによる履歴呼び出し
-- 左右キーによるカーソル移動
-- Home/End キー
-- Ctrl-A/E/K/U (Emacs 風ショートカット)
-- 履歴ファイル保存/読み込み (`~/.clojure_wasm_history`)
+自前実装 (外部依存なし) で readline 風の行編集を実装。
+`src/repl/line_editor.zig`: raw ターミナル + 矢印キー + 履歴 + Emacs ショートカット。
+履歴ファイル: `~/.clj_wasm_history`。非 TTY 時は dumb モードにフォールバック。
 
 ### U2: エラーメッセージ改善
 

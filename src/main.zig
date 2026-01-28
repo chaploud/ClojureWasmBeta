@@ -26,6 +26,7 @@ const Allocators = clj.Allocators;
 const core = clj.core;
 const engine_mod = clj.engine;
 const var_mod = clj.var_mod;
+const LineEditor = @import("repl/line_editor.zig").LineEditor;
 
 /// CLI エラー
 const CliError = error{
@@ -419,12 +420,10 @@ fn printValue(writer: *std.Io.Writer, val: Value) !void {
 /// REPL: 対話型シェル
 fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: bool) !void {
     // stdout/stderr
-    const stdout_file = std.fs.File.stdout();
     const stderr_file = std.fs.File.stderr();
-    const stdin_file = std.fs.File.stdin();
     var stdout_buf: [4096]u8 = undefined;
     var stderr_buf: [4096]u8 = undefined;
-    var stdout_writer = stdout_file.writer(&stdout_buf);
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
     var stderr_writer = stderr_file.writer(&stderr_buf);
     const stdout = &stdout_writer.interface;
     const stderr = &stderr_writer.interface;
@@ -438,6 +437,20 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
     try env.setupBasic();
     try core.registerCore(&env, allocs.persistent());
     core.initLoadedLibs(allocs.persistent());
+
+    // 行エディタ初期化
+    var editor = LineEditor.init(gpa_allocator);
+    defer editor.deinit();
+
+    // 履歴ファイル設定
+    if (std.posix.getenv("HOME")) |home| {
+        var path_buf: [1024]u8 = undefined;
+        const path = std.fmt.bufPrint(&path_buf, "{s}/.clj_wasm_history", .{home}) catch null;
+        if (path) |p| {
+            editor.setHistoryPath(p) catch {};
+            editor.loadHistory();
+        }
+    }
 
     // バナー
     stdout.writeAll("ClojureWasmBeta 0.1.0 — Clojure interpreter in Zig\n") catch {};
@@ -455,43 +468,31 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
     v3.bindRoot(Value.nil);
     ve.bindRoot(Value.nil);
 
-    // 入力バッファ
+    // 入力バッファ (複数行入力用)
     var input_buf: std.ArrayListUnmanaged(u8) = .empty;
     defer input_buf.deinit(gpa_allocator);
 
     var vm_snapshot: ?engine_mod.VarSnapshot = null;
 
-    // stdin リーダー（ループ外で初期化）
-    var stdin_reader_buf: [4096]u8 = undefined;
-    var stdin_reader = stdin_file.reader(&stdin_reader_buf);
+    // プロンプトバッファ
+    var prompt_buf: [128]u8 = undefined;
 
     while (true) {
-        // プロンプト
+        // プロンプト構築
         const ns_name = if (env.getCurrentNs()) |ns| ns.name else "user";
-        if (input_buf.items.len == 0) {
-            stdout.print("{s}=> ", .{ns_name}) catch {};
-        } else {
-            // 継続入力プロンプト
-            stdout.print("{s}.. ", .{ns_name}) catch {};
-        }
-        stdout.flush() catch {};
+        const prompt = if (input_buf.items.len == 0)
+            std.fmt.bufPrint(&prompt_buf, "{s}=> ", .{ns_name}) catch "=> "
+        else
+            std.fmt.bufPrint(&prompt_buf, "{s}.. ", .{ns_name}) catch ".. ";
 
-        // 1行読み込み
-        const line_opt = stdin_reader.interface.takeDelimiter('\n') catch |err| {
-            switch (err) {
-                error.StreamTooLong => {
-                    stderr.writeAll("Error: input line too long\n") catch {};
-                    stderr.flush() catch {};
-                    input_buf.clearRetainingCapacity();
-                    continue;
-                },
-                error.ReadFailed => return err,
-            }
-        };
-        const line = line_opt orelse {
+        // 1行読み込み (LineEditor)
+        const line = editor.readLine(prompt) catch |err| {
+            stderr.print("Error: {any}\n", .{err}) catch {};
+            stderr.flush() catch {};
+            return;
+        } orelse {
             // EOF (Ctrl-D)
-            stdout.writeByte('\n') catch {};
-            stdout.flush() catch {};
+            editor.saveHistory();
             return;
         };
 
@@ -507,6 +508,9 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
         // 括弧バランスチェック
         if (!isBalanced(input_buf.items)) continue;
 
+        // 完全な式が入力されたら履歴に追加
+        editor.addHistory(input_buf.items) catch {};
+
         // 入力を評価
         // persistent アロケータを使用（シンボル名が source 内を指すため解放不可）
         const source = try allocs.persistent().dupe(u8, input_buf.items);
@@ -519,7 +523,7 @@ fn runRepl(gpa_allocator: std.mem.Allocator, backend: Backend, compare_mode: boo
             const compare_out = runCompare(&allocs, &env, source, vm_snapshot, stdout, stderr) catch |err| {
                 stderr.print("Error: {any}\n", .{err}) catch {};
                 stderr.flush() catch {};
-                ve.bindRoot(Value.nil); // *e にエラー情報は格納できない（Value 表現なし）
+                ve.bindRoot(Value.nil);
                 continue;
             };
             vm_snapshot = compare_out;

@@ -54,10 +54,23 @@ threadlocal 変数は inline アクセサ関数 (get/set) で提供。
   - `--save` でベースライン保存、`--compare` で差分比較 (±5% 閾値)
   - `--backend=vm` / `--backend=tree_walk` でバックエンド指定可能
 
+### U1: REPL readline/履歴 — 完了
+
+- `src/repl/line_editor.zig` を新規作成 (自前 readline 実装、外部依存なし)
+  - raw ターミナルモード (termios)
+  - 左右矢印カーソル移動、Home/End
+  - Ctrl-A/E/B/F/K/U/W/D/H/L
+  - Backspace/Delete
+  - 上下矢印で履歴ナビゲーション (最大 500 エントリ)
+  - 履歴ファイル保存/読み込み (`~/.clj_wasm_history`)
+  - 非 TTY 時は dumb モードにフォールバック
+- `src/main.zig` の `runRepl` を LineEditor に統合
+  - 複数行入力 (括弧バランス) は従来通り動作
+
 ### 推奨次回タスク
 
 1. **P2: VM 最適化** — ベンチマーク基盤を使って計測しながら
-2. **U1: REPL readline/履歴** — 独立して着手可能
+2. **R2: value.zig 分割** — PersistentMap/Vector/LazySeq を分離
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
