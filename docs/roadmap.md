@@ -100,13 +100,13 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 - エラー伝播の改善 (`catch { return error.X }` → `try` 活用)
 - `anyopaque` キャスト削減 (wasm 周りで zware 型を直接使える箇所)
 
-### R4: テスト整理
+### R4: テスト整理 — ✅ 完了
 
-- テストファイルの命名規約統一
-- compat/ と sci/ の境界明確化
-- ベンチマーク用テストと回帰テストの分離
-- テスト実行スクリプト (`run_tests.sh`) のエラーレポート改善
-- clj-kondo 警告への対応 (unresolved-symbol 等は設定ファイルで対応)
+- ✅ テストファイルの命名規約統一 (q1a_first_class → first_class_functions)
+- compat/ と sci/ の境界は既に明確 (sci/ は compat/ のサブディレクトリ)
+- bench/ と compat/ は既に分離済み
+- ✅ テスト実行スクリプト (`run_tests.sh`) のエラーレポート改善 (-v/--verbose)
+- ✅ clj-kondo 警告への対応 (.clj-kondo/config.edn で unresolved-symbol 抑制)
 
 ### R5: 不要ファイル・死コードクリーンアップ
 

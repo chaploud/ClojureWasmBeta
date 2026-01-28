@@ -156,11 +156,17 @@ hot path のエラー分岐に `@branchHint(.cold)` を適用。
 
 全テスト維持 (760/1 compat, 270/274 zig)。
 
+### R4: テスト整理 — 完了
+
+- `q1a_first_class.clj` → `first_class_functions.clj` (機能名ベース命名規約に統一)
+- `run_tests.sh` に `-v/--verbose` オプション追加 (クラッシュ時の出力全体表示)
+- `.clj-kondo/config.edn` 追加 (test_runner マクロの unresolved-symbol 抑制)
+
 ### 推奨次回タスク
 
-1. **R4: テスト整理** — 命名規約統一、テスト分類
-2. **G1: GC 改善** — 世代別 GC or MemoryPool
-3. **U2: エラーメッセージ改善** — "Expected X, got Y" 形式
+1. **G1: GC 改善** — 世代別 GC or MemoryPool
+2. **U2: エラーメッセージ改善** — "Expected X, got Y" 形式
+3. **R5: 不要ファイル・死コードクリーンアップ**
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
