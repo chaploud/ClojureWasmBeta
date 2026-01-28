@@ -1,40 +1,65 @@
 #!/bin/bash
-# 全言語・全ベンチマーク計測スクリプト
-# 使い方: bash bench/run_bench.sh [OPTIONS]
-#   --yaml:      YAML フォーマットで出力 (status/bench.yaml への転記用)
-#   --hyperfine: hyperfine を使用して高精度計測 (要: brew install hyperfine)
-#   --bench=NAME: 特定のベンチマークのみ実行 (fib30, sum_range, map_filter, string_ops, data_transform)
+# ClojureWasmBeta ベンチマークスイート
+#
+# 使い方:
+#   bash bench/run_bench.sh                    # 全言語実行 (コンソール出力のみ)
+#   bash bench/run_bench.sh --quick            # ClojureWasmBeta のみ (開発中の回帰チェック)
+#   bash bench/run_bench.sh --record           # 結果を status/bench.yaml に追記
+#   bash bench/run_bench.sh --version="P3 NaN" # 記録時のバージョン名を指定
+#   bash bench/run_bench.sh --hyperfine        # hyperfine で高精度計測
+#
+# 組み合わせ例:
+#   bash bench/run_bench.sh --quick --record                      # CLJ のみ計測して記録
+#   bash bench/run_bench.sh --quick --record --version="G2 GC"    # バージョン名付きで記録
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-RUNS=3
-YAML_MODE=false
+YAML_FILE="$PROJECT_DIR/status/bench.yaml"
+
+# オプション
+QUICK_MODE=false
+RECORD_MODE=false
+BASELINE_MODE=false
 HYPERFINE_MODE=false
-BENCH_FILTER=""
+VERSION_NAME="dev"
+RUNS=3
 
 for arg in "$@"; do
     case "$arg" in
-        --yaml) YAML_MODE=true ;;
+        --quick) QUICK_MODE=true ;;
+        --record) RECORD_MODE=true ;;
+        --baseline) BASELINE_MODE=true ;;
         --hyperfine) HYPERFINE_MODE=true ;;
-        --bench=*) BENCH_FILTER="${arg#--bench=}" ;;
+        --version=*) VERSION_NAME="${arg#--version=}" ;;
     esac
 done
 
-# hyperfine チェック
+# ツールチェック
 if $HYPERFINE_MODE && ! command -v hyperfine &> /dev/null; then
     echo "Error: hyperfine not found. Install with: brew install hyperfine" >&2
     exit 1
 fi
+if $RECORD_MODE && ! command -v yq &> /dev/null; then
+    echo "Error: yq not found. Install with: brew install yq" >&2
+    exit 1
+fi
 
-# --- ヘルパー関数 ---
+# ベンチマーク定義
+BENCHMARKS=(fib30 sum_range map_filter string_ops data_transform)
+OTHER_LANGS=(c cpp zig java ruby python)
+
+# ═══════════════════════════════════════════════════════════════════
+# 計測関数
+# ═══════════════════════════════════════════════════════════════════
 
 median() {
     echo "$@" | tr ' ' '\n' | sort -n | sed -n '2p'
 }
 
-measure() {
+# 標準計測 (/usr/bin/time)
+measure_time() {
     local cmd="$1"
     local times=()
     for _ in $(seq 1 $RUNS); do
@@ -49,16 +74,15 @@ measure_mem() {
     local cmd="$1"
     local mem_bytes
     mem_bytes=$( /usr/bin/time -l sh -c "$cmd > /dev/null 2>&1" 2>&1 | grep 'maximum resident set size' | awk '{print $1}' )
-    echo "scale=1; $mem_bytes / 1048576" | bc
+    printf "%.1f" "$(echo "scale=1; $mem_bytes / 1048576" | bc)"
 }
 
-# hyperfine による高精度計測 (時間のみ、秒単位で返す)
+# hyperfine 高精度計測
 measure_hyperfine() {
     local cmd="$1"
     local tmpfile
     tmpfile=$(mktemp)
     hyperfine --warmup 2 --runs 5 --export-json "$tmpfile" "$cmd" >/dev/null 2>&1
-    # jq があれば使う、なければ grep/sed でパース
     if command -v jq &> /dev/null; then
         jq -r '.results[0].mean' "$tmpfile"
     else
@@ -67,184 +91,187 @@ measure_hyperfine() {
     rm -f "$tmpfile"
 }
 
-# hyperfine の結果をミリ秒表示用にフォーマット (小数点2桁)
-format_ms() {
-    local secs="$1"
-    printf "%.2f" "$(echo "$secs * 1000" | bc -l)"
-}
-
-# --- ビルド ---
-
-build_c() {
-    local bench=$1
-    local src="$SCRIPT_DIR/$bench/${bench%30}.c"
-    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.c"
-    local out="$SCRIPT_DIR/$bench/bench_c"
-    cc -O3 -o "$out" "$src" 2>/dev/null
-    echo "$out"
-}
-
-build_cpp() {
-    local bench=$1
-    local src="$SCRIPT_DIR/$bench/${bench%30}.cpp"
-    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.cpp"
-    local out="$SCRIPT_DIR/$bench/bench_cpp"
-    c++ -O3 -o "$out" "$src" 2>/dev/null
-    echo "$out"
-}
-
-build_zig() {
-    local bench=$1
-    local src="$SCRIPT_DIR/$bench/${bench%30}.zig"
-    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.zig"
-    local out="$SCRIPT_DIR/$bench/bench_zig"
-    (cd "$SCRIPT_DIR/$bench" && zig build-exe -OReleaseFast "$(basename "$src")" -femit-bin=bench_zig 2>/dev/null)
-    echo "$out"
-}
-
-build_java() {
-    local bench=$1
-    local class_name
-    case "$bench" in
-        fib30) class_name="Fib" ;;
-        sum_range) class_name="SumRange" ;;
-        map_filter) class_name="MapFilter" ;;
-        string_ops) class_name="StringOps" ;;
-        data_transform) class_name="DataTransform" ;;
-    esac
-    javac "$SCRIPT_DIR/$bench/$class_name.java" 2>/dev/null
-    echo "java -cp $SCRIPT_DIR/$bench $class_name"
-}
-
-run_py() {
-    local bench=$1
-    local src="$SCRIPT_DIR/$bench/${bench%30}.py"
-    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.py"
-    echo "python3 $src"
-}
-
-run_rb() {
-    local bench=$1
-    local src="$SCRIPT_DIR/$bench/${bench%30}.rb"
-    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.rb"
-    echo "ruby --yjit $src"
-}
-
-run_clj() {
-    local bench=$1
-    local src="$SCRIPT_DIR/$bench/${bench%30}.clj"
-    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.clj"
-    echo "$PROJECT_DIR/zig-out/bin/ClojureWasmBeta $src"
-}
-
-# --- メイン ---
-
-ALL_BENCHMARKS=(fib30 sum_range map_filter string_ops data_transform)
-LANGUAGES=(c cpp zig java ruby python clojurewasmbeta)
-
-# ベンチマークフィルタ適用
-if [[ -n "$BENCH_FILTER" ]]; then
-    BENCHMARKS=("$BENCH_FILTER")
-else
-    BENCHMARKS=("${ALL_BENCHMARKS[@]}")
-fi
-
-if ! $YAML_MODE; then
-    echo "=========================================="
+# 計測実行 (時間を秒で返す)
+measure() {
+    local cmd="$1"
     if $HYPERFINE_MODE; then
-        echo " 全言語ベンチマーク (hyperfine 高精度)"
+        measure_hyperfine "$cmd"
     else
-        echo " 全言語ベンチマーク ($RUNS runs 中央値)"
+        measure_time "$cmd"
     fi
-    echo "=========================================="
-    echo ""
-    echo "環境: $(uname -m), $(sysctl -n machdep.cpu.brand_string 2>/dev/null)"
-    echo "日付: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo ""
-fi
+}
 
-# 結果格納用連想配列
-declare -A RESULTS_TIME RESULTS_MEM
+# ═══════════════════════════════════════════════════════════════════
+# ビルド関数
+# ═══════════════════════════════════════════════════════════════════
+
+build_benchmark() {
+    local bench="$1"
+    local dir="$SCRIPT_DIR/$bench"
+
+    # C
+    [[ -f "$dir/fib.c" ]] && cc -O3 -o "$dir/bench_c" "$dir/fib.c" 2>/dev/null
+    [[ -f "$dir/sum.c" ]] && cc -O3 -o "$dir/bench_c" "$dir/sum.c" 2>/dev/null
+    [[ -f "$dir/main.c" ]] && cc -O3 -o "$dir/bench_c" "$dir/main.c" 2>/dev/null
+
+    # C++
+    [[ -f "$dir/fib.cpp" ]] && c++ -O3 -o "$dir/bench_cpp" "$dir/fib.cpp" 2>/dev/null
+    [[ -f "$dir/sum.cpp" ]] && c++ -O3 -o "$dir/bench_cpp" "$dir/sum.cpp" 2>/dev/null
+    [[ -f "$dir/main.cpp" ]] && c++ -O3 -o "$dir/bench_cpp" "$dir/main.cpp" 2>/dev/null
+
+    # Zig
+    for zigfile in "$dir"/*.zig; do
+        [[ -f "$zigfile" ]] && zig build-exe -OReleaseFast "$zigfile" -femit-bin="$dir/bench_zig" 2>/dev/null && break
+    done
+
+    # Java
+    for javafile in "$dir"/*.java; do
+        [[ -f "$javafile" ]] && javac -d "$dir" "$javafile" 2>/dev/null && break
+    done
+
+    return 0
+}
+
+get_cmd() {
+    local bench="$1"
+    local lang="$2"
+    local dir="$SCRIPT_DIR/$bench"
+
+    case "$lang" in
+        c) echo "$dir/bench_c" ;;
+        cpp) echo "$dir/bench_cpp" ;;
+        zig) echo "$dir/bench_zig" ;;
+        java)
+            local class
+            class=$(basename "$dir"/*.java 2>/dev/null | head -1 | sed 's/.java$//')
+            echo "java -cp $dir $class"
+            ;;
+        python)
+            local py
+            py=$(ls "$dir"/*.py 2>/dev/null | head -1)
+            echo "python3 $py"
+            ;;
+        ruby)
+            local rb
+            rb=$(ls "$dir"/*.rb 2>/dev/null | head -1)
+            echo "ruby $rb"
+            ;;
+        clojurewasmbeta)
+            local clj
+            clj=$(ls "$dir"/*.clj 2>/dev/null | head -1)
+            echo "$PROJECT_DIR/zig-out/bin/ClojureWasmBeta $clj"
+            ;;
+    esac
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# メイン処理
+# ═══════════════════════════════════════════════════════════════════
+
+echo "══════════════════════════════════════════════════════════════"
+if $QUICK_MODE; then
+    echo " ClojureWasmBeta ベンチマーク (quick mode)"
+else
+    echo " 全言語ベンチマーク"
+fi
+if $HYPERFINE_MODE; then
+    echo " [hyperfine 高精度]"
+else
+    echo " [$RUNS runs 中央値]"
+fi
+echo "══════════════════════════════════════════════════════════════"
+echo ""
+echo "環境: $(uname -m), $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'unknown')"
+echo "日付: $(date '+%Y-%m-%d %H:%M:%S')"
+echo ""
+
+# 結果格納用
+declare -A RESULTS_CLJ_TIME
+declare -A RESULTS_CLJ_MEM
 
 for bench in "${BENCHMARKS[@]}"; do
-    if ! $YAML_MODE; then
-        echo "--- $bench ---"
+    echo "─── $bench ───"
+    build_benchmark "$bench"
+
+    # 他言語 (--quick でなければ)
+    if ! $QUICK_MODE; then
+        for lang in "${OTHER_LANGS[@]}"; do
+            cmd=$(get_cmd "$bench" "$lang")
+            if [[ -n "$cmd" ]] && [[ -x "${cmd%% *}" || "$lang" == "python" || "$lang" == "ruby" || "$lang" == "java" ]]; then
+                t=$(measure "$cmd")
+                m=$(measure_mem "$cmd")
+                if $HYPERFINE_MODE; then
+                    t_ms=$(printf "%.2f" "$(echo "$t * 1000" | bc -l)")
+                    printf "  %-10s %10s ms  %8s MB\n" "$lang" "$t_ms" "$m"
+                else
+                    printf "  %-10s %10ss  %8s MB\n" "$lang" "$t" "$m"
+                fi
+            fi
+        done
+        echo "  ──────────"
     fi
 
-    # ビルド (C/C++/Zig/Java)
-    C_BIN=$(build_c "$bench")
-    CPP_BIN=$(build_cpp "$bench")
-    ZIG_BIN=$(build_zig "$bench")
-    JAVA_CMD=$(build_java "$bench")
-    PY_CMD=$(run_py "$bench")
-    RB_CMD=$(run_rb "$bench")
-    CLJ_CMD=$(run_clj "$bench")
+    # ClojureWasmBeta
+    cmd=$(get_cmd "$bench" "clojurewasmbeta")
+    t=$(measure "$cmd")
+    m=$(measure_mem "$cmd")
+    RESULTS_CLJ_TIME["$bench"]=$t
+    RESULTS_CLJ_MEM["$bench"]=$m
 
-    # 計測
-    for lang in "${LANGUAGES[@]}"; do
-        case "$lang" in
-            c) cmd="$C_BIN" ;;
-            cpp) cmd="$CPP_BIN" ;;
-            zig) cmd="$ZIG_BIN" ;;
-            java) cmd="$JAVA_CMD" ;;
-            python) cmd="$PY_CMD" ;;
-            ruby) cmd="$RB_CMD" ;;
-            clojurewasmbeta) cmd="$CLJ_CMD" ;;
-        esac
-
-        if $HYPERFINE_MODE; then
-            t=$(measure_hyperfine "$cmd")
-            t_ms=$(format_ms "$t")
-            m=$(measure_mem "$cmd")
-            RESULTS_TIME["${bench}_${lang}"]=$t
-            RESULTS_MEM["${bench}_${lang}"]=$m
-
-            if ! $YAML_MODE; then
-                printf "  %-16s %8s ms / %7s MB\n" "$lang" "$t_ms" "$m"
-            fi
-        else
-            t=$(measure "$cmd")
-            m=$(measure_mem "$cmd")
-            RESULTS_TIME["${bench}_${lang}"]=$t
-            RESULTS_MEM["${bench}_${lang}"]=$m
-
-            if ! $YAML_MODE; then
-                printf "  %-16s %6ss / %7s MB\n" "$lang" "$t" "$m"
-            fi
-        fi
-    done
-
-    # クリーンアップ
-    rm -f "$SCRIPT_DIR/$bench/bench_c" "$SCRIPT_DIR/$bench/bench_cpp" "$SCRIPT_DIR/$bench/bench_zig"
-    rm -f "$SCRIPT_DIR/$bench"/*.class
-    rm -rf "$SCRIPT_DIR/$bench/.zig-cache" "$SCRIPT_DIR/$bench/bench_zig.o"
+    if $HYPERFINE_MODE; then
+        t_ms=$(printf "%.2f" "$(echo "$t * 1000" | bc -l)")
+        printf "  %-10s %10s ms  %8s MB  ← ClojureWasmBeta\n" "clj-wasm" "$t_ms" "$m"
+    else
+        printf "  %-10s %10ss  %8s MB  ← ClojureWasmBeta\n" "clj-wasm" "$t" "$m"
+    fi
+    echo ""
 done
 
-# YAML 出力
-if $YAML_MODE; then
-    echo "# 計測日: $(date '+%Y-%m-%d')"
+# ═══════════════════════════════════════════════════════════════════
+# YAML 記録
+# ═══════════════════════════════════════════════════════════════════
+
+if $RECORD_MODE; then
+    echo "──────────────────────────────────────────────────────────────"
+    echo "結果を $YAML_FILE に追記中..."
+
+    TODAY=$(date '+%Y-%m-%d')
+
+    # 新しい履歴エントリを作成
+    NEW_ENTRY=$(cat <<EOF
+- date: $TODAY
+  version: "$VERSION_NAME"
+  build: ReleaseFast
+  results:
+    fib30: { time_s: ${RESULTS_CLJ_TIME[fib30]}, mem_mb: ${RESULTS_CLJ_MEM[fib30]} }
+    sum_range: { time_s: ${RESULTS_CLJ_TIME[sum_range]}, mem_mb: ${RESULTS_CLJ_MEM[sum_range]} }
+    map_filter: { time_s: ${RESULTS_CLJ_TIME[map_filter]}, mem_mb: ${RESULTS_CLJ_MEM[map_filter]} }
+    string_ops: { time_s: ${RESULTS_CLJ_TIME[string_ops]}, mem_mb: ${RESULTS_CLJ_MEM[string_ops]} }
+    data_transform: { time_s: ${RESULTS_CLJ_TIME[data_transform]}, mem_mb: ${RESULTS_CLJ_MEM[data_transform]} }
+EOF
+)
+
+    # yq で history に追加
+    echo "$NEW_ENTRY" | yq -i '.history += load("/dev/stdin")' "$YAML_FILE"
+
+    echo "✓ 記録完了"
     echo ""
-    echo "baseline:"
-    echo "  date: $(date '+%Y-%m-%d')"
-    echo "  languages:"
-    for lang in c cpp zig java ruby python; do
-        echo "    $lang:"
-        for bench in "${BENCHMARKS[@]}"; do
-            t=${RESULTS_TIME["${bench}_${lang}"]}
-            m=${RESULTS_MEM["${bench}_${lang}"]}
-            echo "      $bench: { time_s: $t, mem_mb: $m }"
-        done
-    done
-    echo ""
-    echo "# ClojureWasmBeta"
-    echo "history:"
-    echo "  - date: $(date '+%Y-%m-%d')"
-    echo "    version: \"TODO\""
-    echo "    build: ReleaseFast"
-    echo "    results:"
-    for bench in "${BENCHMARKS[@]}"; do
-        t=${RESULTS_TIME["${bench}_clojurewasmbeta"]}
-        m=${RESULTS_MEM["${bench}_clojurewasmbeta"]}
-        echo "      $bench: { time_s: $t, mem_mb: $m }"
-    done
 fi
+
+# サマリー
+echo "══════════════════════════════════════════════════════════════"
+echo " ClojureWasmBeta サマリー"
+echo "══════════════════════════════════════════════════════════════"
+printf "  %-16s %10s  %10s\n" "ベンチマーク" "時間" "メモリ"
+printf "  %-16s %10s  %10s\n" "────────────────" "──────────" "──────────"
+for bench in "${BENCHMARKS[@]}"; do
+    t="${RESULTS_CLJ_TIME[$bench]}"
+    m="${RESULTS_CLJ_MEM[$bench]}"
+    if $HYPERFINE_MODE; then
+        t_disp=$(printf "%.2f ms" "$(echo "$t * 1000" | bc -l)")
+    else
+        t_disp="${t}s"
+    fi
+    printf "  %-16s %10s  %8s MB\n" "$bench" "$t_disp" "$m"
+done
+echo ""

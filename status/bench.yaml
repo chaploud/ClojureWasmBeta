@@ -9,7 +9,6 @@ env:
   ram: 48 GB
   os: Darwin 25.2.0 (arm64)
   zig: 0.15.2
-
 # ベンチマーク定義
 benchmarks:
   fib30:
@@ -27,7 +26,6 @@ benchmarks:
   data_transform:
     description: "10000個のマップ/構造体を作成・変換"
     expected_result: 10000
-
 # 他言語ベースライン (一度だけ記録)
 # 各ベンチは { time_s: 秒, mem_mb: MB } の形式
 baseline:
@@ -35,58 +33,67 @@ baseline:
   languages:
     c:
       version: "Apple clang 17.0.0"
-      fib30: { time_s: 0.00, mem_mb: 1.8 }
-      sum_range: { time_s: 0.00, mem_mb: 1.8 }
-      map_filter: { time_s: 0.00, mem_mb: 1.8 }
-      string_ops: { time_s: 0.00, mem_mb: 1.8 }
-      data_transform: { time_s: 0.00, mem_mb: 1.8 }
+      fib30: {time_s: 0.00, mem_mb: 1.8}
+      sum_range: {time_s: 0.00, mem_mb: 1.8}
+      map_filter: {time_s: 0.00, mem_mb: 1.8}
+      string_ops: {time_s: 0.00, mem_mb: 1.8}
+      data_transform: {time_s: 0.00, mem_mb: 1.8}
     cpp:
       version: "Apple clang 17.0.0"
-      fib30: { time_s: 0.00, mem_mb: 1.8 }
-      sum_range: { time_s: 0.00, mem_mb: 1.8 }
-      map_filter: { time_s: 0.01, mem_mb: 1.8 }
-      string_ops: { time_s: 0.00, mem_mb: 1.8 }
-      data_transform: { time_s: 0.00, mem_mb: 1.8 }
+      fib30: {time_s: 0.00, mem_mb: 1.8}
+      sum_range: {time_s: 0.00, mem_mb: 1.8}
+      map_filter: {time_s: 0.01, mem_mb: 1.8}
+      string_ops: {time_s: 0.00, mem_mb: 1.8}
+      data_transform: {time_s: 0.00, mem_mb: 1.8}
     zig:
       version: "0.15.2"
-      fib30: { time_s: 0.01, mem_mb: 1.8 }
-      sum_range: { time_s: 0.00, mem_mb: 1.8 }
-      map_filter: { time_s: 0.00, mem_mb: 1.8 }
-      string_ops: { time_s: 0.00, mem_mb: 1.8 }
-      data_transform: { time_s: 0.00, mem_mb: 1.8 }
+      fib30: {time_s: 0.01, mem_mb: 1.8}
+      sum_range: {time_s: 0.00, mem_mb: 1.8}
+      map_filter: {time_s: 0.00, mem_mb: 1.8}
+      string_ops: {time_s: 0.00, mem_mb: 1.8}
+      data_transform: {time_s: 0.00, mem_mb: 1.8}
     java:
       version: "OpenJDK 21.0.9"
-      fib30: { time_s: 0.04, mem_mb: 40.8 }
-      sum_range: { time_s: 0.04, mem_mb: 42.1 }
-      map_filter: { time_s: 0.05, mem_mb: 42.8 }
-      string_ops: { time_s: 0.05, mem_mb: 44.0 }
-      data_transform: { time_s: 0.05, mem_mb: 42.2 }
+      fib30: {time_s: 0.04, mem_mb: 40.8}
+      sum_range: {time_s: 0.04, mem_mb: 42.1}
+      map_filter: {time_s: 0.05, mem_mb: 42.8}
+      string_ops: {time_s: 0.05, mem_mb: 44.0}
+      data_transform: {time_s: 0.05, mem_mb: 42.2}
     ruby:
       version: "3.3.6 (YJIT)"
-      fib30: { time_s: 0.11, mem_mb: 17.0 }
-      sum_range: { time_s: 0.11, mem_mb: 17.2 }
-      map_filter: { time_s: 0.11, mem_mb: 17.4 }
-      string_ops: { time_s: 0.11, mem_mb: 18.0 }
-      data_transform: { time_s: 0.11, mem_mb: 18.7 }
+      fib30: {time_s: 0.11, mem_mb: 17.0}
+      sum_range: {time_s: 0.11, mem_mb: 17.2}
+      map_filter: {time_s: 0.11, mem_mb: 17.4}
+      string_ops: {time_s: 0.11, mem_mb: 18.0}
+      data_transform: {time_s: 0.11, mem_mb: 18.7}
     python:
       version: "3.14.2"
-      fib30: { time_s: 0.08, mem_mb: 14.3 }
-      sum_range: { time_s: 0.02, mem_mb: 14.4 }
-      map_filter: { time_s: 0.02, mem_mb: 14.4 }
-      string_ops: { time_s: 0.02, mem_mb: 15.1 }
-      data_transform: { time_s: 0.02, mem_mb: 17.0 }
-
+      fib30: {time_s: 0.08, mem_mb: 14.3}
+      sum_range: {time_s: 0.02, mem_mb: 14.4}
+      map_filter: {time_s: 0.02, mem_mb: 14.4}
+      string_ops: {time_s: 0.02, mem_mb: 15.1}
+      data_transform: {time_s: 0.02, mem_mb: 17.0}
 # ClojureWasmBeta 履歴
 history:
   - date: 2026-01-28
     version: "R7+D (post セミスペース GC)"
     build: ReleaseFast
     results:
-      fib30: { time_s: 10.13, mem_mb: 1519.0 }
-      sum_range: { time_s: 0.54, mem_mb: 134.7 }
-      map_filter: { time_s: 2.01, mem_mb: 27481.2 }
-      string_ops: { time_s: 0.19, mem_mb: 1305.5 }
-      data_transform: { time_s: 0.16, mem_mb: 784.0 }
+      # 注: この回の fib は fib(38) で計測。以降は fib(30)
+      fib: {time_s: 10.13, mem_mb: 1519.0, note: "fib(38)"}
+      sum_range: {time_s: 0.54, mem_mb: 134.7}
+      map_filter: {time_s: 2.01, mem_mb: 27481.2}
+      string_ops: {time_s: 0.19, mem_mb: 1305.5}
+      data_transform: {time_s: 0.16, mem_mb: 784.0}
     notes: |
-      初回計測。map_filter のメモリ 27GB は遅延シーケンスの GC 圧力による。
-      NaN boxing と世代別 GC で大幅改善を期待。
+      初回計測。fib は fib(38) で計測 (以降は fib(30) に変更)。
+      map_filter のメモリ 27GB は遅延シーケンスの GC 圧力による。
+  - date: 2026-01-28
+    version: "fib30 ベースライン"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 1.90, mem_mb: 1517.3}
+      sum_range: {time_s: 0.07, mem_mb: 133.2}
+      map_filter: {time_s: 1.75, mem_mb: 27164.3}
+      string_ops: {time_s: 0.09, mem_mb: 1278.8}
+      data_transform: {time_s: 0.06, mem_mb: 782.4}
