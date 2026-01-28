@@ -478,11 +478,44 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 - **`src/clj/clojure/math.clj`**: E, PI 定数 + 33 defn ラッパー
 - **テスト**: `test/compat/clojure_math.clj` — 41 assertions (TreeWalk/VM/--compare 全 PASS)
 
+### S1f: clojure.repl 名前空間 — 完了
+
+- **`src/clj/clojure/repl.clj`**: REPL ユーティリティ NS
+  - find-doc, apropos: clojure.core の委譲ラッパー
+  - source/source-fn: スタブ (ソーステキスト保持未実装)
+  - pst: 最新例外表示 (多引数 defn)
+  - demunge: スタブ (Java 固有)
+  - root-cause: 引数をそのまま返す
+- **テスト**: `test/compat/clojure_repl.clj` — 9 assertions (TreeWalk/VM/--compare 全 PASS)
+- **注意**: syntax-quote (`) は非 core NS の defmacro 内で使用不可。list 形式で展開。
+
+### S1g: clojure.data 名前空間 — 完了
+
+- **`src/clj/clojure/data.clj`**: diff 関数で map/set/sequential の再帰的差分
+  - [only-in-a only-in-b in-both] を返す
+  - pure Clojure 実装 (clojure.set 依存、declare による前方参照)
+- **テスト**: `test/compat/clojure_data.clj` — 25 assertions
+
+### S1h: clojure.stacktrace 名前空間 — 完了
+
+- **`src/clj/clojure/stacktrace.clj`**: スタックトレースユーティリティ
+  - root-cause, print-throwable, print-stack-trace, print-cause-trace, e
+  - JVM StackTraceElement 固有部分はスタブ
+- **テスト**: `test/compat/clojure_stacktrace.clj` — 11 assertions
+
+### S1i: clojure.template 名前空間 — 完了
+
+- **`src/clj/clojure/template.clj`**: テンプレート展開ユーティリティ
+  - apply-template: clojure.walk/prewalk でシンボル置換
+  - do-template: 関数版 (マクロ可変長引数の制限を回避)
+- **テスト**: `test/compat/clojure_template.clj` — 10 assertions
+- **注意**: マクロ可変長引数 (`& rest`) が1要素のみキャプチャする制限あり
+
 ### 推奨次回タスク
 
 1. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
 2. **P3**: VM 最適化 (ベンチマーク駆動)
-3. **新規 S1 候補**: clojure.pprint / clojure.template 等の標準 NS
+3. **新規 S1 候補**: clojure.pprint / clojure.zip 等
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
@@ -613,7 +646,11 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 | `test/compat/clojure_edn.clj`            | 9            | PASS |
 | `test/compat/watches.clj`               | 12           | PASS |
 | `test/compat/clojure_math.clj`          | 41           | PASS |
-| **compat 合計**                          | **696**      |      |
+| `test/compat/clojure_repl.clj`          | 9            | PASS |
+| `test/compat/clojure_data.clj`          | 25           | PASS |
+| `test/compat/clojure_stacktrace.clj`    | 11           | PASS |
+| `test/compat/clojure_template.clj`      | 10           | PASS |
+| **compat 合計**                          | **751**      |      |
 
 ### テスト基盤
 

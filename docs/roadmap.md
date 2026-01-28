@@ -361,6 +361,10 @@ doc/dir はマクロ展開、find-doc/apropos は builtin 関数。
 | S1c  | clojure.string 完全化 + clojure.walk (7 関数) | ✅ 完了   |
 | S1d  | clojure.edn (read-string)                    | ✅ 完了   |
 | S1e  | clojure.math (33 数学関数)                   | ✅ 完了   |
+| S1f  | clojure.repl (find-doc/apropos/source/pst)   | ✅ 完了   |
+| S1g  | clojure.data (diff)                          | ✅ 完了   |
+| S1h  | clojure.stacktrace (print-stack-trace 等)    | ✅ 完了   |
+| S1i  | clojure.template (apply-template/do-template)| ✅ 完了   |
 
 **長期ビジョン**:
 - ブートストラップ `.clj` ファイル群を `src/clj/` に配置
