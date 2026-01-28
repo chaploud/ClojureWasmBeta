@@ -105,6 +105,7 @@ pub const DefNode = struct {
     init: ?*Node,
     is_macro: bool = false, // defmacro の場合は true
     is_dynamic: bool = false, // ^:dynamic の場合は true
+    is_private: bool = false, // ^:private の場合は true
     doc: ?[]const u8 = null, // docstring
     arglists: ?[]const u8 = null, // 引数リスト表示用
     stack: SourceInfo,

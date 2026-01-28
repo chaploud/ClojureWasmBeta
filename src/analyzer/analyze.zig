@@ -1159,12 +1159,13 @@ pub const Analyzer = struct {
 
         var sym_name: []const u8 = undefined;
         var is_dynamic = false;
+        var is_private = false;
 
         // items[1] がシンボルか (with-meta sym meta) かを判定
         if (items[1] == .symbol) {
             sym_name = items[1].symbol.name;
         } else if (items[1] == .list) {
-            // (with-meta sym {:dynamic true}) パターンを検出
+            // (with-meta sym {:dynamic true, :private true}) パターンを検出
             const wm_items = items[1].list;
             if (wm_items.len == 3 and wm_items[0] == .symbol and
                 std.mem.eql(u8, wm_items[0].symbol.name, "with-meta"))
@@ -1173,16 +1174,17 @@ pub const Analyzer = struct {
                     return self.analysisError(.invalid_binding, "def name must be a symbol");
                 }
                 sym_name = wm_items[1].symbol.name;
-                // メタデータマップから :dynamic を検索
+                // メタデータマップから :dynamic, :private を検索
                 if (wm_items[2] == .map) {
                     const meta_entries = wm_items[2].map;
                     var mi: usize = 0;
                     while (mi < meta_entries.len) : (mi += 2) {
-                        if (meta_entries[mi] == .keyword) {
-                            if (std.mem.eql(u8, meta_entries[mi].keyword.name, "dynamic")) {
-                                if (mi + 1 < meta_entries.len and meta_entries[mi + 1] == .bool_true) {
-                                    is_dynamic = true;
-                                }
+                        if (meta_entries[mi] == .keyword and mi + 1 < meta_entries.len and meta_entries[mi + 1] == .bool_true) {
+                            const kw_name = meta_entries[mi].keyword.name;
+                            if (std.mem.eql(u8, kw_name, "dynamic")) {
+                                is_dynamic = true;
+                            } else if (std.mem.eql(u8, kw_name, "private")) {
+                                is_private = true;
                             }
                         }
                     }
@@ -1200,6 +1202,9 @@ pub const Analyzer = struct {
             if (is_dynamic) {
                 v.dynamic = true;
             }
+            if (is_private) {
+                v.private = true;
+            }
         }
 
         const init_node = if (items.len == 3)
@@ -1212,6 +1217,7 @@ pub const Analyzer = struct {
             .sym_name = sym_name,
             .init = init_node,
             .is_dynamic = is_dynamic,
+            .is_private = is_private,
             .doc = self.pending_doc,
             .arglists = self.pending_arglists,
             .stack = self.currentSourceInfo(),
@@ -1971,15 +1977,30 @@ pub const Analyzer = struct {
 
     /// (defn name "doc"? [params] body...) → (def name (fn name [params] body...))
     /// (defn name "doc"? ([a] body1) ([a b] body2)) → (def name (fn name ([a] body1) ([a b] body2)))
+    /// (defn ^:private name ...) → (def ^:private name (fn name ...))
     fn expandDefn(self: *Analyzer, items: []const Form) err.Error!Form {
         if (items.len < 3) {
             return self.analysisError(.invalid_arity, "defn requires a name and at least one body");
         }
 
-        // items[0] = defn, items[1] = name
-        const name_form = items[1];
+        // items[0] = defn, items[1] = name (またはメタデータ付き)
+        // ^:private name → reader が (with-meta name {:private true}) に変換
+        var name_form = items[1];
+        var meta_form: ?Form = null; // メタデータがあれば保持
         const name_sym = switch (name_form) {
             .symbol => |s| s,
+            .list => |wm_items| blk: {
+                // (with-meta sym meta-map) パターン
+                if (wm_items.len == 3 and wm_items[0] == .symbol and
+                    std.mem.eql(u8, wm_items[0].symbol.name, "with-meta") and
+                    wm_items[1] == .symbol)
+                {
+                    meta_form = name_form; // def に渡すためメタデータ付き form を保持
+                    name_form = wm_items[1]; // fn に渡す名前は素のシンボル
+                    break :blk wm_items[1].symbol;
+                }
+                return self.analysisError(.invalid_token, "defn name must be a symbol");
+            },
             else => return self.analysisError(.invalid_token, "defn name must be a symbol"),
         };
 
@@ -2009,13 +2030,13 @@ pub const Analyzer = struct {
         const fn_forms_len = 2 + rest.len; // fn, name, rest...
         const fn_forms = self.allocator.alloc(Form, fn_forms_len) catch return error.OutOfMemory;
         fn_forms[0] = Form{ .symbol = form_mod.Symbol.init("fn") };
-        fn_forms[1] = name_form; // fn に名前を渡す
+        fn_forms[1] = name_form; // fn に名前 (素のシンボル) を渡す
         @memcpy(fn_forms[2..], rest);
 
-        // (def name (fn name ...))
+        // (def name (fn name ...)) — メタデータがあれば def に渡す
         const def_forms = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
         def_forms[0] = Form{ .symbol = form_mod.Symbol.init("def") };
-        def_forms[1] = Form{ .symbol = name_sym };
+        def_forms[1] = meta_form orelse Form{ .symbol = name_sym };
         def_forms[2] = Form{ .list = fn_forms };
         return Form{ .list = def_forms };
     }
@@ -3412,15 +3433,27 @@ pub const Analyzer = struct {
         return Form{ .list = when_not_forms };
     }
 
-    /// (defn- name ...) → (defn name ...)（private は未サポートなので defn と同等）
+    /// (defn- name ...) → (defn ^:private name ...)
     fn expandDefnPrivate(self: *Analyzer, items: []const Form) err.Error!Form {
-        // defn- → defn
         if (items.len < 3) {
             return self.analysisError(.invalid_arity, "defn- requires at least a name and body");
         }
+        // name を (with-meta name {:private true}) に変換
+        if (items[1] != .symbol) {
+            return self.analysisError(.invalid_token, "defn- name must be a symbol");
+        }
+        const meta_entries = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        meta_entries[0] = Form{ .keyword = form_mod.Symbol.init("private") };
+        meta_entries[1] = Form.bool_true;
+        const wm_items = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        wm_items[0] = Form{ .symbol = form_mod.Symbol.init("with-meta") };
+        wm_items[1] = items[1]; // name
+        wm_items[2] = Form{ .map = meta_entries };
+
         const new_items = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
         new_items[0] = Form{ .symbol = form_mod.Symbol.init("defn") };
-        @memcpy(new_items[1..], items[1..]);
+        new_items[1] = Form{ .list = wm_items }; // (with-meta name {:private true})
+        @memcpy(new_items[2..], items[2..]);
         return Form{ .list = new_items };
     }
 
