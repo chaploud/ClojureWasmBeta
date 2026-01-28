@@ -102,3 +102,12 @@ results:
     map_filter: {time_ms: 1.78, mem_mb: 2.1}
     string_ops: {time_ms: 6.63, mem_mb: 14.1}
     data_transform: {time_ms: 10.32, mem_mb: 22.5}
+  # ClojureWasmBeta (warm): nREPL 経由、warm-up 3回後 5回計測の中央値
+  # System/nanoTime でプロセス内計測。string_ops はクラッシュのため壁時計 (精度低)
+  clojurewasmbeta_warm:
+    version: "VM backend, nREPL"
+    fib30: {time_ms: 63.8}
+    sum_range: {time_ms: 10.4}
+    map_filter: {time_ms: 0.4}
+    string_ops: {time_ms: 59.4, note: "wall-clock (System/nanoTime wrapper crash)"}
+    data_transform: {time_ms: 6.7}
