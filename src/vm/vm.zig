@@ -853,6 +853,41 @@ pub const VM = struct {
                 }
                 try self.callValue(arg_count);
             },
+            .map => |m| {
+                // マップを関数として使用: ({:a 1} key) or ({:a 1} key default)
+                if (arg_count < 1 or arg_count > 2) return error.ArityError;
+                const args = self.stack[fn_idx + 1 .. self.sp];
+                const not_found = if (arg_count == 2) args[1] else value_mod.nil;
+                const result = m.get(args[0]) orelse not_found;
+                self.sp = fn_idx;
+                try self.push(result);
+            },
+            .set => |s| {
+                // セットを関数として使用: (#{:a :b} key) → key or nil
+                if (arg_count < 1 or arg_count > 2) return error.ArityError;
+                const args = self.stack[fn_idx + 1 .. self.sp];
+                const not_found = if (arg_count == 2) args[1] else value_mod.nil;
+                const result = blk: {
+                    for (s.items) |item| {
+                        if (args[0].eql(item)) break :blk args[0];
+                    }
+                    break :blk not_found;
+                };
+                self.sp = fn_idx;
+                try self.push(result);
+            },
+            .symbol => |sym| {
+                // シンボルを関数として使用: ('key map) or ('key map default)
+                if (arg_count < 1 or arg_count > 2) return error.ArityError;
+                const args = self.stack[fn_idx + 1 .. self.sp];
+                const not_found = if (arg_count == 2) args[1] else value_mod.nil;
+                const result = switch (args[0]) {
+                    .map => |m| m.get(Value{ .symbol = sym }) orelse not_found,
+                    else => not_found,
+                };
+                self.sp = fn_idx;
+                try self.push(result);
+            },
             .var_val => |vp| {
                 // Var を関数として呼び出し: (#'foo args...) → deref して再帰呼び出し
                 const v: *var_mod.Var = @ptrCast(@alignCast(vp));

@@ -483,6 +483,39 @@ fn callWithArgs(fn_val: Value, args: []const Value, ctx: *Context) EvalError!Val
                 else => not_found,
             };
         },
+        .map => |m| blk: {
+            // マップを関数として使用: ({:a 1} key) or ({:a 1} key default)
+            if (args.len < 1 or args.len > 2) {
+                err.setArityError(args.len, "map");
+                return error.ArityError;
+            }
+            const not_found = if (args.len == 2) args[1] else value_mod.nil;
+            break :blk m.get(args[0]) orelse not_found;
+        },
+        .set => |s| blk: {
+            // セットを関数として使用: (#{:a :b} key) → key or nil
+            if (args.len < 1 or args.len > 2) {
+                err.setArityError(args.len, "set");
+                return error.ArityError;
+            }
+            const not_found = if (args.len == 2) args[1] else value_mod.nil;
+            for (s.items) |item| {
+                if (args[0].eql(item)) break :blk args[0];
+            }
+            break :blk not_found;
+        },
+        .symbol => |sym| blk: {
+            // シンボルを関数として使用: ('key map) or ('key map default)
+            if (args.len < 1 or args.len > 2) {
+                err.setArityError(args.len, sym.name);
+                return error.ArityError;
+            }
+            const not_found = if (args.len == 2) args[1] else value_mod.nil;
+            break :blk switch (args[0]) {
+                .map => |m| m.get(Value{ .symbol = sym }) orelse not_found,
+                else => not_found,
+            };
+        },
         .var_val => |vp| {
             // Var を関数として呼び出し: (#'foo args...) → deref して再帰呼び出し
             const v: *var_mod.Var = @ptrCast(@alignCast(vp));
