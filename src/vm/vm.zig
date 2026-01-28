@@ -1184,6 +1184,24 @@ pub const VM = struct {
             .closure_bindings = closure_bindings,
         };
 
+        // 名前付き fn の場合、自分自身を closure_bindings の先頭に追加
+        // これにより fn 内の slot=0 での自己参照が正しく動作する
+        if (proto.name != null) {
+            const fn_value = Value{ .fn_val = fn_obj };
+            if (closure_bindings) |cb| {
+                // 既存のキャプチャの前に自分自身を追加
+                const new_bindings = self.allocator.alloc(Value, cb.len + 1) catch return error.OutOfMemory;
+                new_bindings[0] = fn_value;
+                @memcpy(new_bindings[1..], cb);
+                fn_obj.closure_bindings = new_bindings;
+            } else {
+                // キャプチャがない場合は自分自身のみ
+                const self_binding = self.allocator.alloc(Value, 1) catch return error.OutOfMemory;
+                self_binding[0] = fn_value;
+                fn_obj.closure_bindings = self_binding;
+            }
+        }
+
         try self.push(Value{ .fn_val = fn_obj });
     }
 

@@ -55,8 +55,8 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 | 3   | P0a   | TW vs VM 比較        | 完了     | 同等速度。両者のボトルネックが同じ (builtin call) |
 | 4   | P0b   | --profile フラグ     | 完了     | Reader/Analyzer/Engine/Realize の時間計測可能 |
 | 5   | P3    | TW 高速算術          | 完了     | fib30: 1.66s→0.92s (45% 改善)             |
-| 6   | P3    | VM 算術 opcode 化    | 保留     | VM バグで効果確認不可                      |
-| 7   | BUG   | VM defn 再帰バグ     | 発見     | defn内再帰でlocal_load slot=0が誤参照      |
+| 6   | P3    | VM 算術 opcode 化    | 完了     | VM: fib30 65ms (TW 811ms の 12倍高速)     |
+| 7   | BUG   | VM defn 再帰バグ     | 修正済   | closure作成時に自己参照をbindingsに追加    |
 | 8   | BUG   | load-file バックエンド | 発見     | load-file は常に TreeWalk を使用           |
 | 9   | BUG   | テストVM検証漏れ     | 発見     | VMがnilならスキップ→バグ見逃し             |
 | 6   | P3    | NaN boxing           | 保留     | 大規模変更、事前に設計文書が必要           |
