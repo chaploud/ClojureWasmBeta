@@ -495,7 +495,7 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "atom", .func = atomFn },
     .{ .name = "deref", .func = derefFn },
     .{ .name = "reset!", .func = resetBang },
-    .{ .name = "atom?", .func = isAtom },
+    // atom? は predicates.zig に移動済み
     // delay/force
     .{ .name = "__delay-create", .func = delayCreate },
     .{ .name = "force", .func = forceFn },
@@ -528,5 +528,5 @@ pub const builtins = [_]BuiltinDef{
     // promise
     .{ .name = "promise", .func = promiseFn },
     .{ .name = "deliver", .func = deliverFn },
-    .{ .name = "realized?", .func = realizedPred },
+    // realized? は predicates.zig に移動済み
 };

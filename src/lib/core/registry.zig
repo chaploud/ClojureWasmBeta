@@ -48,6 +48,26 @@ pub const all_builtins = arithmetic.builtins ++
 /// wasm 名前空間の builtins
 pub const wasm_builtins = wasm.builtins;
 
+// comptime 検証: 名前の重複チェック
+comptime {
+    validateNoDuplicates(all_builtins, "clojure.core");
+    validateNoDuplicates(wasm_builtins, "wasm");
+}
+
+fn validateNoDuplicates(comptime table: anytype, comptime ns_name: []const u8) void {
+    @setEvalBranchQuota(table.len * table.len * 10);
+    for (table, 0..) |a, i| {
+        for (table[i + 1 ..]) |b| {
+            if (std.mem.eql(u8, a.name, b.name)) {
+                @compileError(std.fmt.comptimePrint(
+                    "{s}: builtin '{s}' が重複登録されています",
+                    .{ ns_name, a.name },
+                ));
+            }
+        }
+    }
+}
+
 // ============================================================
 // Env への登録
 // ============================================================

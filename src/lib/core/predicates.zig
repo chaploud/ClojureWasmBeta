@@ -618,8 +618,10 @@ pub fn isRealized(allocator: std.mem.Allocator, args: []const Value) anyerror!Va
     _ = allocator;
     if (args.len != 1) return error.ArityError;
     return switch (args[0]) {
-        .lazy_seq => |ls| if (ls.isRealized()) value_mod.true_val else value_mod.false_val,
-        else => value_mod.true_val, // lazy-seq 以外は常に realized
+        .delay_val => |d| if (d.realized) value_mod.true_val else value_mod.false_val,
+        .promise => |p| if (p.delivered) value_mod.true_val else value_mod.false_val,
+        .lazy_seq => |ls| if (ls.realized != null) value_mod.true_val else value_mod.false_val,
+        else => error.TypeError,
     };
 }
 
