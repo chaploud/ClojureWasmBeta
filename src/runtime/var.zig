@@ -37,6 +37,9 @@ pub const Var = struct {
     /// メタデータ（将来: *PersistentMap）
     meta: ?*const Value = null,
 
+    /// ウォッチャー: [key1, fn1, key2, fn2, ...] の配列
+    watches: ?[]const Value = null,
+
     /// docstring
     doc: ?[]const u8 = null,
 

@@ -1051,6 +1051,7 @@ pub fn swapBangFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Va
     };
 
     const fn_val = args[1];
+    const old_val = atom_ptr.value;
 
     // (f current-val extra-args...) の引数を構築
     const extra = args[2..];
@@ -1067,6 +1068,11 @@ pub fn swapBangFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Va
 
     // Atom を更新
     atom_ptr.value = cloned;
+
+    // ウォッチャー通知
+    const concurrency = @import("concurrency.zig");
+    concurrency.notifyWatchesPublic(atom_ptr.watches, args[0], old_val, cloned, allocator);
+
     return cloned;
 }
 

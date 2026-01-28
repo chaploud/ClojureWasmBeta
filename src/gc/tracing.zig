@@ -43,6 +43,10 @@ pub fn markRoots(gc: *GcAllocator, env: *Env, globals: GcGlobals) void {
                 _ = gc.mark(@ptrCast(@constCast(meta_ptr)));
                 gray_stack.append(gc.registry_alloc, meta_ptr.*) catch continue;
             }
+            // watches
+            if (v.watches) |ws| {
+                for (ws) |w| gray_stack.append(gc.registry_alloc, w) catch continue;
+            }
         }
         // refers も走査
         var ref_iter = ns.refers.iterator();
@@ -50,6 +54,10 @@ pub fn markRoots(gc: *GcAllocator, env: *Env, globals: GcGlobals) void {
             const v = ref_entry.value_ptr.*;
             _ = gc.mark(@ptrCast(v));
             gray_stack.append(gc.registry_alloc, v.root) catch continue;
+            // watches (refers)
+            if (v.watches) |ws| {
+                for (ws) |w| gray_stack.append(gc.registry_alloc, w) catch continue;
+            }
         }
     }
 
@@ -452,6 +460,15 @@ fn fixupVar(
         // meta の内容（Value）も更新
         if (v.meta) |new_meta| {
             fixupValue(fwd, @constCast(new_meta), visited, alloc);
+        }
+    }
+    // watches
+    if (v.watches) |_| {
+        fixupOptSlice(Value, fwd, &v.watches);
+        if (v.watches) |new_ws| {
+            for (new_ws) |*w| {
+                fixupValue(fwd, @constCast(w), visited, alloc);
+            }
         }
     }
 }

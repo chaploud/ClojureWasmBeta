@@ -13,6 +13,32 @@ const BuiltinDef = defs.BuiltinDef;
 const helpers = @import("helpers.zig");
 
 // ============================================================
+// ウォッチ通知 (Atom / Var 共通)
+// ============================================================
+
+/// ウォッチャーに通知: (fn key reference old-val new-val) を各ウォッチャーに対して呼ぶ
+/// watches は [key1, fn1, key2, fn2, ...] 形式の配列
+pub fn notifyWatchesPublic(watches: ?[]const Value, reference: Value, old_val: Value, new_val: Value, allocator: std.mem.Allocator) void {
+    notifyWatches(watches, reference, old_val, new_val, allocator);
+}
+
+fn notifyWatches(watches: ?[]const Value, reference: Value, old_val: Value, new_val: Value, allocator: std.mem.Allocator) void {
+    const ws = watches orelse return;
+    const call = defs.call_fn orelse return;
+    var i: usize = 0;
+    while (i + 1 < ws.len) : (i += 2) {
+        const key = ws[i];
+        const watch_fn = ws[i + 1];
+        const call_args = allocator.alloc(Value, 4) catch return;
+        call_args[0] = key;
+        call_args[1] = reference;
+        call_args[2] = old_val;
+        call_args[3] = new_val;
+        _ = call(watch_fn, call_args, allocator) catch {};
+    }
+}
+
+// ============================================================
 // Atom 操作
 // ============================================================
 
@@ -49,9 +75,11 @@ pub fn resetBang(allocator: std.mem.Allocator, args: []const Value) anyerror!Val
     if (args.len != 2) return error.ArityError;
     return switch (args[0]) {
         .atom => |a| {
+            const old_val = a.value;
             // scratch 参照を排除するためディープクローン
             const cloned = try args[1].deepClone(allocator);
             a.value = cloned;
+            notifyWatches(a.watches, args[0], old_val, cloned, allocator);
             return cloned;
         },
         else => error.TypeError,
@@ -203,51 +231,50 @@ pub fn ensureReducedFn(allocator: std.mem.Allocator, args: []const Value) anyerr
 // Phase 15: Atom 拡張・Var 操作
 // ============================================================
 
-/// add-watch : Atom にウォッチャーを登録
-/// (add-watch atom key fn) → atom
-/// fn は (fn [key atom old-val new-val] ...) 形式
+/// add-watch : Atom/Var にウォッチャーを登録
+/// (add-watch reference key fn) → reference
+/// fn は (fn [key reference old-val new-val] ...) 形式
 pub fn addWatchFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 3) return error.ArityError;
-    const a = switch (args[0]) {
-        .atom => |atom| atom,
-        else => return error.TypeError,
-    };
     const key = args[1];
     const watch_fn = args[2];
+    const watches_ptr: *?[]const Value = switch (args[0]) {
+        .atom => |a| &a.watches,
+        .var_val => |vp| &@as(*defs.Var, @ptrCast(@alignCast(vp))).watches,
+        else => return error.TypeError,
+    };
     // watches 配列に [key, fn] を追加
     var new_watches = std.ArrayList(Value).empty;
-    if (a.watches) |ws| {
+    if (watches_ptr.*) |ws| {
         try new_watches.appendSlice(allocator, ws);
     }
     try new_watches.append(allocator, key);
     try new_watches.append(allocator, watch_fn);
-    a.watches = new_watches.items;
+    watches_ptr.* = new_watches.items;
     return args[0];
 }
 
-/// remove-watch : Atom からウォッチャーを削除
-/// (remove-watch atom key) → atom
+/// remove-watch : Atom/Var からウォッチャーを削除
+/// (remove-watch reference key) → reference
 pub fn removeWatchFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
-    _ = allocator;
     if (args.len != 2) return error.ArityError;
-    const a = switch (args[0]) {
-        .atom => |atom| atom,
+    const watches_ptr: *?[]const Value = switch (args[0]) {
+        .atom => |a| &a.watches,
+        .var_val => |vp| &@as(*defs.Var, @ptrCast(@alignCast(vp))).watches,
         else => return error.TypeError,
     };
     const key = args[1];
-    if (a.watches) |ws| {
-        // [key1, fn1, key2, fn2, ...] からキーを検索して削除
-        var i: usize = 0;
-        while (i + 1 < ws.len) {
-            if (ws[i].eql(key)) {
-                // 見つかった: key, fn の2要素を除去した新配列を作成
-                // 簡易版: null 化（GC で回収）
-                // TODO: 配列を再構築
-                break;
-            }
-            i += 2;
+    const ws = watches_ptr.* orelse return args[0];
+    // [key1, fn1, key2, fn2, ...] からキーを検索して除去した新配列を構築
+    var new_watches = std.ArrayList(Value).empty;
+    var i: usize = 0;
+    while (i + 1 < ws.len) : (i += 2) {
+        if (!ws[i].eql(key)) {
+            try new_watches.append(allocator, ws[i]);
+            try new_watches.append(allocator, ws[i + 1]);
         }
     }
+    watches_ptr.* = if (new_watches.items.len > 0) new_watches.items else null;
     return args[0];
 }
 
@@ -303,6 +330,7 @@ pub fn resetValsBang(allocator: std.mem.Allocator, args: []const Value) anyerror
     const old_val = a.value;
     const cloned = try args[1].deepClone(allocator);
     a.value = cloned;
+    notifyWatches(a.watches, args[0], old_val, cloned, allocator);
     // [old new] ベクターを返す
     const items = try allocator.alloc(Value, 2);
     items[0] = old_val;
@@ -332,6 +360,7 @@ pub fn swapValsBang(allocator: std.mem.Allocator, args: []const Value) anyerror!
     const new_val = try call(args[1], call_args.items, allocator);
     const cloned = try new_val.deepClone(allocator);
     a.value = cloned;
+    notifyWatches(a.watches, args[0], old_val, cloned, allocator);
     // [old new] ベクターを返す
     const items = try allocator.alloc(Value, 2);
     items[0] = old_val;
@@ -387,7 +416,9 @@ pub fn alterVarRootFn(allocator: std.mem.Allocator, args: []const Value) anyerro
         try call_args.append(allocator, extra);
     }
     const new_val = try call(args[1], call_args.items, allocator);
+    const old_root = v.getRawRoot();
     v.bindRoot(new_val);
+    notifyWatches(v.watches, args[0], old_root, new_val, allocator);
     return new_val;
 }
 
