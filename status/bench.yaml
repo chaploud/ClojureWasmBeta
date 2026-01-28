@@ -151,3 +151,28 @@ history:
       map_filter: {time_s: 0.00, mem_mb: 3.5}
       string_ops: {time_s: 0.04, mem_mb: 512.3}
       data_transform: {time_s: 0.01, mem_mb: 22.0}
+  - date: 2026-01-29
+    version: "P1c VM backend benchmark"
+    build: ReleaseFast
+    # ここから --backend=vm で計測 (以前は TreeWalk)
+    # string_ops はまだ (reduce str ...) = O(n²) パターン
+    results:
+      fib30: {time_s: 0.07, mem_mb: 2.1}
+      sum_range: {time_s: 0.01, mem_mb: 2.1}
+      map_filter: {time_s: 0.00, mem_mb: 2.1}
+      string_ops: {time_s: 0.03, mem_mb: 507.7}
+      data_transform: {time_s: 0.01, mem_mb: 22.5}
+  - date: 2026-01-29
+    version: "string_ops: reduce str → apply str"
+    build: ReleaseFast
+    # string_ops ベンチを (reduce str ...) → (apply str ...) に変更。
+    # 他言語 (Java=StringBuilder, Python=join, Ruby=join, Zig=ArrayList) は
+    # 全て O(n) 結合を使用しており、Clojure だけ O(n²) だった。
+    # (apply str ...) は str に全要素を一括渡しするため O(n) になる。
+    # これ以前の string_ops 数値と直接比較不可。
+    results:
+      fib30: {time_s: 0.07, mem_mb: 2.1}
+      sum_range: {time_s: 0.01, mem_mb: 2.1}
+      map_filter: {time_s: 0.00, mem_mb: 2.1}
+      string_ops: {time_s: 0.01, mem_mb: 14.1}
+      data_transform: {time_s: 0.01, mem_mb: 22.5}
