@@ -425,6 +425,17 @@ VM の `createClosure`/`createMultiClosure` でネストされたクロージャ
 - **テスト修正**: Phase 24 NS カウント (wasm NS 追加分), identical? keyword, mapcat lazy
 - **結果**: 274/274 Zig テスト全 pass (4 既存失敗を全修正), 885/886 compat
 
+### U4f: 多段ネストクロージャの capture_count 修正 — 完了
+
+U4e の修正で 2 段ネストは修正されたが、3 段以上のネストで
+`inherited_captures` (祖先から継承したキャプチャ数) が考慮されていなかった。
+
+- Compiler に `inherited_captures` フィールド追加
+- `capture_count = inherited_captures + locals.items.len` で正確なキャプチャ深さを計算
+- `capture_offset = 0` (常に frame.base から)
+- 3段ネスト `(fn [x] (mapv (fn [y] (mapv (fn [z] [x y z]) ...)) ...))` が VM で正常動作
+- 274/274 Zig, 885/886 compat
+
 ### 推奨次回タスク
 
 1. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
