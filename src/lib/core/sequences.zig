@@ -1270,6 +1270,226 @@ pub fn partitionByFn(allocator: std.mem.Allocator, args: []const Value) anyerror
     return Value{ .list = result };
 }
 
+/// walk : データ構造を再帰的に変換
+/// (walk inner outer form)
+///   inner を各要素に適用し、outer を結果に適用
+pub fn walkFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 3) return error.ArityError;
+    const call = defs.call_fn orelse return error.TypeError;
+    const inner = args[0];
+    const outer = args[1];
+    const form = args[2];
+
+    const transformed: Value = switch (form) {
+        .list => |l| blk: {
+            // (apply list (map inner form))
+            var items: std.ArrayListUnmanaged(Value) = .empty;
+            for (l.items) |item| {
+                const r = try call(inner, &[_]Value{item}, allocator);
+                items.append(allocator, r) catch return error.OutOfMemory;
+            }
+            const result = try allocator.create(value_mod.PersistentList);
+            result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .list = result };
+        },
+        .vector => |v| blk: {
+            // (mapv inner form)
+            var items: std.ArrayListUnmanaged(Value) = .empty;
+            for (v.items) |item| {
+                const r = try call(inner, &[_]Value{item}, allocator);
+                items.append(allocator, r) catch return error.OutOfMemory;
+            }
+            const result = try allocator.create(value_mod.PersistentVector);
+            result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .vector = result };
+        },
+        .map => |m| blk: {
+            // (into {} (map inner form)) — inner は [k v] ペアを受け取る
+            var entries: std.ArrayListUnmanaged(Value) = .empty;
+            var i: usize = 0;
+            while (i < m.entries.len) : (i += 2) {
+                // map-entry を vector [k v] として渡す
+                const pair_items = try allocator.alloc(Value, 2);
+                pair_items[0] = m.entries[i];
+                pair_items[1] = m.entries[i + 1];
+                const pair_vec = try allocator.create(value_mod.PersistentVector);
+                pair_vec.* = .{ .items = pair_items };
+                const r = try call(inner, &[_]Value{Value{ .vector = pair_vec }}, allocator);
+                // 結果は [k v] ベクタであるべき
+                if (r == .vector and r.vector.items.len == 2) {
+                    entries.append(allocator, r.vector.items[0]) catch return error.OutOfMemory;
+                    entries.append(allocator, r.vector.items[1]) catch return error.OutOfMemory;
+                } else {
+                    return error.TypeError;
+                }
+            }
+            const result = try allocator.create(value_mod.PersistentMap);
+            result.* = .{ .entries = entries.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .map = result };
+        },
+        .set => |s| blk: {
+            // (into #{} (map inner form))
+            var items: std.ArrayListUnmanaged(Value) = .empty;
+            for (s.items) |item| {
+                const r = try call(inner, &[_]Value{item}, allocator);
+                // 重複除去
+                var found = false;
+                for (items.items) |existing| {
+                    if (r.eql(existing)) { found = true; break; }
+                }
+                if (!found) {
+                    items.append(allocator, r) catch return error.OutOfMemory;
+                }
+            }
+            const result = try allocator.create(value_mod.PersistentSet);
+            result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .set = result };
+        },
+        else => form, // atom の場合はそのまま
+    };
+
+    // outer を適用
+    return call(outer, &[_]Value{transformed}, allocator);
+}
+
+/// postwalk : ボトムアップ walk (inner = postwalk(f), outer = f)
+/// (postwalk f form)
+pub fn postwalkFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const call = defs.call_fn orelse return error.TypeError;
+    const f = args[0];
+    const form = args[1];
+
+    return postwalkImpl(allocator, call, f, form);
+}
+
+fn postwalkImpl(allocator: std.mem.Allocator, call: defs.CallFn, f: Value, form: Value) anyerror!Value {
+    const walked: Value = switch (form) {
+        .list => |l| blk: {
+            var items: std.ArrayListUnmanaged(Value) = .empty;
+            for (l.items) |item| {
+                const r = try postwalkImpl(allocator, call, f, item);
+                items.append(allocator, r) catch return error.OutOfMemory;
+            }
+            const result = try allocator.create(value_mod.PersistentList);
+            result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .list = result };
+        },
+        .vector => |v| blk: {
+            var items: std.ArrayListUnmanaged(Value) = .empty;
+            for (v.items) |item| {
+                const r = try postwalkImpl(allocator, call, f, item);
+                items.append(allocator, r) catch return error.OutOfMemory;
+            }
+            const result = try allocator.create(value_mod.PersistentVector);
+            result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .vector = result };
+        },
+        .map => |m| blk: {
+            var entries: std.ArrayListUnmanaged(Value) = .empty;
+            var i: usize = 0;
+            while (i < m.entries.len) : (i += 2) {
+                const k = try postwalkImpl(allocator, call, f, m.entries[i]);
+                const v = try postwalkImpl(allocator, call, f, m.entries[i + 1]);
+                entries.append(allocator, k) catch return error.OutOfMemory;
+                entries.append(allocator, v) catch return error.OutOfMemory;
+            }
+            const result = try allocator.create(value_mod.PersistentMap);
+            result.* = .{ .entries = entries.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .map = result };
+        },
+        .set => |s| blk: {
+            var items: std.ArrayListUnmanaged(Value) = .empty;
+            for (s.items) |item| {
+                const r = try postwalkImpl(allocator, call, f, item);
+                var found = false;
+                for (items.items) |existing| {
+                    if (r.eql(existing)) { found = true; break; }
+                }
+                if (!found) {
+                    items.append(allocator, r) catch return error.OutOfMemory;
+                }
+            }
+            const result = try allocator.create(value_mod.PersistentSet);
+            result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .set = result };
+        },
+        else => form,
+    };
+
+    return call(f, &[_]Value{walked}, allocator);
+}
+
+/// prewalk : トップダウン walk (inner = prewalk(f), outer = identity)
+/// (prewalk f form)
+pub fn prewalkFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    const call = defs.call_fn orelse return error.TypeError;
+    const f = args[0];
+    const form = args[1];
+
+    return prewalkImpl(allocator, call, f, form);
+}
+
+fn prewalkImpl(allocator: std.mem.Allocator, call: defs.CallFn, f: Value, form: Value) anyerror!Value {
+    // まず f を適用
+    const transformed = try call(f, &[_]Value{form}, allocator);
+
+    // 次に子要素を再帰的に prewalk
+    return switch (transformed) {
+        .list => |l| blk: {
+            var items: std.ArrayListUnmanaged(Value) = .empty;
+            for (l.items) |item| {
+                const r = try prewalkImpl(allocator, call, f, item);
+                items.append(allocator, r) catch return error.OutOfMemory;
+            }
+            const result = try allocator.create(value_mod.PersistentList);
+            result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .list = result };
+        },
+        .vector => |v| blk: {
+            var items: std.ArrayListUnmanaged(Value) = .empty;
+            for (v.items) |item| {
+                const r = try prewalkImpl(allocator, call, f, item);
+                items.append(allocator, r) catch return error.OutOfMemory;
+            }
+            const result = try allocator.create(value_mod.PersistentVector);
+            result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .vector = result };
+        },
+        .map => |m| blk: {
+            var entries: std.ArrayListUnmanaged(Value) = .empty;
+            var i: usize = 0;
+            while (i < m.entries.len) : (i += 2) {
+                const k = try prewalkImpl(allocator, call, f, m.entries[i]);
+                const v = try prewalkImpl(allocator, call, f, m.entries[i + 1]);
+                entries.append(allocator, k) catch return error.OutOfMemory;
+                entries.append(allocator, v) catch return error.OutOfMemory;
+            }
+            const result = try allocator.create(value_mod.PersistentMap);
+            result.* = .{ .entries = entries.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .map = result };
+        },
+        .set => |s| blk: {
+            var items: std.ArrayListUnmanaged(Value) = .empty;
+            for (s.items) |item| {
+                const r = try prewalkImpl(allocator, call, f, item);
+                var found = false;
+                for (items.items) |existing| {
+                    if (r.eql(existing)) { found = true; break; }
+                }
+                if (!found) {
+                    items.append(allocator, r) catch return error.OutOfMemory;
+                }
+            }
+            const result = try allocator.create(value_mod.PersistentSet);
+            result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+            break :blk Value{ .set = result };
+        },
+        else => transformed,
+    };
+}
+
 // ============================================================
 // Builtins 登録テーブル
 // ============================================================
@@ -1325,4 +1545,8 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "trampoline", .func = trampolineFn },
     .{ .name = "tree-seq", .func = treeSeqFn },
     .{ .name = "partition-by", .func = partitionByFn },
+    // walk
+    .{ .name = "walk", .func = walkFn },
+    .{ .name = "postwalk", .func = postwalkFn },
+    .{ .name = "prewalk", .func = prewalkFn },
 };

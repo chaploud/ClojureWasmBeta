@@ -43,6 +43,10 @@
 ;; 反転
 (defn reverse [s] (clojure.core/string-reverse s))
 
+;; 分割・改行
+(defn split-lines [s] (clojure.core/split-lines s))
+(defn trim-newline [s] (clojure.core/trim-newline s))
+
 ;; エスケープ
 (defn escape [s cmap] (clojure.core/escape s cmap))
 

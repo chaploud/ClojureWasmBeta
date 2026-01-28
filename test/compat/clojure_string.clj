@@ -53,4 +53,13 @@
 ;; === re-quote-replacement ===
 (test-eq "\\$1" (clojure.string/re-quote-replacement "$1") "re-quote-replacement")
 
+;; === split-lines ===
+(test-eq ["a" "b" "c"] (clojure.string/split-lines "a\nb\nc") "split-lines basic")
+(test-eq ["hello"] (clojure.string/split-lines "hello") "split-lines no newline")
+
+;; === trim-newline ===
+(test-eq "hello" (clojure.string/trim-newline "hello\n") "trim-newline LF")
+(test-eq "hello" (clojure.string/trim-newline "hello\r\n") "trim-newline CRLF")
+(test-eq "hello" (clojure.string/trim-newline "hello") "trim-newline no change")
+
 (test-report)

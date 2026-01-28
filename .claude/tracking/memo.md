@@ -376,6 +376,18 @@ REPL ドキュメント閲覧機能。
 - **テスト**: `test/compat/clojure_set.clj` — 24 assertions
 - 全テスト 871 pass / 1 fail (意図的)
 
+### S1c: clojure.string 完全化 + clojure.walk 名前空間 — 完了
+
+- **strings.zig**: split-lines, trim-newline 追加 → clojure.string 全 19/19 関数完了
+- **sequences.zig**: walk, postwalk, prewalk を Zig builtin 実装
+  - postwalkImpl/prewalkImpl: 再帰的データ構造走査 (list/vector/map/set 対応)
+- **`src/clj/clojure/walk.clj`**: 7 関数の NS
+  - walk, postwalk, prewalk (builtin ラッパー)
+  - postwalk-replace, prewalk-replace (postwalk/prewalk ベース)
+  - keywordize-keys, stringify-keys (postwalk + reduce-kv ベース)
+- **テスト**: clojure_string 37 (+5), clojure_walk 9 assertions
+- 全テスト 885 pass / 1 fail (意図的)
+
 ### 推奨次回タスク
 
 1. **G1c: sweep 高速化** — バルク解放 or Arena ベース GC

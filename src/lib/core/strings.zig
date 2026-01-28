@@ -1080,6 +1080,64 @@ pub fn escapeFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
     return Value{ .string = str_obj };
 }
 
+/// split-lines : 改行で文字列を分割
+/// (split-lines "a\nb\nc") => ["a" "b" "c"]
+pub fn splitLines(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+
+    var items: std.ArrayListUnmanaged(Value) = .empty;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i < s.len) {
+        if (s[i] == '\n') {
+            // \r\n の場合は \r も除去
+            const end = if (i > start and s[i - 1] == '\r') i - 1 else i;
+            const line_str = try allocator.create(value_mod.String);
+            line_str.* = .{ .data = try allocator.dupe(u8, s[start..end]) };
+            items.append(allocator, Value{ .string = line_str }) catch return error.OutOfMemory;
+            start = i + 1;
+        }
+        i += 1;
+    }
+    // 最後の行
+    if (start <= s.len) {
+        const end = if (s.len > start and s[s.len - 1] == '\r') s.len - 1 else s.len;
+        const line_str = try allocator.create(value_mod.String);
+        line_str.* = .{ .data = try allocator.dupe(u8, s[start..end]) };
+        items.append(allocator, Value{ .string = line_str }) catch return error.OutOfMemory;
+    }
+
+    const result = try allocator.create(value_mod.PersistentVector);
+    result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+    return Value{ .vector = result };
+}
+
+/// trim-newline : 末尾の改行文字を除去
+/// (trim-newline "hello\n") => "hello"
+/// (trim-newline "hello\r\n") => "hello"
+pub fn trimNewline(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const s = switch (args[0]) {
+        .string => |str| str.data,
+        else => return error.TypeError,
+    };
+
+    var end = s.len;
+    while (end > 0 and (s[end - 1] == '\n' or s[end - 1] == '\r')) {
+        end -= 1;
+    }
+
+    if (end == s.len) return args[0]; // 変化なし
+
+    const result = try allocator.create(value_mod.String);
+    result.* = .{ .data = try allocator.dupe(u8, s[0..end]) };
+    return Value{ .string = result };
+}
+
 // ============================================================
 // builtins 登録
 // ============================================================
@@ -1111,6 +1169,8 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "index-of", .func = indexOf },
     .{ .name = "last-index-of", .func = lastIndexOf },
     .{ .name = "escape", .func = escapeFn },
+    .{ .name = "split-lines", .func = splitLines },
+    .{ .name = "trim-newline", .func = trimNewline },
     .{ .name = "format", .func = formatFn },
     .{ .name = "char-escape-string", .func = charEscapeStringFn },
     .{ .name = "char-name-string", .func = charNameStringFn },

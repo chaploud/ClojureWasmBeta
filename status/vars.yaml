@@ -3425,7 +3425,9 @@ vars:
       note: string-split として実装（regex/string 両対応）
     split-lines:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     starts-with?:
       type: function
       status: done
@@ -3438,7 +3440,9 @@ vars:
       note: clojure.string NS ラッパー経由
     trim-newline:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.string NS ラッパー経由
     triml:
       type: function
       status: done
@@ -3749,34 +3753,48 @@ vars:
   clojure_walk:
     keywordize-keys:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.walk NS で postwalk+reduce-kv 実装
     macroexpand-all:
       type: function
       status: todo
     postwalk:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.walk NS ラッパー経由
     postwalk-demo:
       type: function
       status: todo
     postwalk-replace:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.walk NS で postwalk ベース実装
     prewalk:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.walk NS ラッパー経由
     prewalk-demo:
       type: function
       status: todo
     prewalk-replace:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.walk NS で prewalk ベース実装
     stringify-keys:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.walk NS で postwalk+reduce-kv 実装
     walk:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: clojure.walk NS ラッパー経由
   clojure_edn:
     read:
       type: function
