@@ -27,13 +27,22 @@
 
 - **R7**: Zig イディオム改善 — WasmModule anyopaque → zware 具体型, valueHash switch 改善
 - **D1-D3**: ドキュメント — presentation.md, getting_started.md, developer_guide.md
-- **Bench**: bench/ に fib(38) 全言語比較基盤を構築
+- **Bench**: 7言語×5ベンチマーク比較基盤 (`bash bench/run_bench.sh --quick --record`)
 
 ---
 
 ## 実行計画 (対応順)
 
 以下の順序でタスクを実行する。セッション開始時はここを参照し、未完了の最初のタスクから着手すること。
+
+**パフォーマンス系タスク (P3, G2) では必ずベンチマーク計測:**
+```bash
+# タスク開始前 — ベースライン確認
+bash bench/run_bench.sh --quick
+
+# タスク完了後 — 効果を記録 (必須)
+bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
+```
 
 | #   | Phase | タスク                | 状態     | 備考                                      |
 |-----|-------|----------------------|----------|-------------------------------------------|

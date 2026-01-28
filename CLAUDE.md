@@ -27,7 +27,8 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 
 ### 終了時
 1. memo.md を更新
-2. 意味のある単位で `git commit`
+2. **パフォーマンス改善時はベンチマーク記録** (後述)
+3. 意味のある単位で `git commit`
 
 ## ドキュメント構成
 
@@ -44,6 +45,7 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 | `docs/reference/lessons_learned.md` | バグ教訓集・横断的設計知見           | 設計判断時             |
 | `docs/changelog.md`                 | 完了フェーズ履歴                     | 参照用（普段読まない） |
 | `status/vars.yaml`                  | 実装状況（yq で照会）                | 関数追加時             |
+| `status/bench.yaml`                 | ベンチマーク履歴（自動追記）         | パフォーマンス改善時   |
 | `status/README.md`                  | status/ のスキーマ定義               | status/ 編集時         |
 
 ## コーディング規約
@@ -79,6 +81,46 @@ clj-wasm
 - **bash の `!` 展開に注意**: `-e '(swap! ...)'` のようにシングルクォート内に `!` を含むと、bash の history expansion が発動して予期しないエラーになる
 - **対策**: `!` を含む Clojure コードは **ファイル経由** (`clj-wasm file.clj` または `load-file`) で実行する。`-e` での直接実行は避ける
 - heredoc (`<< 'EOF'`) でファイルに書き出してから実行するのも有効
+
+## ベンチマークスイート
+
+パフォーマンス改善タスク (P3, G2 等) では**必ずベンチマークを実行**して効果を計測・記録すること。
+
+```bash
+# 回帰チェック (ClojureWasmBeta のみ、約4秒)
+bash bench/run_bench.sh --quick
+
+# 改善後に履歴記録 (必須)
+bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
+
+# 全言語比較 (ベースライン更新時のみ)
+bash bench/run_bench.sh
+
+# 高精度計測 (hyperfine 使用)
+bash bench/run_bench.sh --quick --hyperfine
+```
+
+### オプション一覧
+
+| オプション         | 効果                                    |
+|--------------------|-----------------------------------------|
+| (なし)             | 全7言語実行                             |
+| `--quick`          | ClojureWasmBeta のみ (開発中推奨)       |
+| `--record`         | status/bench.yaml に履歴追記            |
+| `--version="名前"` | 記録時のバージョン名 (タスク名を推奨)   |
+| `--hyperfine`      | ms 精度計測 (要: brew install hyperfine) |
+
+### 5種類のベンチマーク
+
+| 名前           | 内容                       | 主な計測対象                |
+|----------------|----------------------------|-----------------------------|
+| fib30          | 再帰 fib(30)               | 関数呼び出しオーバーヘッド  |
+| sum_range      | range(1M) + sum            | 数値シーケンス              |
+| map_filter     | filter/map/take/sum チェイン | HOF + lazy seq GC 圧力     |
+| string_ops     | upper-case + 結合 ×10000   | 文字列処理                  |
+| data_transform | マップ作成・変換 ×10000    | データ構造                  |
+
+履歴は `status/bench.yaml` に蓄積される。`yq '.history' status/bench.yaml` で参照可能。
 
 ## Zig 0.15.2 ガイド
 
