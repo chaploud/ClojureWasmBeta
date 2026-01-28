@@ -25,6 +25,7 @@
 
 ### 直近の完了
 
+- **P3**: 定数畳み込み — Analyzer で算術・比較演算の定数畳み込み
 - **G2a-c**: 世代別 GC 基盤 — Nursery bump allocator + minor GC + promotion 実装
 - **S1**: clojure.pprint — pprint, print-table, cl-format (最小限) 実装
 - **U4**: 既知バグ修正 — `^:const` インライン化, `with-local-vars` 実装, `defmacro in defn` エラーメッセージ改善
@@ -55,8 +56,8 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 | 4   | G2a-c | 世代別 GC 基盤       | 完了     | Nursery bump allocator + minor GC + promotion |
 | 5   | G2d-e | 世代別 GC 統合       | 保留     | 式境界GCでは効果限定的、ベンチ確認後に検討 |
 | 6   | P3    | inline caching       | 保留     | VM 既に最適化済み (tryInlineCall)、効果限定 |
-| 7   | P3    | 定数畳み込み         | 未着手   | Compiler 側最適化                          |
-| 8   | P3    | tail call dispatch   | 未着手   | computed goto 相当                         |
+| 7   | P3    | 定数畳み込み         | 完了     | Analyzer で算術・比較演算の定数畳み込み    |
+| 8   | P3    | tail call dispatch   | 保留     | Zig では実現困難、効果限定的               |
 
 ### スコープ外 (将来検討)
 

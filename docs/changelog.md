@@ -79,6 +79,7 @@
 | P2a   | VM 低侵襲最適化 (findArity fast path 等, 速度効果なし)        |
 | P2b   | VM フレームインライン化 (execute 再帰排除, 速度効果なし)      |
 | P2c   | PersistentMap ハッシュインデックス (O(n)→O(log n), ~7%改善)   |
+| P3    | 定数畳み込み (算術・比較演算の Analyzer 段階事前計算)         |
 
 ## GC フェーズ (Phase G)
 
