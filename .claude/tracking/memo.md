@@ -179,9 +179,26 @@ wasm/types.zig の未使用関数 (wasmI64ToValue, wasmF32ToValue, wasmF64ToValu
 - wasi.zig は `loader.loadModuleCore()` に委譲 (~50 行の重複削減)
 - 全テスト維持 (760/1 compat, wasm 4 テスト全 pass)
 
+### U2a: エラーメッセージ改善 — babashka 風フォーマット — 完了
+
+babashka / SandboxClojureWasm の実際の出力を調査し、フォーマットを参考に実装。
+
+- main.zig: `reportError()` で babashka 風フォーマット出力
+  - base/error.zig の `last_error` に Info あれば整形表示、なければ従来の Zig error 名
+- base/error.zig: `setArityError` / `setTypeError` / `setDivisionByZero` / `setEvalErrorFmt` 追加
+  - threadlocal `msg_buf` (512 bytes) でフォーマット済みメッセージ格納
+  - `parseErrorFmt` も追加 (analyzer 向け)
+- arithmetic.zig: +/-/*/÷/inc/dec/=/</>/<=/>= の全エラー箇所にメッセージ設定
+- evaluator.zig: callWithArgs のユーザー関数アリティ・非関数呼び出し等にメッセージ設定
+- helpers.zig: compareNumbers の TypeError にメッセージ設定
+- analyze.zig: UndefinedSymbol にシンボル名を含める
+- 全テスト維持 (760/1 compat, 270/274 zig)
+
+残作業 (U2b 以降): ソース位置表示、スタックトレース、try/catch の ex-info マップへの反映
+
 ### 推奨次回タスク
 
-1. **U2: エラーメッセージ改善** — "Expected X, got Y" 形式
+1. **U2b: ソース位置表示** — SourceLocation を error Info に伝播
 2. **G1: GC 改善** — 世代別 GC or MemoryPool
 3. **R3 残項目**: MultiArrayList / MemoryPool / switch exhaustiveness / エラー伝播改善
 
