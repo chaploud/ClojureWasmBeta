@@ -50,7 +50,7 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 |-----|-------|----------------------|----------|-------------------------------------------|
 | 1   | U4    | 既知バグ修正         | 完了     | ^:const, with-local-vars, defmacro in defn |
 | 2   | S1    | clojure.pprint       | 完了     | pprint, print-table, cl-format (最小限)    |
-| 3   | P3    | NaN boxing           | 未着手   | Value サイズ縮小、高速化の要               |
+| 3   | P3    | NaN boxing           | 保留     | 大規模変更、事前に設計文書が必要           |
 | 4   | G2    | 世代別 GC            | 未着手   | Young bump allocator + minor GC           |
 | 5   | P3    | inline caching       | 未着手   | 関数呼び出し高速化                         |
 | 6   | P3    | 定数畳み込み         | 未着手   | Compiler 側最適化                          |
