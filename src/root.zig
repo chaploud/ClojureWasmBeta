@@ -77,6 +77,8 @@ pub const Backend = engine.Backend;
 pub const gc = @import("gc/gc.zig");
 pub const gc_allocator = @import("gc/gc_allocator.zig");
 pub const gc_tracing = @import("gc/tracing.zig");
+pub const nursery = @import("gc/nursery.zig");
+pub const generational = @import("gc/generational.zig");
 
 // === 正規表現 ===
 pub const regex = @import("regex/regex.zig");

@@ -25,6 +25,7 @@
 
 ### 直近の完了
 
+- **G2a-c**: 世代別 GC 基盤 — Nursery bump allocator + minor GC + promotion 実装
 - **S1**: clojure.pprint — pprint, print-table, cl-format (最小限) 実装
 - **U4**: 既知バグ修正 — `^:const` インライン化, `with-local-vars` 実装, `defmacro in defn` エラーメッセージ改善
 - **R7**: Zig イディオム改善 — WasmModule anyopaque → zware 具体型, valueHash switch 改善
@@ -51,10 +52,12 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 | 1   | U4    | 既知バグ修正         | 完了     | ^:const, with-local-vars, defmacro in defn |
 | 2   | S1    | clojure.pprint       | 完了     | pprint, print-table, cl-format (最小限)    |
 | 3   | P3    | NaN boxing           | 保留     | 大規模変更、事前に設計文書が必要           |
-| 4   | G2    | 世代別 GC            | 未着手   | Young bump allocator + minor GC           |
-| 5   | P3    | inline caching       | 未着手   | 関数呼び出し高速化                         |
-| 6   | P3    | 定数畳み込み         | 未着手   | Compiler 側最適化                          |
-| 7   | P3    | tail call dispatch   | 未着手   | computed goto 相当                         |
+| 4   | G2a-c | 世代別 GC 基盤       | 完了     | Nursery bump allocator + minor GC + promotion |
+| 5   | G2d   | write barrier        | 未着手   | card marking で Old→Young 参照追跡        |
+| 6   | G2e   | 世代別 GC 統合       | 未着手   | Allocators で GenerationalGC を使用        |
+| 7   | P3    | inline caching       | 未着手   | 関数呼び出し高速化                         |
+| 8   | P3    | 定数畳み込み         | 未着手   | Compiler 側最適化                          |
+| 9   | P3    | tail call dispatch   | 未着手   | computed goto 相当                         |
 
 ### スコープ外 (将来検討)
 

@@ -87,6 +87,7 @@
 | G1a   | GC 計測基盤 (--gc-stats, 累計統計)                            |
 | G1b   | mark/sweep 時間計測 (sweep が GC 停止の 99.9%)                |
 | G1c   | セミスペース Arena GC (sweep 1,146ms → 29ms, ~40x 高速化)    |
+| G2a-c | 世代別 GC 基盤 (Nursery bump allocator + minor GC + promotion) |
 
 ## UX フェーズ (Phase U)
 
