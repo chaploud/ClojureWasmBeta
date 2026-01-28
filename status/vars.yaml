@@ -3457,40 +3457,62 @@ vars:
   clojure_set:
     difference:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: set-difference builtin + clojure.set NS ラッパー
     index:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.set NS で reduce ベース実装
     intersection:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: set-intersection builtin + clojure.set NS ラッパー
     join:
       type: function
       status: todo
     map-invert:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: set-map-invert builtin + clojure.set NS ラッパー
     project:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.set NS で reduce ベース実装
     rename:
       type: function
-      status: todo
+      status: done
+      impl_type: clj
+      note: clojure.set NS で reduce ベース実装
     rename-keys:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: set-rename-keys builtin + clojure.set NS ラッパー
     select:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: set-select builtin + clojure.set NS ラッパー
     subset?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: set-subset? builtin + clojure.set NS ラッパー
     superset?:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: set-superset? builtin + clojure.set NS ラッパー
     union:
       type: function
-      status: todo
+      status: done
+      impl_type: builtin
+      note: set-union builtin + clojure.set NS ラッパー
   clojure_test:
     are:
       type: macro

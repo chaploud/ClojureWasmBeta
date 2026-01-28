@@ -1012,11 +1012,15 @@ pub fn nnext(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     return Value{ .list = result };
 }
 
-/// set : コレクションをセットに変換
+/// set : コレクションをセットに変換 (lazy-seq 対応)
 /// (set [1 2 2 3]) => #{1 2 3}
 pub fn setFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 1) return error.ArityError;
-    const items = helpers.getItems(args[0]) orelse return error.TypeError;
+    if (args[0] == .nil) return value_mod.nil;
+    // set 自体はそのまま返す
+    if (args[0] == .set) return args[0];
+    // lazy-seq, map 等もサポート
+    const items = try helpers.collectToSlice(allocator, args[0]);
 
     // 重複除去
     var unique: std.ArrayListUnmanaged(Value) = .empty;
@@ -1062,6 +1066,203 @@ pub fn disjFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
     const result = try allocator.create(value_mod.PersistentSet);
     result.* = .{ .items = result_items.toOwnedSlice(allocator) catch return error.OutOfMemory };
     return Value{ .set = result };
+}
+
+/// set-union : 複数セットの和集合
+/// (set-union #{1 2} #{2 3}) => #{1 2 3}
+pub fn setUnion(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len == 0) {
+        const empty = try allocator.create(value_mod.PersistentSet);
+        empty.* = value_mod.PersistentSet.empty();
+        return Value{ .set = empty };
+    }
+    if (args[0] == .nil) {
+        // nil を先頭にした場合、残りのセットの union
+        if (args.len == 1) return value_mod.nil;
+        return setUnion(allocator, args[1..]);
+    }
+    if (args[0] != .set) return error.TypeError;
+
+    if (args.len == 1) return args[0];
+
+    // 最初のセットの要素をリストに入れる
+    var items: std.ArrayListUnmanaged(Value) = .empty;
+    for (args[0].set.items) |item| {
+        items.append(allocator, item) catch return error.OutOfMemory;
+    }
+
+    // 残りのセットの要素を追加 (重複除去)
+    for (args[1..]) |arg| {
+        if (arg == .nil) continue;
+        if (arg != .set) return error.TypeError;
+        for (arg.set.items) |item| {
+            var found = false;
+            for (items.items) |existing| {
+                if (item.eql(existing)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                items.append(allocator, item) catch return error.OutOfMemory;
+            }
+        }
+    }
+
+    const result = try allocator.create(value_mod.PersistentSet);
+    result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+    return Value{ .set = result };
+}
+
+/// set-intersection : 複数セットの積集合
+/// (set-intersection #{1 2 3} #{2 3 4}) => #{2 3}
+pub fn setIntersection(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len == 0) return error.ArityError;
+    if (args[0] != .set) return error.TypeError;
+    if (args.len == 1) return args[0];
+
+    var items: std.ArrayListUnmanaged(Value) = .empty;
+    for (args[0].set.items) |item| {
+        var in_all = true;
+        for (args[1..]) |arg| {
+            if (arg != .set) return error.TypeError;
+            if (!arg.set.contains(item)) {
+                in_all = false;
+                break;
+            }
+        }
+        if (in_all) {
+            items.append(allocator, item) catch return error.OutOfMemory;
+        }
+    }
+
+    const result = try allocator.create(value_mod.PersistentSet);
+    result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+    return Value{ .set = result };
+}
+
+/// set-difference : 差集合 (最初のセットから残りの要素を除去)
+/// (set-difference #{1 2 3} #{2 3 4}) => #{1}
+pub fn setDifference(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len == 0) return error.ArityError;
+    if (args[0] != .set) return error.TypeError;
+    if (args.len == 1) return args[0];
+
+    var items: std.ArrayListUnmanaged(Value) = .empty;
+    for (args[0].set.items) |item| {
+        var in_any = false;
+        for (args[1..]) |arg| {
+            if (arg == .nil) continue;
+            if (arg != .set) return error.TypeError;
+            if (arg.set.contains(item)) {
+                in_any = true;
+                break;
+            }
+        }
+        if (!in_any) {
+            items.append(allocator, item) catch return error.OutOfMemory;
+        }
+    }
+
+    const result = try allocator.create(value_mod.PersistentSet);
+    result.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+    return Value{ .set = result };
+}
+
+/// set-subset? : s1 が s2 の部分集合か
+/// (set-subset? #{1 2} #{1 2 3}) => true
+pub fn setSubset(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .set or args[1] != .set) return error.TypeError;
+
+    for (args[0].set.items) |item| {
+        if (!args[1].set.contains(item)) return value_mod.false_val;
+    }
+    return value_mod.true_val;
+}
+
+/// set-superset? : s1 が s2 の上位集合か
+/// (set-superset? #{1 2 3} #{1 2}) => true
+pub fn setSuperset(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    _ = allocator;
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .set or args[1] != .set) return error.TypeError;
+
+    for (args[1].set.items) |item| {
+        if (!args[0].set.contains(item)) return value_mod.false_val;
+    }
+    return value_mod.true_val;
+}
+
+/// set-select : 述語を満たす要素のみのセットを返す
+/// (set-select odd? #{1 2 3 4}) => #{1 3}
+pub fn setSelect(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    if (args[1] != .set) return error.TypeError;
+
+    const call = defs.call_fn orelse return error.TypeError;
+    const pred = args[0];
+    var items: std.ArrayListUnmanaged(Value) = .empty;
+
+    for (args[1].set.items) |item| {
+        const call_args = [_]Value{item};
+        const result = try call(pred, &call_args, allocator);
+        if (result.isTruthy()) {
+            items.append(allocator, item) catch return error.OutOfMemory;
+        }
+    }
+
+    const result_set = try allocator.create(value_mod.PersistentSet);
+    result_set.* = .{ .items = items.toOwnedSlice(allocator) catch return error.OutOfMemory };
+    return Value{ .set = result_set };
+}
+
+/// set-rename-keys : マップのキーを別名に変換
+/// (set-rename-keys {:a 1 :b 2} {:a :new-a}) => {:new-a 1 :b 2}
+pub fn setRenameKeys(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 2) return error.ArityError;
+    if (args[0] != .map or args[1] != .map) return error.TypeError;
+
+    const m = args[0].map;
+    const kmap = args[1].map;
+
+    var entries: std.ArrayListUnmanaged(Value) = .empty;
+    var i: usize = 0;
+    while (i < m.entries.len) : (i += 2) {
+        const old_key = m.entries[i];
+        const val = m.entries[i + 1];
+        // kmap にキーがあれば新名、なければ元名
+        if (kmap.get(old_key)) |new_key| {
+            entries.append(allocator, new_key) catch return error.OutOfMemory;
+        } else {
+            entries.append(allocator, old_key) catch return error.OutOfMemory;
+        }
+        entries.append(allocator, val) catch return error.OutOfMemory;
+    }
+
+    const result = try allocator.create(value_mod.PersistentMap);
+    result.* = .{ .entries = entries.toOwnedSlice(allocator) catch return error.OutOfMemory };
+    return Value{ .map = result };
+}
+
+/// set-map-invert : マップのキーと値を逆転
+/// (set-map-invert {:a 1 :b 2}) => {1 :a 2 :b}
+pub fn setMapInvert(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    if (args[0] != .map) return error.TypeError;
+
+    const m = args[0].map;
+    var entries: std.ArrayListUnmanaged(Value) = .empty;
+    var i: usize = 0;
+    while (i < m.entries.len) : (i += 2) {
+        entries.append(allocator, m.entries[i + 1]) catch return error.OutOfMemory; // val → key
+        entries.append(allocator, m.entries[i]) catch return error.OutOfMemory; // key → val
+    }
+
+    const result = try allocator.create(value_mod.PersistentMap);
+    result.* = .{ .entries = entries.toOwnedSlice(allocator) catch return error.OutOfMemory };
+    return Value{ .map = result };
 }
 
 /// find : マップからキーに対応するエントリ [key val] を返す
@@ -1825,6 +2026,14 @@ pub const builtins = [_]BuiltinDef{
     // セット操作
     .{ .name = "set", .func = setFn },
     .{ .name = "disj", .func = disjFn },
+    .{ .name = "set-union", .func = setUnion },
+    .{ .name = "set-intersection", .func = setIntersection },
+    .{ .name = "set-difference", .func = setDifference },
+    .{ .name = "set-subset?", .func = setSubset },
+    .{ .name = "set-superset?", .func = setSuperset },
+    .{ .name = "set-select", .func = setSelect },
+    .{ .name = "set-rename-keys", .func = setRenameKeys },
+    .{ .name = "set-map-invert", .func = setMapInvert },
     .{ .name = "find", .func = findFn },
     .{ .name = "replace", .func = replaceFn },
     .{ .name = "sort", .func = sortFn },

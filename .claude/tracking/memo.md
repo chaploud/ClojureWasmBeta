@@ -361,12 +361,26 @@ REPL ドキュメント閲覧機能。
 - **テスト**: `test/compat/clojure_string.clj` — 32 assertions
 - 全テスト 847 pass / 1 fail (意図的)
 
+### S1b: clojure.set 名前空間 — 完了
+
+`(require 'clojure.set)` で標準的な clojure.set 関数名を提供。
+
+- **新規 builtin 8 関数** (collections.zig): set-union, set-intersection, set-difference,
+  set-subset?, set-superset?, set-select, set-rename-keys, set-map-invert
+- **`src/clj/clojure/set.clj`**: 11 関数のラッパー NS
+  - union, intersection, difference, subset?, superset?, select
+  - rename-keys, map-invert, project, rename, index
+  - project/rename/index は reduce ベースの pure Clojure 実装
+- **バグ修正**: `set` 関数が lazy-seq を受け付けなかった問題を修正
+  (getItems → collectToSlice)
+- **テスト**: `test/compat/clojure_set.clj` — 24 assertions
+- 全テスト 871 pass / 1 fail (意図的)
+
 ### 推奨次回タスク
 
-1. **S1b: clojure.set 名前空間** — union/intersection/difference 等
-2. **G1c: sweep 高速化** — バルク解放 or Arena ベース GC
-3. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
-4. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars, add-watch 等)
+1. **G1c: sweep 高速化** — バルク解放 or Arena ベース GC
+2. **R3 残項目**: MultiArrayList / MemoryPool (switch/エラー伝播は現状十分)
+3. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars, add-watch 等)
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
