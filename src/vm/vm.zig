@@ -123,7 +123,8 @@ pub const VM = struct {
     safe_point_counter: u32,
 
     /// Safe Point GC のチェック間隔
-    const SAFE_POINT_INTERVAL: u32 = 1024;
+    /// 低い値ほど頻繁に GC チェック (メモリ削減) だがオーバーヘッド増
+    const SAFE_POINT_INTERVAL: u32 = 64;
 
     /// 初期化
     pub fn init(allocator: std.mem.Allocator, env: *Env) VM {
@@ -1623,6 +1624,19 @@ pub const VM = struct {
 
     /// callValue のラッパー: 例外をハンドラに転送
     fn callValueWithExceptionHandling(self: *VM, arg_count: usize) VMError!void {
+        // Safe Point GC: 定期的に GC チェック（組み込み関数呼び出しでも）
+        self.safe_point_counter +%= 1;
+        if (self.safe_point_counter >= SAFE_POINT_INTERVAL) {
+            self.safe_point_counter = 0;
+            if (defs.current_allocators) |allocs| {
+                allocs.safePointCollect(
+                    self.env,
+                    core.getGcGlobals(),
+                    self.stack[0..self.sp],
+                );
+            }
+        }
+
         // ハンドラ不在時は例外処理をスキップ (fast path)
         if (self.handler_count == 0) {
             return self.callValue(arg_count);
