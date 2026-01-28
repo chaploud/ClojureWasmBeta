@@ -469,14 +469,17 @@ pub fn popThreadBindingsFn(_: std.mem.Allocator, _: []const Value) anyerror!Valu
     return value_mod.nil;
 }
 
-/// thread-bound? — Var がバインディングフレーム内か
+/// thread-bound? — 全 Var がバインディングフレーム内か (多引数対応)
 pub fn threadBoundPred(_: std.mem.Allocator, args: []const Value) anyerror!Value {
-    if (args.len != 1) return error.ArityError;
-    const v: *const var_mod.Var = switch (args[0]) {
-        .var_val => |ptr| @ptrCast(@alignCast(ptr)),
-        else => return error.TypeError,
-    };
-    return if (var_mod.hasThreadBinding(v)) value_mod.true_val else value_mod.false_val;
+    if (args.len < 1) return error.ArityError;
+    for (args) |arg| {
+        const v: *const var_mod.Var = switch (arg) {
+            .var_val => |ptr| @ptrCast(@alignCast(ptr)),
+            else => return error.TypeError,
+        };
+        if (!var_mod.hasThreadBinding(v)) return value_mod.false_val;
+    }
+    return value_mod.true_val;
 }
 
 /// with-redefs-fn — Var の root を一時退避 → 差替 → fn 呼び出し → 復元
