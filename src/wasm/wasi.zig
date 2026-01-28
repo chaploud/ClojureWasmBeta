@@ -7,9 +7,7 @@ const std = @import("std");
 const zware = @import("zware");
 const value_mod = @import("../runtime/value.zig");
 const WasmModule = value_mod.WasmModule;
-
-/// 最大ファイルサイズ (10MB)
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const loader = @import("loader.zig");
 
 /// WASI 関数名 → zware 実装のマッピング
 const WasiEntry = struct {
@@ -83,49 +81,12 @@ fn registerWasiFunctions(store: *zware.Store, module: *zware.Module) !void {
 
 /// WASI モジュールをロードしてインスタンス化
 pub fn loadWasiModule(allocator: std.mem.Allocator, path: []const u8) !*WasmModule {
-    // 1. ファイル読み込み
-    const file = std.fs.cwd().openFile(path, .{}) catch {
-        return error.WasmFileNotFound;
-    };
-    defer file.close();
+    return loader.loadModuleCore(allocator, path, &registerWasiHook);
+}
 
-    const bytes = file.readToEndAlloc(allocator, MAX_FILE_SIZE) catch {
-        return error.WasmFileReadError;
-    };
-
-    // 2. Store
-    const store = try allocator.create(zware.Store);
-    store.* = zware.Store.init(allocator);
-
-    // 3. Module デコード
-    const module = try allocator.create(zware.Module);
-    module.* = zware.Module.init(allocator, bytes);
-    module.decode() catch {
-        return error.WasmDecodeError;
-    };
-
-    // 4. WASI 関数を登録
+/// WASI 関数登録フック
+fn registerWasiHook(store: *zware.Store, module: *zware.Module) anyerror!void {
     try registerWasiFunctions(store, module);
-
-    // 5. Instance
-    const instance = try allocator.create(zware.Instance);
-    instance.* = zware.Instance.init(allocator, store, module.*);
-    instance.instantiate() catch {
-        return error.WasmInstantiateError;
-    };
-
-    // 6. WasmModule 構造体
-    const wm = try allocator.create(WasmModule);
-    const path_copy = try allocator.dupe(u8, path);
-    wm.* = .{
-        .path = path_copy,
-        .store = @ptrCast(store),
-        .instance = @ptrCast(instance),
-        .module_ptr = @ptrCast(module),
-        .closed = false,
-    };
-
-    return wm;
 }
 
 pub const WasiError = error{
