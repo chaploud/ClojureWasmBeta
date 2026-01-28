@@ -20,11 +20,12 @@
 | デュアルバックエンド  | TreeWalk + BytecodeVM                  |
 | GC                    | セミスペース Arena Mark-Sweep (式境界) |
 | Wasm                  | zware (10 API 関数)                    |
-| 標準 NS               | string/set/walk/edn/math/repl/data/stacktrace/template/zip/test |
+| 標準 NS               | string/set/walk/edn/math/repl/data/stacktrace/template/zip/test/pprint |
 | nREPL                 | CIDER/Calva/Conjure 互換              |
 
 ### 直近の完了
 
+- **S1**: clojure.pprint — pprint, print-table, cl-format (最小限) 実装
 - **U4**: 既知バグ修正 — `^:const` インライン化, `with-local-vars` 実装, `defmacro in defn` エラーメッセージ改善
 - **R7**: Zig イディオム改善 — WasmModule anyopaque → zware 具体型, valueHash switch 改善
 - **D1-D3**: ドキュメント — presentation.md, getting_started.md, developer_guide.md
@@ -48,7 +49,7 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 | #   | Phase | タスク                | 状態     | 備考                                      |
 |-----|-------|----------------------|----------|-------------------------------------------|
 | 1   | U4    | 既知バグ修正         | 完了     | ^:const, with-local-vars, defmacro in defn |
-| 2   | S1    | clojure.pprint       | 未着手   | 実用上重要な標準 NS                        |
+| 2   | S1    | clojure.pprint       | 完了     | pprint, print-table, cl-format (最小限)    |
 | 3   | P3    | NaN boxing           | 未着手   | Value サイズ縮小、高速化の要               |
 | 4   | G2    | 世代別 GC            | 未着手   | Young bump allocator + minor GC           |
 | 5   | P3    | inline caching       | 未着手   | 関数呼び出し高速化                         |

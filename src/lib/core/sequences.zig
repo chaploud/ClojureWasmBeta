@@ -296,7 +296,7 @@ pub fn interleave(allocator: std.mem.Allocator, args: []const Value) anyerror!Va
 pub fn interpose(allocator: std.mem.Allocator, args: []const Value) anyerror!Value {
     if (args.len != 2) return error.ArityError;
     const sep = args[0];
-    const items = helpers.getItems(args[1]) orelse return error.TypeError;
+    const items = try helpers.getItemsRealized(allocator, args[1]) orelse return error.TypeError;
     if (items.len == 0) {
         const result = try allocator.create(value_mod.PersistentList);
         result.* = .{ .items = &[_]Value{} };
