@@ -453,10 +453,22 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 - GC: Var.watches の mark + fixup 対応
 - **テスト**: `test/compat/watches.clj` — 12 assertions (TreeWalk/VM/--compare 全 PASS)
 
+### R3 残項目: MultiArrayList / MemoryPool 評価 — 見送り
+
+調査結果:
+- **MultiArrayList**: FnArity (1-3 要素) が最有力候補だが、配列が極小のため
+  キャッシュ局所性の改善効果は限定的。PersistentMap hash lookup は P2c で
+  既に改善済み。Bytecode はリスク対効果が不釣り合い。
+- **MemoryPool**: Value サイズが可変 (16-40 bytes) のため固定サイズ slab 不適。
+  Arena セミスペース GC が既にほぼ最適。
+- **判断**: 現段階では投入コスト対効果が見合わない。ベンチマークで
+  ボトルネックが判明した場合に再検討。
+
 ### 推奨次回タスク
 
-1. **R3 残項目**: MultiArrayList / MemoryPool
-2. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
+1. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
+2. **P3**: VM 最適化 (ベンチマーク駆動)
+3. **新規 S1 候補**: clojure.pprint / clojure.template 等の標準 NS
 
 ### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 

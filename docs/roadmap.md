@@ -86,10 +86,11 @@ threadlocal 変数は inline アクセサ関数 (get/set) で外部に提供。
 
 **対象**: プロジェクト横断で以下を再点検し、zig_guide.md も更新。
 
-- `MultiArrayList` の適用可能箇所 (Node 配列、VM スタック等)
-  - Zig コンパイラ自身がほぼ全ての構造体を MultiArrayList で格納
-  - キャッシュ局所性とメモリ効率の大幅改善が期待できる
-- `MemoryPool` の適用 (同一型の頻繁な alloc/free: Value, Node 等)
+- ~~`MultiArrayList` の適用可能箇所~~ → 評価済み・見送り
+  - FnArity (1-3 要素) が最有力候補だが配列が極小でキャッシュ改善効果限定的
+  - PersistentMap は P2c で改善済み、Bytecode はリスク対効果不釣り合い
+- ~~`MemoryPool` の適用~~ → 評価済み・見送り
+  - Value サイズ可変 (16-40 bytes) で固定 slab 不適、Arena GC が既にほぼ最適
 - ✅ `@branchHint(.cold)` の hot path 適用 (R3b)
   - vm.zig: execute ループ、push/pop/peek、callValue、tryInlineCall のエラーパス
   - evaluator.zig: callWithArgs のエラーパス、throw/internalErrorToValue
