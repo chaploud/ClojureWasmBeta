@@ -86,25 +86,16 @@ defer allocs.deinit();
 | ユーザー定義関数 (Fn) | persistent | スコープを超えて参照される可能性 |
 | 評価中の引数配列 | scratch (将来) | 関数呼び出し後は不要 |
 
-## 既知の問題と将来対応
+## GC による解決 (実装済み)
 
-### 現在解決済み
+以下の問題は Phase 21 + G1c で GC 導入により解決済み。
 
-- Reader/Analyzer の中間構造は scratch Arena で解放
+- **Evaluator 引数配列**: GcAllocator 経由で確保、GC sweep で回収
+- **Value 所有権**: セミスペース Arena Mark-Sweep GC で管理
+- **クロージャ環境**: deepClone で scratch→persistent にコピー、GC が回収
+- **Reader/Analyzer の中間構造**: scratch Arena で式評価後にリセット
 
-### 将来対応（Phase 9 GC）
-
-1. **Evaluator 引数配列**
-   - 現状: persistent アロケータで確保、リーク
-   - 対策: バインディングスタック（固定長配列）に変更
-
-2. **Value 所有権**
-   - 現状: Var が破棄されても内部の Fn は解放されない
-   - 対策: Value の参照カウントまたはマーク＆スイープ GC
-
-3. **クロージャ環境**
-   - 現状: キャプチャした値をコピー
-   - 対策: 参照カウントで共有、不要時に解放
+詳細は `docs/reference/gc_design.md` を参照。
 
 ## Zig アロケータ比較
 

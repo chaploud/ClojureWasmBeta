@@ -1,10 +1,23 @@
 # 互換性テストレポート
 
 > 実行: `bash test/run_tests.sh`
+>
+> **注意**: 以下の T2/T4 セクションは初期テストフェーズ時点のスナップショット。
+> 当時の失敗の多くはその後のフェーズ (Q1-Q5, U4, S1 等) で修正済み。
+> 現在のテスト結果は **1036 pass / 1 fail (意図的)** を参照。
 
-## サマリ
+## 現在のテスト結果
 
-### T2: カテゴリ別テスト (assert ベース)
+```
+TOTAL: 1036 pass, 1 fail, 0 error (total: 1037)
+失敗ファイル: test/compat/test_framework_test.clj (意図的な失敗テスト)
+```
+
+---
+
+## (参考) 初期テストフェーズ記録
+
+### T2: カテゴリ別テスト (assert ベース, 初期スナップショット)
 
 | カテゴリ      | テスト | Pass | Fail | Error | 率    |
 |---------------|--------|------|------|-------|-------|
@@ -17,7 +30,7 @@
 | collections   | 76     | 66   | 9    | 1     | 87%   |
 | **小計**      | **390**| **372** | **16** | **2** | **95%** |
 
-### T4: sci テストスイート移植 (clojure.test ベース)
+### T4: sci テストスイート移植 (clojure.test ベース, 初期スナップショット)
 
 | テストファイル          | deftest | アサーション | Pass | Fail | Error | 率    |
 |-------------------------|---------|--------------|------|------|-------|-------|
@@ -26,84 +39,28 @@
 | sci/hierarchies_test    | 5       | 5            | 5    | 0    | 0     | 100%  |
 | **小計**                | **45**  | **143**      | **143** | **0** | **0** | **100%** |
 
-### 総合
+## sci テスト移植で発見したバグ (多くは修正済み)
 
-| 層       | テスト | Pass | Fail | Error | 率    |
-|----------|--------|------|------|-------|-------|
-| T2       | 390    | 372  | 16   | 2     | 95%   |
-| T4 (sci) | 143    | 143  | 0    | 0     | 100%  |
-| **合計** | **533**| **515** | **16** | **2** | **97%** |
-
-## 失敗詳細
-
-### collections (9 fail, 1 error)
-
-| テスト名      | 状態  | 備考                                    |
-|---------------|-------|-----------------------------------------|
-| conj set      | ERROR | hash-set conj (要調査)                  |
-| butlast       | FAIL  | 返り値の型不一致の可能性                |
-| into map      | FAIL  | into with map (要調査)                  |
-| keys single   | FAIL  | keys 返り値の型 (seq vs vec)            |
-| vals single   | FAIL  | vals 返り値の型 (seq vs vec)            |
-| flatten       | FAIL  | 返り値の型不一致の可能性                |
-| distinct      | FAIL  | 返り値の型不一致の可能性                |
-| sort          | FAIL  | sort 実装 (要調査)                      |
-| sort w/ dups  | FAIL  | sort 実装 (要調査)                      |
-| sort-by count | FAIL  | sort-by 実装 (要調査)                   |
-
-### higher_order (3 fail)
-
-| テスト名              | 状態 | 備考                          |
-|-----------------------|------|-------------------------------|
-| juxt inc/*2           | FAIL | #() fn リテラル in juxt       |
-| memoize only called 1x| FAIL | memoize キャッシュ不具合      |
-| sort-by keyfn         | FAIL | sort-by 実装 (要調査)         |
-
-### predicates (1 fail)
-
-| テスト名             | 状態 | 備考                          |
-|----------------------|------|-------------------------------|
-| identical? keywords  | FAIL | keyword interning (要調査)    |
-
-### sequences (2 fail)
-
-| テスト名      | 状態 | 備考                          |
-|---------------|------|-------------------------------|
-| mapcat        | FAIL | mapcat 返り値 (要調査)        |
-| keep-indexed  | FAIL | keep-indexed 実装 (要調査)    |
-
-### strings (1 fail, 1 error)
-
-| テスト名         | 状態  | 備考                          |
-|------------------|-------|-------------------------------|
-| re-seq           | FAIL  | re-seq 返り値 (要調査)        |
-| keyword with ns  | ERROR | 2-arity keyword (要調査)      |
-
-## sci テスト移植で発見したバグ
-
-| バグ                             | 影響         | 回避策                  |
+| バグ                             | 影響         | 状態                    |
 |----------------------------------|--------------|-------------------------|
-| map/set リテラル in macro body   | load-file 時 | hash-map/hash-set       |
-| fn-level recur returns nil       | defn+recur   | loop+recur              |
-| vector-list equality broken      | = [1] '(1)   | into [] で変換          |
-| map-as-fn 2-arity               | ({:a 1} k d) | get with default        |
-| symbol-as-fn                    | ('a map)     | get                     |
-| defonce not preventing redef    | defonce      | スキップ                |
-| letfn mutual recursion          | letfn f→g    | スキップ                |
-| #'var as callable               | (#'foo)      | スキップ                |
-| var-set no effect               | var-set      | スキップ                |
-| alter-var-root uses thread-local | avr+binding  | スキップ                |
-| defmacro inside defn            | defmacro     | トップレベルで定義      |
+| map/set リテラル in macro body   | load-file 時 | Q2a で修正済み          |
+| fn-level recur returns nil       | defn+recur   | Q2b で修正済み          |
+| vector-list equality broken      | = [1] '(1)   | 修正済み                |
+| map-as-fn 2-arity               | ({:a 1} k d) | U4a で修正済み          |
+| symbol-as-fn                    | ('a map)     | U4a で修正済み          |
+| defonce not preventing redef    | defonce      | Q3 で修正済み           |
+| letfn mutual recursion          | letfn f→g    | Q4b で修正済み          |
+| #'var as callable               | (#'foo)      | Q3 で修正済み           |
+| var-set no effect               | var-set      | Q3 で修正済み           |
+| alter-var-root uses thread-local | avr+binding  | Q3 で修正済み           |
+| defmacro inside defn            | defmacro     | 既知の制限 (トップレベルで定義) |
 
-## 既知の未対応機能 (テストから除外)
+## 既知の未対応機能
 
 - map 複数コレクション引数 (`(map + [1 2] [3 4])`)
 - for :when / :while 修飾子
 - into 3-arity (transducer)
-- transduce
-- clojure.string/* 名前空間 (core に string-xxx として実装)
-- map/set リテラル in マクロ引数 (InvalidToken)
+- transduce (multi-arity map 未対応のため)
 - with-local-vars
-- add-watch on var
 - ^:const
-- (str (def x 1)) — def が var を返さない
+- defmacro inside defn (トップレベルで定義が必要)

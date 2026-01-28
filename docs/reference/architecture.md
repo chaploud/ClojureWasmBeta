@@ -97,7 +97,7 @@ src/
 │
 ├── lib/                # Clojure標準ライブラリ
 │   ├── core.zig        # clojure.core facade (re-export)
-│   └── core/           # ドメイン別サブモジュール (18ファイル)
+│   └── core/           # ドメイン別サブモジュール (19ファイル)
 │
 ├── wasm/               # Wasm 連携 (zware)
 │   ├── types.zig       # Value ↔ Wasm 型変換

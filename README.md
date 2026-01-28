@@ -12,12 +12,12 @@ Clojure implementation in Zig, targeting WebAssembly.
 ## Status
 
 - **Tests**: 1036 pass / 1 fail (intentional)
-- **Core vars**: 663 done / 191 skip
+- **Core vars**: 545 done / 169 skip
 - **Dual backend**: TreeWalk (correctness) + BytecodeVM (performance)
 - **GC**: Semi-space Arena Mark-Sweep at expression boundary
 - **Wasm**: zware integration (10 API functions)
 - **nREPL**: CIDER/Calva/Conjure compatible server
-- **Standard namespaces**: string, set, walk, edn, math, repl, data, stacktrace, template, zip
+- **Standard namespaces**: string, set, walk, edn, math, repl, data, stacktrace, template, zip, test
 
 ### Features
 

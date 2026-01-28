@@ -36,32 +36,49 @@ src/
 │   └── error.zig     # エラー型
 ├── reader/           # Phase 1: Reader
 │   ├── tokenizer.zig # トークナイザー
-│   ├── reader.zig    # S式構築（将来）
+│   ├── reader.zig    # S式構築
 │   └── form.zig      # Form型
 ├── analyzer/         # Phase 2: Analyzer
+│   ├── analyze.zig   # 解析・マクロ展開
 │   └── node.zig      # Node型
+├── compiler/         # Node → Bytecode
+│   ├── bytecode.zig  # バイトコード定義
+│   └── emit.zig      # コード生成
+├── vm/               # Bytecode 実行
+│   └── vm.zig        # VM メインループ
 ├── runtime/          # Phase 3: Runtime
-│   ├── value.zig     # Value型
+│   ├── value.zig     # Value型 (facade + 3 サブモジュール)
 │   ├── var.zig       # Var
 │   ├── namespace.zig # Namespace
 │   ├── env.zig       # Env
-│   └── context.zig   # Context
-└── lib/              # 標準ライブラリ（将来）
-    └── core.zig      # clojure.core
+│   ├── context.zig   # Context
+│   ├── evaluator.zig # TreeWalk 評価器
+│   ├── engine.zig    # Backend 切り替え
+│   └── allocators.zig # 寿命別アロケータ
+├── lib/              # 標準ライブラリ
+│   ├── core.zig      # clojure.core facade (re-export)
+│   └── core/         # ドメイン別サブモジュール (19ファイル)
+├── gc/               # GC (セミスペース Arena)
+├── wasm/             # Wasm 連携 (zware)
+├── regex/            # 正規表現 (フルスクラッチ)
+├── repl/             # REPL サポート
+├── nrepl/            # nREPL サーバー
+└── clj/              # Clojure ソースライブラリ (.clj)
 ```
 
 ## ファイル構成
 
-| ファイル | 型 | フェーズ | 状態 |
-|---------|-----|---------|------|
-| `src/reader/form.zig` | Form | Reader | 実装済 |
-| `src/reader/reader.zig` | Reader | Reader | 実装済 |
-| `src/analyzer/node.zig` | Node | Analyzer | スタブ |
-| `src/runtime/value.zig` | Value | Runtime | 実装済 |
-| `src/runtime/var.zig` | Var | Runtime | 実装済 |
-| `src/runtime/namespace.zig` | Namespace | Runtime | 実装済 |
-| `src/runtime/env.zig` | Env | Runtime | 実装済 |
-| `src/runtime/context.zig` | Context | 評価器 | スタブ |
+| ファイル                       | 型        | フェーズ   | 状態   |
+|--------------------------------|-----------|------------|--------|
+| `src/reader/form.zig`          | Form      | Reader     | 実装済 |
+| `src/reader/reader.zig`        | Reader    | Reader     | 実装済 |
+| `src/analyzer/node.zig`        | Node      | Analyzer   | 実装済 |
+| `src/analyzer/analyze.zig`     | Analyzer  | Analyzer   | 実装済 |
+| `src/runtime/value.zig`        | Value     | Runtime    | 実装済 |
+| `src/runtime/var.zig`          | Var       | Runtime    | 実装済 |
+| `src/runtime/namespace.zig`    | Namespace | Runtime    | 実装済 |
+| `src/runtime/env.zig`          | Env       | Runtime    | 実装済 |
+| `src/runtime/context.zig`      | Context   | 評価器     | 実装済 |
 
 ## Form (Reader出力)
 
@@ -164,42 +181,57 @@ pub const Value = union(enum) {
     bool_val: bool,
     int: i64,
     float: f64,
-    ratio: *Ratio,
-    bigint: *BigInt,
-    bigdec: *BigDecimal,
+    char_val: u21,
 
     // 文字列・識別子
     string: *String,
-    char_val: u21,
     keyword: *Keyword,
     symbol: *Symbol,
 
-    // コレクション（永続データ構造）
+    // コレクション（配列ベース）
     list: *PersistentList,
     vector: *PersistentVector,
     map: *PersistentMap,
     set: *PersistentSet,
 
-    // 関数・参照
+    // 関数
     fn_val: *Fn,
-    var_val: *Var,
+    partial_fn: *PartialFn,   // 部分適用
+    comp_fn: *CompFn,         // 合成関数
+    multi_fn: *MultiFn,       // マルチメソッド
+    protocol: *Protocol,      // プロトコル
+    protocol_fn: *ProtocolFn, // プロトコル関数
 
-    // 参照型
+    // VM用
+    fn_proto: FnProtoPtr,     // コンパイル済み関数プロトタイプ
+
+    // 遅延シーケンス
+    lazy_seq: *LazySeq,
+
+    // 参照
+    var_val: *anyopaque,      // *Var（循環依存回避）
     atom: *Atom,
-    ref: *Ref,
-    agent: *Agent,
 
-    // その他
-    namespace: *Namespace,
-    class: *Class,  // Javaクラス相当（将来）
-    regex: *Regex,
+    // 遅延評価・ボックス
+    delay_val: *Delay,
+    volatile_val: *Volatile,
+    reduced_val: *Reduced,
+    transient: *Transient,
+    promise: *Promise,
+
+    // 正規表現
+    regex: *Pattern,
+    matcher: *RegexMatcher,
+
+    // Wasm
+    wasm_module: *WasmModule,
 };
 ```
 
 **特徴:**
 - 実行時の実際の値
-- GC管理対象（将来）
-- 永続データ構造
+- GC 管理対象 (セミスペース Arena Mark-Sweep)
+- コレクションは配列ベースの簡易実装(永続データ構造は将来)
 
 ## Var (変数)
 

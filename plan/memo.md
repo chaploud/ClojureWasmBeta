@@ -15,12 +15,12 @@
 | 指標                  | 値                                     |
 |-----------------------|----------------------------------------|
 | テスト                | 1036 pass / 1 fail (意図的)            |
-| clojure.core 実装状況 | 663 done / 191 skip                    |
-| Zig ソースコード      | ~32,000 行 (src/ 以下)                 |
+| clojure.core 実装状況 | 545 done / 169 skip                    |
+| Zig ソースコード      | ~38,000 行 (src/ 以下)                 |
 | デュアルバックエンド  | TreeWalk + BytecodeVM                  |
 | GC                    | セミスペース Arena Mark-Sweep (式境界) |
 | Wasm                  | zware (10 API 関数)                    |
-| 標準 NS               | string/set/walk/edn/math/repl/data/stacktrace/template/zip |
+| 標準 NS               | string/set/walk/edn/math/repl/data/stacktrace/template/zip/test |
 | nREPL                 | CIDER/Calva/Conjure 互換              |
 
 ### 推奨次回タスク
