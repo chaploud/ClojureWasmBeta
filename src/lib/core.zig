@@ -10216,6 +10216,27 @@ fn wasmLoadWasi(allocator: std.mem.Allocator, args: []const Value) anyerror!Valu
     return Value{ .wasm_module = wm };
 }
 
+/// wasm/close: モジュールを閉じる（明示的クリーンアップ）
+fn wasmClose(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const wm = switch (args[0]) {
+        .wasm_module => |m| m,
+        else => return error.TypeError,
+    };
+    wm.closed = true;
+    return value_mod.nil;
+}
+
+/// wasm/closed?: モジュールが閉じられたか確認
+fn wasmClosed(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const wm = switch (args[0]) {
+        .wasm_module => |m| m,
+        else => return error.TypeError,
+    };
+    return if (wm.closed) value_mod.true_val else value_mod.false_val;
+}
+
 // ============================================================
 // Env への登録
 // ============================================================
@@ -10719,6 +10740,9 @@ const wasm_builtins = [_]BuiltinDef{
     .{ .name = "memory-size", .func = wasmMemorySize },
     // Phase Ld
     .{ .name = "load-wasi", .func = wasmLoadWasi },
+    // Phase Le
+    .{ .name = "close", .func = wasmClose },
+    .{ .name = "closed?", .func = wasmClosed },
 };
 
 /// clojure.core の組み込み関数を Env に登録

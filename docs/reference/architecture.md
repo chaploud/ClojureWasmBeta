@@ -143,26 +143,53 @@ src/
 
 > 詳細な完了フェーズ履歴: `.claude/tracking/memo.md`
 
-### 今後のフェーズ
-
-#### Phase LAST: Wasm 連携 (zware)
+### Phase LAST: Wasm 連携 (zware) — 完了
 
 zware (pure Zig Wasm runtime) ベースの Wasm 連携。
 
-| Sub | 内容                              | 主要ファイル                            |
-|-----|-----------------------------------|-----------------------------------------|
-| La  | zware 導入 + load + invoke (数値) | build.zig, value.zig, wasm/*.zig        |
-| Lb  | メモリ操作 + 文字列 interop       | wasm/interop.zig, core.zig              |
-| Lc  | ホスト関数注入 (Clojure→Wasm)     | wasm/host_functions.zig, core.zig       |
-| Ld  | WASI 基本サポート                 | wasm/wasi.zig, core.zig                 |
-| Le  | エラー改善 + GC + ドキュメント    | core.zig, tracing.zig, docs             |
+| Sub | 内容                              | 主要ファイル                            | 状態    |
+|-----|-----------------------------------|-----------------------------------------|---------|
+| La  | zware 導入 + load + invoke (数値) | build.zig, value.zig, wasm/*.zig        | ✅ 完了 |
+| Lb  | メモリ操作 + 文字列 interop       | wasm/interop.zig, core.zig              | ✅ 完了 |
+| Lc  | ホスト関数注入 (Clojure→Wasm)     | wasm/host_functions.zig, core.zig       | ✅ 完了 |
+| Ld  | WASI 基本サポート                 | wasm/wasi.zig, core.zig                 | ✅ 完了 |
+| Le  | エラー改善 + wasm/close + ドキュメント | core.zig, docs                       | ✅ 完了 |
 
-API:
+Wasm API (10 関数):
 ```clojure
+;; 基本操作
 (def m (wasm/load-module "math.wasm"))
-(wasm/invoke m "add" 3 4)     ;=> 7
-(wasm/exports m)               ;=> {:add {:type :func} ...}
-(wasm/module? m)               ;=> true
+(wasm/invoke m "add" 3 4)          ;=> 7
+(wasm/exports m)                    ;=> {:add {:type :func} ...}
+(wasm/module? m)                    ;=> true
+
+;; メモリ操作
+(wasm/memory-write m 256 "hello")
+(wasm/memory-read m 256 5)          ;=> "hello"
+(wasm/memory-size m)                ;=> 65536
+
+;; ホスト関数注入
+(def m2 (wasm/load-module "plugin.wasm"
+          {:imports {"env" {"log" (fn [n] (println n))}}}))
+
+;; WASI サポート
+(def wasi (wasm/load-wasi "hello.wasm"))
+(wasm/invoke wasi "_start")
+
+;; ライフサイクル
+(wasm/close m)
+(wasm/closed? m)                    ;=> true
+```
+
+ファイル構成:
+```
+src/wasm/
+├── types.zig            # 型変換 (Value ↔ Wasm u64)
+├── loader.zig           # .wasm ロード + インスタンス化
+├── runtime.zig          # invoke / exports
+├── interop.zig          # 線形メモリ読み書き
+├── host_functions.zig   # ホスト関数ブリッジ (Clojure→Wasm)
+└── wasi.zig             # WASI Preview 1 サポート
 ```
 
 ---

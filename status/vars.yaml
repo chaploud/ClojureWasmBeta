@@ -3997,3 +3997,64 @@ vars:
     PI:
       type: var
       status: todo
+
+  # Phase LAST: Wasm 連携 (独自拡張)
+  wasm:
+    load-module:
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host
+      note: .wasm ファイルをロードして WasmModule を返す
+    invoke:
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host
+      note: WasmModule のエクスポート関数を呼び出す
+    exports:
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host
+      note: エクスポート一覧をマップで返す
+    "module?":
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host
+    memory-read:
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host
+      note: Wasm 線形メモリから文字列を読み出す
+    memory-write:
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host
+      note: Wasm 線形メモリにバイト列を書き込む
+    memory-size:
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host
+      note: Wasm 線形メモリサイズ (バイト数) を返す
+    load-wasi:
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host
+      note: WASI Preview 1 モジュールをロード
+    close:
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host
+      note: WasmModule を閉じる
+    "closed?":
+      type: function
+      status: done
+      impl_type: builtin
+      layer: host

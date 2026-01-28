@@ -6,7 +6,7 @@
 
 ## 現在地点
 
-**Phase LAST 進行中 — Wasm 連携 (zware)**
+**Phase LAST 完了 — Wasm 連携 (zware)**
 
 ### Phase LAST サブフェーズ
 
@@ -16,7 +16,7 @@
 | Lb    | メモリ操作 + 文字列 interop       | ✅ 完了      |
 | Lc    | ホスト関数注入 (Clojure→Wasm)     | ✅ 完了      |
 | Ld    | WASI 基本サポート                 | ✅ 完了      |
-| Le    | エラー改善 + GC + ドキュメント    | 未着手       |
+| Le    | エラー改善 + GC + ドキュメント    | ✅ 完了      |
 
 ### 完了フェーズ
 
@@ -94,7 +94,7 @@
 
 ### テスト全体結果
 
-**757 pass, 1 fail(意図的), 0 error** (total: 758)
+**760 pass, 1 fail(意図的), 0 error** (total: 761)
 
 ### sci テストスイート移植
 
@@ -125,11 +125,11 @@
 | `test/compat/strings.clj`                | 54           | PASS |
 | `test/compat/test_framework_test.clj`    | 8+1 fail     | PASS(意図的1fail) |
 | `test/compat/var_system.clj`             | 13           | PASS |
-| `test/compat/wasm_basic.clj`             | 12           | PASS |
+| `test/compat/wasm_basic.clj`             | 15           | PASS |
 | `test/compat/wasm_memory.clj`            | 7            | PASS |
 | `test/compat/wasm_host.clj`              | 5            | PASS |
 | `test/compat/wasm_wasi.clj`              | 4            | PASS |
-| **compat 合計**                          | **561**      |      |
+| **compat 合計**                          | **564**      |      |
 
 ### テスト基盤
 
@@ -241,12 +241,12 @@ deftest body 内 (= defn body 内) で使えない構文:
 ### 現在のフェーズ
 
 ```
-Phase LAST: Wasm 連携 (zware pure Zig runtime)
+Phase LAST: Wasm 連携 (zware pure Zig runtime) — 完了
   La ✅ zware 導入 + load + invoke (数値のみ)
   Lb ✅ メモリ操作 + 文字列 interop
   Lc ✅ ホスト関数注入 (Clojure→Wasm)
   Ld ✅ WASI 基本サポート
-  Le    エラー改善 + GC + ドキュメント
+  Le ✅ エラー改善 + wasm/close + ドキュメント
 ```
 
 ---

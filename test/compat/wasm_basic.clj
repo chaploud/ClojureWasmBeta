@@ -30,5 +30,12 @@
 ;; === type ===
 (test-is (= "wasm-module" (type math)) "type returns wasm-module")
 
+;; === wasm/close + wasm/closed? ===
+(def close-mod (wasm/load-module "test/wasm/fixtures/01_add.wasm"))
+(test-is (not (wasm/closed? close-mod)) "fresh module not closed")
+(test-is (= 3 (wasm/invoke close-mod "add" 1 2)) "invoke before close works")
+(wasm/close close-mod)
+(test-is (wasm/closed? close-mod) "module closed after wasm/close")
+
 (println "[wasm_basic]")
 (test-report)

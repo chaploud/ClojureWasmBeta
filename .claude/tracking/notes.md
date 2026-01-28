@@ -426,6 +426,37 @@ pub const WasmModule = struct {
 };
 ```
 
+### void 関数対応 (Phase Lb)
+
+`invoke()` は関数の戻り値数を事前検出:
+```zig
+const funcidx = module.getExport(.Func, func_name);
+const function = instance.getFunc(funcidx);
+const result_count = function.results.len;
+const out_slice = out_vals[0..result_count];
+instance.invoke(func_name, in_vals, out_slice, .{});
+if (result_count == 0) return nil;
+```
+
+### ホスト関数ブリッジ (Phase Lc)
+
+- **グローバルコンテキストテーブル**: `host_contexts: [256]?HostContext`
+- 各 HostContext は Clojure 関数 + param_count + result_count を保持
+- 汎用トランポリン `hostTrampoline(*VirtualMachine, ctx_id)`:
+  1. VM スタックから param_count 引数を pop → Value に変換
+  2. `call_fn` threadlocal で Clojure 関数呼出
+  3. 結果を u64 に変換 → VM スタックに push
+- `registerImports()`: Module のインポートセクションを走査し、
+  imports マップ ({"env" {"func" clj-fn}}) からマッチする関数を登録
+- `store.exposeHostFunction()` で zware に登録 → `instance.instantiate()` で解決
+
+### WASI サポート (Phase Ld)
+
+- zware 内蔵 WASI 関数は**自動登録されない** — 手動で `exposeHostFunction()` が必要
+- `src/wasm/wasi.zig`: 19 WASI 関数名 → `zware.wasi.*` 関数ポインタのマッピングテーブル
+- モジュールのインポートを走査し、`wasi_snapshot_preview1` の関数のみ登録
+- WASI `fd_write` はシステムコール経由のため `with-out-str` でキャプチャ不可
+
 ### エラーマッピング
 
 - Unreachable → `{:type :wasm/trap}`
