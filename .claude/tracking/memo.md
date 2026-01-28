@@ -6,7 +6,18 @@
 
 ## 現在地点
 
-**Phase LAST 完了 — Wasm 連携 (zware)**
+**ポスト実装フェーズ — リファクタリング・高速化・安定化**
+
+全機能実装フェーズ (Phase 1 〜 LAST) が完了。
+次のロードマップは `docs/roadmap.md` を参照。
+
+### 推奨開始タスク
+
+1. **R1: core.zig ファイル分割** — 開発体験の最大改善
+2. **P1: ベンチマーク基盤整備** — 全最適化の前提
+3. **U1: REPL readline/履歴** — 独立して着手可能
+
+### 前フェーズ: Phase LAST 完了 — Wasm 連携 (zware)
 
 ### Phase LAST サブフェーズ
 
@@ -238,7 +249,7 @@ deftest body 内 (= defn body 内) で使えない構文:
   Q6  ✅ ドキュメント整備
 ```
 
-### 現在のフェーズ
+### Phase LAST: Wasm 連携 — 完了
 
 ```
 Phase LAST: Wasm 連携 (zware pure Zig runtime) — 完了
@@ -247,6 +258,17 @@ Phase LAST: Wasm 連携 (zware pure Zig runtime) — 完了
   Lc ✅ ホスト関数注入 (Clojure→Wasm)
   Ld ✅ WASI 基本サポート
   Le ✅ エラー改善 + wasm/close + ドキュメント
+```
+
+### ポスト実装ロードマップ → `docs/roadmap.md`
+
+```
+Phase R: リファクタリング (core.zig 分割、Zig イディオム再点検)
+Phase P: 高速化 (ベンチマーク基盤、VM 最適化)
+Phase G: GC・メモリ管理 (世代別 GC)
+Phase U: UX 改善 (REPL readline、エラー改善)
+Phase S: セルフホスト (.clj 移行)
+Phase D: ドキュメント (3系統整備)
 ```
 
 ---

@@ -140,8 +140,24 @@ src/
 | 26       | Reader Conditionals + 外部ライブラリ統合テスト (medley v1.4.0)                                                            |
 | T1-T4    | テストフレームワーク + sci テストスイート移植 (678 pass)                                                                   |
 | Q1a-Q5a  | Wasm前品質修正 — 正規化/コンパイラ修正/letfn/with-out-str (729 pass)                                                       |
+| LAST     | Wasm 連携 (zware) — load/invoke/memory/host-fn/WASI/close (760 pass)                                                      |
 
 > 詳細な完了フェーズ履歴: `.claude/tracking/memo.md`
+
+### ポスト実装フェーズ
+
+機能追加フェーズが完了し、リファクタリング・高速化・安定化フェーズへ移行。
+
+**詳細ロードマップ: `docs/roadmap.md`**
+
+| フェーズ | 内容                                    | 依存関係         |
+|----------|-----------------------------------------|------------------|
+| Phase R  | リファクタリング (core.zig 分割、Zig イディオム再点検) | —       |
+| Phase P  | 高速化 (ベンチマーク基盤、VM 最適化)   | R 望ましい       |
+| Phase G  | GC・メモリ管理 (世代別 GC)             | P1 前提          |
+| Phase U  | UX 改善 (REPL readline、エラー改善)    | 独立着手可能     |
+| Phase S  | セルフホスト (.clj 移行)               | P1 前提          |
+| Phase D  | ドキュメント (3系統整備)               | 各フェーズ後随時 |
 
 ### Phase LAST: Wasm 連携 (zware) — 完了
 
@@ -223,8 +239,11 @@ src/wasm/
 
 ## 参考資料
 
+- ロードマップ: `docs/roadmap.md`
 - 型設計: `docs/reference/type_design.md`
 - Zigガイド: `docs/reference/zig_guide.md`
+- メモリ戦略: `docs/reference/memory_strategy.md`
+- エラー設計: `docs/reference/error_design.md`
 - 進捗メモ: `.claude/tracking/memo.md`
 - 技術ノート: `.claude/tracking/notes.md`
 - 実装状況: `status/vars.yaml`
