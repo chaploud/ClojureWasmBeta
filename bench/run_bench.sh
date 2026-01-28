@@ -48,7 +48,7 @@ fi
 
 # ベンチマーク定義
 BENCHMARKS=(fib30 sum_range map_filter string_ops data_transform)
-OTHER_LANGS=(c cpp zig java clojure ruby python)
+OTHER_LANGS=(c cpp zig java clojure babashka ruby python)
 
 # ═══════════════════════════════════════════════════════════════════
 # 計測関数
@@ -156,6 +156,11 @@ get_cmd() {
             clj=$(ls "$dir"/*.clj 2>/dev/null | head -1)
             echo "clojure -M $clj"
             ;;
+        babashka)
+            local clj
+            clj=$(ls "$dir"/*.clj 2>/dev/null | head -1)
+            echo "bb $clj"
+            ;;
         ruby)
             local rb
             rb=$(ls "$dir"/*.rb 2>/dev/null | head -1)
@@ -202,7 +207,7 @@ for bench in "${BENCHMARKS[@]}"; do
     if ! $QUICK_MODE; then
         for lang in "${OTHER_LANGS[@]}"; do
             cmd=$(get_cmd "$bench" "$lang")
-            if [[ -n "$cmd" ]] && [[ -x "${cmd%% *}" || "$lang" == "python" || "$lang" == "ruby" || "$lang" == "java" || "$lang" == "clojure" ]]; then
+            if [[ -n "$cmd" ]] && [[ -x "${cmd%% *}" || "$lang" == "python" || "$lang" == "ruby" || "$lang" == "java" || "$lang" == "clojure" || "$lang" == "babashka" ]]; then
                 t=$(measure "$cmd")
                 m=$(measure_mem "$cmd")
                 if $HYPERFINE_MODE; then
@@ -231,6 +236,39 @@ for bench in "${BENCHMARKS[@]}"; do
     fi
     echo ""
 done
+
+# ═══════════════════════════════════════════════════════════════════
+# JVM Clojure warm 計測 (JIT warm-up 後の純粋な計算時間)
+# ═══════════════════════════════════════════════════════════════════
+
+if ! $QUICK_MODE && command -v clojure &> /dev/null; then
+    echo "─── JVM Clojure warm (JIT warm-up 後) ───"
+    echo "  1 JVM で全ベンチを warm-up 3回 + 計測 5回 (中央値)..."
+
+    # 全ベンチの .clj ファイルを収集
+    WARM_FILES=()
+    for bench in "${BENCHMARKS[@]}"; do
+        clj_file=$(ls "$SCRIPT_DIR/$bench"/*.clj 2>/dev/null | head -1)
+        [[ -n "$clj_file" ]] && WARM_FILES+=("$clj_file")
+    done
+
+    # 1回の JVM 起動で全ベンチを計測
+    WARM_OUTPUT=$(clojure -M "$SCRIPT_DIR/clj_warm_bench.clj" "${WARM_FILES[@]}" 2>/dev/null)
+
+    declare -A WARM_TIMES
+    while IFS='=' read -r name ns; do
+        [[ -n "$name" && -n "$ns" ]] && WARM_TIMES["$name"]=$ns
+    done <<< "$WARM_OUTPUT"
+
+    for bench in "${BENCHMARKS[@]}"; do
+        ns="${WARM_TIMES[$bench]:-}"
+        if [[ -n "$ns" ]]; then
+            ms=$(printf "%.2f" "$(echo "scale=4; $ns / 1000000" | bc -l)")
+            printf "  %-16s %10s ms\n" "$bench" "$ms"
+        fi
+    done
+    echo ""
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # YAML 記録

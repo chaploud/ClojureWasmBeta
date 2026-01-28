@@ -73,16 +73,33 @@ baseline:
       map_filter: {time_s: 0.02, mem_mb: 14.4}
       string_ops: {time_s: 0.02, mem_mb: 15.1}
       data_transform: {time_s: 0.02, mem_mb: 17.0}
-    # JVM Clojure: 同じ .clj ファイルを clojure -M で実行
+    # JVM Clojure (cold): 同じ .clj ファイルを clojure -M で実行
     # 0.3-0.4s の大部分は JVM 起動 + Clojure ランタイムロード
-    # 長期稼働 (JIT warm-up 後) では計算部分が大幅に高速化される
-    clojure:
+    clojure_cold:
       version: "1.12.4 (Clojure CLI 1.12.4.1582, OpenJDK 21)"
-      fib30: {time_s: 0.38, mem_mb: 115.0}
-      sum_range: {time_s: 0.31, mem_mb: 108.5}
-      map_filter: {time_s: 0.38, mem_mb: 114.3}
-      string_ops: {time_s: 0.31, mem_mb: 108.7}
-      data_transform: {time_s: 0.39, mem_mb: 114.3}
+      fib30: {time_s: 0.38, mem_mb: 117.6}
+      sum_range: {time_s: 0.30, mem_mb: 115.1}
+      map_filter: {time_s: 0.38, mem_mb: 113.7}
+      string_ops: {time_s: 0.31, mem_mb: 107.9}
+      data_transform: {time_s: 0.37, mem_mb: 121.3}
+    # JVM Clojure (warm): JIT warm-up 3回後、5回計測の中央値
+    # 1 JVM プロセスで全ベンチを連続実行 (clj_warm_bench.clj)
+    # メモリは計測不可 (プロセス内計測のため)
+    clojure_warm:
+      version: "1.12.4 (OpenJDK 21)"
+      fib30: {time_ms: 9.67}
+      sum_range: {time_ms: 5.79}
+      map_filter: {time_ms: 1.59}
+      string_ops: {time_ms: 1.82}
+      data_transform: {time_ms: 1.50}
+    # babashka: GraalVM ネイティブコンパイル済み Clojure (sci ベース)
+    babashka:
+      version: "v1.12.214"
+      fib30: {time_s: 0.16, mem_mb: 70.4}
+      sum_range: {time_s: 0.02, mem_mb: 58.9}
+      map_filter: {time_s: 0.01, mem_mb: 31.7}
+      string_ops: {time_s: 0.01, mem_mb: 32.3}
+      data_transform: {time_s: 0.01, mem_mb: 33.7}
 # ClojureWasmBeta 履歴
 history:
   - date: 2026-01-28
