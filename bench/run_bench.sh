@@ -1,35 +1,27 @@
 #!/bin/bash
-# fib(30) ベンチマーク — 全言語比較
-# fib(30) は ClojureWasmBeta で 152秒かかるため fib(30) を採用
-# 使い方: bash bench/run_bench.sh
+# 全言語・全ベンチマーク計測スクリプト
+# 使い方: bash bench/run_bench.sh [--yaml]
+#   --yaml: YAML フォーマットで出力 (status/bench.yaml への転記用)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-RUNS=5
+RUNS=3
+YAML_MODE=false
 
-echo "=========================================="
-echo " fib(30) ベンチマーク"
-echo "=========================================="
-echo ""
-echo "--- 環境情報 ---"
-echo "OS:  $(uname -s) $(uname -r) ($(uname -m))"
-echo "CPU: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'unknown')"
-echo "RAM: $(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1024 / 1024 / 1024 )) GB"
-echo "Date: $(date '+%Y-%m-%d %H:%M:%S')"
-echo ""
+[[ "${1:-}" == "--yaml" ]] && YAML_MODE=true
 
-# 中央値を計算 (5個の値からソートして3番目)
+# --- ヘルパー関数 ---
+
 median() {
-    echo "$@" | tr ' ' '\n' | sort -n | sed -n '3p'
+    echo "$@" | tr ' ' '\n' | sort -n | sed -n '2p'
 }
 
-# 実行時間計測 (秒, 小数点3桁)
-measure_time() {
+measure() {
     local cmd="$1"
     local times=()
-    for i in $(seq 1 $RUNS); do
+    for _ in $(seq 1 $RUNS); do
         local t
         t=$( { /usr/bin/time -p sh -c "$cmd > /dev/null 2>&1" ; } 2>&1 | grep '^real' | awk '{print $2}' )
         times+=("$t")
@@ -37,120 +29,162 @@ measure_time() {
     median "${times[@]}"
 }
 
-# メモリ計測 (KB → MB)
-measure_memory() {
+measure_mem() {
     local cmd="$1"
     local mem_bytes
     mem_bytes=$( /usr/bin/time -l sh -c "$cmd > /dev/null 2>&1" 2>&1 | grep 'maximum resident set size' | awk '{print $1}' )
     echo "scale=1; $mem_bytes / 1048576" | bc
 }
 
-# 結果格納
-declare -A LANG_TIME LANG_MEM LANG_VER
+# --- ビルド ---
 
-echo "--- ビルド ---"
+build_c() {
+    local bench=$1
+    local src="$SCRIPT_DIR/$bench/${bench%30}.c"
+    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.c"
+    local out="$SCRIPT_DIR/$bench/bench_c"
+    cc -O3 -o "$out" "$src" 2>/dev/null
+    echo "$out"
+}
 
-# C
-echo -n "C:   ビルド中... "
-cc -O3 -o "$SCRIPT_DIR/fib_c" "$SCRIPT_DIR/fib.c"
-LANG_VER[C]="$(cc --version 2>&1 | head -1)"
-echo "OK"
+build_cpp() {
+    local bench=$1
+    local src="$SCRIPT_DIR/$bench/${bench%30}.cpp"
+    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.cpp"
+    local out="$SCRIPT_DIR/$bench/bench_cpp"
+    c++ -O3 -o "$out" "$src" 2>/dev/null
+    echo "$out"
+}
 
-# C++
-echo -n "C++: ビルド中... "
-c++ -O3 -o "$SCRIPT_DIR/fib_cpp" "$SCRIPT_DIR/fib.cpp"
-LANG_VER[Cpp]="$(c++ --version 2>&1 | head -1)"
-echo "OK"
+build_zig() {
+    local bench=$1
+    local src="$SCRIPT_DIR/$bench/${bench%30}.zig"
+    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.zig"
+    local out="$SCRIPT_DIR/$bench/bench_zig"
+    (cd "$SCRIPT_DIR/$bench" && zig build-exe -OReleaseFast "$(basename "$src")" -femit-bin=bench_zig 2>/dev/null)
+    echo "$out"
+}
 
-# Java
-echo -n "Java: ビルド中... "
-javac "$SCRIPT_DIR/Fib.java"
-LANG_VER[Java]="$(java --version 2>&1 | head -1)"
-echo "OK"
+build_java() {
+    local bench=$1
+    local class_name
+    case "$bench" in
+        fib30) class_name="Fib" ;;
+        sum_range) class_name="SumRange" ;;
+        map_filter) class_name="MapFilter" ;;
+        string_ops) class_name="StringOps" ;;
+        data_transform) class_name="DataTransform" ;;
+    esac
+    javac "$SCRIPT_DIR/$bench/$class_name.java" 2>/dev/null
+    echo "java -cp $SCRIPT_DIR/$bench $class_name"
+}
 
-# Zig
-echo -n "Zig: ビルド中... "
-(cd "$SCRIPT_DIR" && zig build-exe -OReleaseFast fib.zig -femit-bin=fib_zig 2>/dev/null)
-LANG_VER[Zig]="Zig $(zig version)"
-echo "OK"
+run_py() {
+    local bench=$1
+    local src="$SCRIPT_DIR/$bench/${bench%30}.py"
+    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.py"
+    echo "python3 $src"
+}
 
-# Python
-LANG_VER[Python]="$(python3 --version)"
+run_rb() {
+    local bench=$1
+    local src="$SCRIPT_DIR/$bench/${bench%30}.rb"
+    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.rb"
+    echo "ruby --yjit $src"
+}
 
-# Ruby
-LANG_VER[Ruby]="$(ruby --version | awk '{print $1, $2}')"
+run_clj() {
+    local bench=$1
+    local src="$SCRIPT_DIR/$bench/${bench%30}.clj"
+    [[ "$bench" == "fib30" ]] && src="$SCRIPT_DIR/$bench/fib.clj"
+    echo "$PROJECT_DIR/zig-out/bin/ClojureWasmBeta $src"
+}
 
-# ClojureWasmBeta — ReleaseFast ビルド
-echo -n "ClojureWasmBeta: ビルド確認中... "
-CLJ_WASM="$PROJECT_DIR/zig-out/bin/ClojureWasmBeta"
-if [ ! -f "$CLJ_WASM" ]; then
-    echo "バイナリが見つかりません。zig build -Doptimize=ReleaseFast を実行してください。"
-    exit 1
+# --- メイン ---
+
+BENCHMARKS=(fib30 sum_range map_filter string_ops data_transform)
+LANGUAGES=(c cpp zig java ruby python clojurewasmbeta)
+
+if ! $YAML_MODE; then
+    echo "=========================================="
+    echo " 全言語ベンチマーク ($RUNS runs 中央値)"
+    echo "=========================================="
+    echo ""
+    echo "環境: $(uname -m), $(sysctl -n machdep.cpu.brand_string 2>/dev/null)"
+    echo "日付: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo ""
 fi
-LANG_VER[ClojureWasmBeta]="ClojureWasmBeta (Zig $(zig version), VM)"
-echo "OK"
 
-echo ""
-echo "--- 計測中 ($RUNS 回の中央値) ---"
+# 結果格納用連想配列
+declare -A RESULTS_TIME RESULTS_MEM
 
-# C
-echo -n "C:   "
-LANG_TIME[C]=$(measure_time "$SCRIPT_DIR/fib_c")
-LANG_MEM[C]=$(measure_memory "$SCRIPT_DIR/fib_c")
-echo "${LANG_TIME[C]}s / ${LANG_MEM[C]} MB"
+for bench in "${BENCHMARKS[@]}"; do
+    if ! $YAML_MODE; then
+        echo "--- $bench ---"
+    fi
 
-# C++
-echo -n "C++: "
-LANG_TIME[Cpp]=$(measure_time "$SCRIPT_DIR/fib_cpp")
-LANG_MEM[Cpp]=$(measure_memory "$SCRIPT_DIR/fib_cpp")
-echo "${LANG_TIME[Cpp]}s / ${LANG_MEM[Cpp]} MB"
+    # ビルド (C/C++/Zig/Java)
+    C_BIN=$(build_c "$bench")
+    CPP_BIN=$(build_cpp "$bench")
+    ZIG_BIN=$(build_zig "$bench")
+    JAVA_CMD=$(build_java "$bench")
+    PY_CMD=$(run_py "$bench")
+    RB_CMD=$(run_rb "$bench")
+    CLJ_CMD=$(run_clj "$bench")
 
-# Zig
-echo -n "Zig: "
-LANG_TIME[Zig]=$(measure_time "$SCRIPT_DIR/fib_zig")
-LANG_MEM[Zig]=$(measure_memory "$SCRIPT_DIR/fib_zig")
-echo "${LANG_TIME[Zig]}s / ${LANG_MEM[Zig]} MB"
+    # 計測
+    for lang in "${LANGUAGES[@]}"; do
+        case "$lang" in
+            c) cmd="$C_BIN" ;;
+            cpp) cmd="$CPP_BIN" ;;
+            zig) cmd="$ZIG_BIN" ;;
+            java) cmd="$JAVA_CMD" ;;
+            python) cmd="$PY_CMD" ;;
+            ruby) cmd="$RB_CMD" ;;
+            clojurewasmbeta) cmd="$CLJ_CMD" ;;
+        esac
 
-# Java
-echo -n "Java: "
-LANG_TIME[Java]=$(measure_time "java -cp $SCRIPT_DIR Fib")
-LANG_MEM[Java]=$(measure_memory "java -cp $SCRIPT_DIR Fib")
-echo "${LANG_TIME[Java]}s / ${LANG_MEM[Java]} MB"
+        t=$(measure "$cmd")
+        m=$(measure_mem "$cmd")
+        RESULTS_TIME["${bench}_${lang}"]=$t
+        RESULTS_MEM["${bench}_${lang}"]=$m
 
-# Ruby (YJIT)
-echo -n "Ruby: "
-LANG_TIME[Ruby]=$(measure_time "ruby --yjit $SCRIPT_DIR/fib.rb")
-LANG_MEM[Ruby]=$(measure_memory "ruby --yjit $SCRIPT_DIR/fib.rb")
-echo "${LANG_TIME[Ruby]}s / ${LANG_MEM[Ruby]} MB"
+        if ! $YAML_MODE; then
+            printf "  %-16s %6ss / %7s MB\n" "$lang" "$t" "$m"
+        fi
+    done
 
-# ClojureWasmBeta
-echo -n "ClojureWasmBeta: "
-LANG_TIME[ClojureWasmBeta]=$(measure_time "$CLJ_WASM $SCRIPT_DIR/fib.clj")
-LANG_MEM[ClojureWasmBeta]=$(measure_memory "$CLJ_WASM $SCRIPT_DIR/fib.clj")
-echo "${LANG_TIME[ClojureWasmBeta]}s / ${LANG_MEM[ClojureWasmBeta]} MB"
-
-# Python (最後 — 遅い)
-echo -n "Python: "
-LANG_TIME[Python]=$(measure_time "python3 $SCRIPT_DIR/fib.py")
-LANG_MEM[Python]=$(measure_memory "python3 $SCRIPT_DIR/fib.py")
-echo "${LANG_TIME[Python]}s / ${LANG_MEM[Python]} MB"
-
-echo ""
-echo "=========================================="
-echo " 結果サマリ: fib(30) — 中央値 ($RUNS runs)"
-echo "=========================================="
-echo ""
-printf "%-20s %-12s %-10s %s\n" "言語" "時間(s)" "メモリ(MB)" "バージョン"
-printf "%-20s %-12s %-10s %s\n" "----" "-------" "---------" "----------"
-for lang in C Cpp Zig Java Ruby ClojureWasmBeta Python; do
-    name="$lang"
-    [ "$lang" = "Cpp" ] && name="C++"
-    printf "%-20s %-12s %-10s %s\n" "$name" "${LANG_TIME[$lang]}" "${LANG_MEM[$lang]}" "${LANG_VER[$lang]}"
+    # クリーンアップ
+    rm -f "$SCRIPT_DIR/$bench/bench_c" "$SCRIPT_DIR/$bench/bench_cpp" "$SCRIPT_DIR/$bench/bench_zig"
+    rm -f "$SCRIPT_DIR/$bench"/*.class
+    rm -rf "$SCRIPT_DIR/$bench/.zig-cache" "$SCRIPT_DIR/$bench/bench_zig.o"
 done
-echo ""
 
-# クリーンアップ
-rm -f "$SCRIPT_DIR/fib_c" "$SCRIPT_DIR/fib_cpp" "$SCRIPT_DIR/fib_zig" "$SCRIPT_DIR/Fib.class"
-rm -rf "$SCRIPT_DIR/fib_zig.o" "$SCRIPT_DIR/.zig-cache"
-
-echo "クリーンアップ完了"
+# YAML 出力
+if $YAML_MODE; then
+    echo "# 計測日: $(date '+%Y-%m-%d')"
+    echo ""
+    echo "baseline:"
+    echo "  date: $(date '+%Y-%m-%d')"
+    echo "  languages:"
+    for lang in c cpp zig java ruby python; do
+        echo "    $lang:"
+        for bench in "${BENCHMARKS[@]}"; do
+            t=${RESULTS_TIME["${bench}_${lang}"]}
+            m=${RESULTS_MEM["${bench}_${lang}"]}
+            echo "      $bench: { time_s: $t, mem_mb: $m }"
+        done
+    done
+    echo ""
+    echo "# ClojureWasmBeta"
+    echo "history:"
+    echo "  - date: $(date '+%Y-%m-%d')"
+    echo "    version: \"TODO\""
+    echo "    build: ReleaseFast"
+    echo "    results:"
+    for bench in "${BENCHMARKS[@]}"; do
+        t=${RESULTS_TIME["${bench}_clojurewasmbeta"]}
+        m=${RESULTS_MEM["${bench}_clojurewasmbeta"]}
+        echo "      $bench: { time_s: $t, mem_mb: $m }"
+    done
+fi

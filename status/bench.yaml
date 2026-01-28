@@ -1,6 +1,6 @@
 # ベンチマーク結果
 #
-# 変遷を記録して最適化の効果を追跡する。
+# 全言語で同一ベンチマークを実行し、時間 (秒) とメモリ (MB) を記録。
 # ClojureWasmBeta のみ履歴を蓄積。他言語は baseline として一度だけ記録。
 
 # 計測環境
@@ -14,46 +14,67 @@ env:
 benchmarks:
   fib30:
     description: "再帰フィボナッチ fib(30) — 関数呼び出しオーバーヘッド"
-    file: fib.clj
     expected_result: 832040
   sum_range:
-    description: "遅延シーケンス (range 1000000) + reduce"
-    file: sum_range.clj
+    description: "range(1000000) + sum — 数値シーケンス処理"
     expected_result: 499999500000
   map_filter:
-    description: "HOF チェイン — filter/map/take/reduce"
-    file: map_filter.clj
+    description: "filter odd / map square / take 10000 / sum — HOF チェイン"
     expected_result: 1333333330000
   string_ops:
-    description: "文字列操作 — 10000回の upper-case + 結合"
-    file: string_ops.clj
+    description: "10000回の upper-case + 文字列結合"
     expected_result: 88890
   data_transform:
-    description: "マップ変換 — 10000個のマップを作成・変換"
-    file: data_transform.clj
+    description: "10000個のマップ/構造体を作成・変換"
     expected_result: 10000
 
-# 他言語ベースライン (一度だけ記録, 2026-01-28)
+# 他言語ベースライン (一度だけ記録)
+# 各ベンチは { time_s: 秒, mem_mb: MB } の形式
 baseline:
-  c:
-    version: "Apple clang 17.0.0"
-    fib30: 0.00  # <0.01s
-  zig:
-    version: "0.15.2"
-    fib30: 0.00  # <0.01s
-  java:
-    version: "OpenJDK 21.0.9"
-    fib30: 0.06
-  ruby:
-    version: "3.3.6 (YJIT)"
-    fib30: 0.13
-    sum_range: 0.10
-    map_filter: 0.09
-  python:
-    version: "3.14.2"
-    fib30: 0.07
-    sum_range: 0.02
-    map_filter: 0.02
+  date: 2026-01-28
+  languages:
+    c:
+      version: "Apple clang 17.0.0"
+      fib30: { time_s: 0.00, mem_mb: 1.8 }
+      sum_range: { time_s: 0.00, mem_mb: 1.8 }
+      map_filter: { time_s: 0.00, mem_mb: 1.8 }
+      string_ops: { time_s: 0.00, mem_mb: 1.8 }
+      data_transform: { time_s: 0.00, mem_mb: 1.8 }
+    cpp:
+      version: "Apple clang 17.0.0"
+      fib30: { time_s: 0.00, mem_mb: 1.8 }
+      sum_range: { time_s: 0.00, mem_mb: 1.8 }
+      map_filter: { time_s: 0.01, mem_mb: 1.8 }
+      string_ops: { time_s: 0.00, mem_mb: 1.8 }
+      data_transform: { time_s: 0.00, mem_mb: 1.8 }
+    zig:
+      version: "0.15.2"
+      fib30: { time_s: 0.01, mem_mb: 1.8 }
+      sum_range: { time_s: 0.00, mem_mb: 1.8 }
+      map_filter: { time_s: 0.00, mem_mb: 1.8 }
+      string_ops: { time_s: 0.00, mem_mb: 1.8 }
+      data_transform: { time_s: 0.00, mem_mb: 1.8 }
+    java:
+      version: "OpenJDK 21.0.9"
+      fib30: { time_s: 0.04, mem_mb: 40.8 }
+      sum_range: { time_s: 0.04, mem_mb: 42.1 }
+      map_filter: { time_s: 0.05, mem_mb: 42.8 }
+      string_ops: { time_s: 0.05, mem_mb: 44.0 }
+      data_transform: { time_s: 0.05, mem_mb: 42.2 }
+    ruby:
+      version: "3.3.6 (YJIT)"
+      fib30: { time_s: 0.11, mem_mb: 17.0 }
+      sum_range: { time_s: 0.11, mem_mb: 17.2 }
+      map_filter: { time_s: 0.11, mem_mb: 17.4 }
+      string_ops: { time_s: 0.11, mem_mb: 18.0 }
+      data_transform: { time_s: 0.11, mem_mb: 18.7 }
+    python:
+      version: "3.14.2"
+      fib30: { time_s: 0.08, mem_mb: 14.3 }
+      sum_range: { time_s: 0.02, mem_mb: 14.4 }
+      map_filter: { time_s: 0.02, mem_mb: 14.4 }
+      string_ops: { time_s: 0.02, mem_mb: 15.1 }
+      data_transform: { time_s: 0.02, mem_mb: 17.0 }
 
 # ClojureWasmBeta 履歴
 history:
@@ -61,9 +82,11 @@ history:
     version: "R7+D (post セミスペース GC)"
     build: ReleaseFast
     results:
-      fib30: 9.79
-      sum_range: 0.52
-      map_filter: 1.85
-      string_ops: 0.18
-      data_transform: 0.14
-    notes: "初回計測。fib(38) は 152秒のため fib(30) を採用。"
+      fib30: { time_s: 10.13, mem_mb: 1519.0 }
+      sum_range: { time_s: 0.54, mem_mb: 134.7 }
+      map_filter: { time_s: 2.01, mem_mb: 27481.2 }
+      string_ops: { time_s: 0.19, mem_mb: 1305.5 }
+      data_transform: { time_s: 0.16, mem_mb: 784.0 }
+    notes: |
+      初回計測。map_filter のメモリ 27GB は遅延シーケンスの GC 圧力による。
+      NaN boxing と世代別 GC で大幅改善を期待。
