@@ -24,6 +24,7 @@ const transducers = @import("transducers.zig");
 const namespaces = @import("namespaces.zig");
 const eval_mod = @import("eval.zig");
 const misc = @import("misc.zig");
+const math_fns = @import("math_fns.zig");
 const wasm = @import("wasm.zig");
 
 // ============================================================
@@ -43,7 +44,8 @@ pub const all_builtins = arithmetic.builtins ++
     transducers.builtins ++
     namespaces.builtins ++
     eval_mod.builtins ++
-    misc.builtins;
+    misc.builtins ++
+    math_fns.builtins;
 
 /// wasm 名前空間の builtins
 pub const wasm_builtins = wasm.builtins;
