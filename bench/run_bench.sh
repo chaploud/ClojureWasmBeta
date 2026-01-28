@@ -159,7 +159,7 @@ get_cmd() {
         clojurewasmbeta)
             local clj
             clj=$(ls "$dir"/*.clj 2>/dev/null | head -1)
-            echo "$PROJECT_DIR/zig-out/bin/ClojureWasmBeta $clj"
+            echo "$PROJECT_DIR/zig-out/bin/ClojureWasmBeta --backend=vm $clj"
             ;;
     esac
 }

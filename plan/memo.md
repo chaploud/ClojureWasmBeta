@@ -25,6 +25,8 @@
 
 ### 直近の完了
 
+- **P1c**: fused reduce — map_filter 27GB→2MB, sum_range 401MB→2MB, ジェネレータ直接ルーティング
+- **P1c**: VM ベンチ標準化 — run_bench.sh で --backend=vm をデフォルト化
 - **P1b**: 遅延 take/reduce — lazy-seq の遅延イテレーション実装 (collectToSlice 回避)
 - **BUG**: load-file バックエンド — defs.current_backend でバックエンド統一
 - **P1a**: Safe Point GC — recur/call で GC チェック (VM 実行中)
@@ -71,7 +73,8 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 | 10  | P3    | 定数畳み込み         | 完了     | Analyzer で算術・比較演算の定数畳み込み    |
 | 11  | P3    | tail call dispatch   | 保留     | Zig では実現困難、効果限定的               |
 | 12  | P1b   | 遅延 take/reduce     | 完了     | LazySeq.Take 追加、遅延イテレーション実装  |
-| 13  | P1c   | transducers          | 保留     | map_filter 27GB 問題の根本解決策           |
+| 13  | P1c   | fused reduce         | 完了     | map_filter 27GB→2MB、sum_range 401MB→2MB   |
+| 14  | P1c   | VM ベンチ標準化      | 完了     | run_bench.sh を --backend=vm に変更        |
 
 ### スコープ外 (将来検討)
 
@@ -94,4 +97,4 @@ bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 
 - defmacro inside defn → エラー (トップレベルで定義が必要、明確なエラーメッセージあり)
 - フル medley の `compare-and-set!`/`deref-swap!`/`deref-reset!` 未実装
-- **map_filter 27GB メモリ**: 式境界 GC のため、`(->> (range 100000) (filter ...) (map ...) (take 10000) (reduce +))` のような複合遅延式は中間 LazySeq 構造体が蓄積。根本解決には transducers または増分 GC が必要
+- **map_filter 27GB メモリ**: → fused reduce で解決済み (2MB)。ジェネレータ直接ルーティング + スタック引数バッファ
