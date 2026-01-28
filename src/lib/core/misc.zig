@@ -358,6 +358,87 @@ pub fn testFn(allocator: std.mem.Allocator, args: []const Value) anyerror!Value 
 }
 
 // ============================================================
+// doc / dir（REPL ドキュメント）
+// ============================================================
+
+/// __doc: シンボル名を受け取り、Var のドキュメントを stdout に表示
+pub fn docFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const name = switch (args[0]) {
+        .string => |s| s.data,
+        else => return value_mod.nil,
+    };
+
+    const env = defs.current_env orelse return value_mod.nil;
+    const ns = env.getCurrentNs() orelse return value_mod.nil;
+
+    // Var を解決 (現在 NS → refers → clojure.core)
+    const v = ns.resolve(name) orelse return value_mod.nil;
+
+    // 出力
+    helpers.writeToOutput("-------------------------\n");
+    helpers.writeToOutput(v.ns_name);
+    helpers.writeToOutput("/");
+    helpers.writeToOutput(name);
+    helpers.writeToOutput("\n");
+
+    // arglists
+    if (v.arglists) |arglists| {
+        helpers.writeToOutput(arglists);
+        helpers.writeToOutput("\n");
+    }
+
+    // docstring
+    if (v.doc) |doc| {
+        helpers.writeToOutput("  ");
+        helpers.writeToOutput(doc);
+        helpers.writeToOutput("\n");
+    }
+
+    return value_mod.nil;
+}
+
+/// __dir: 名前空間名を受け取り、public var の一覧を stdout に表示
+pub fn dirFn(_: std.mem.Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1) return error.ArityError;
+    const ns_name = switch (args[0]) {
+        .string => |s| s.data,
+        else => return value_mod.nil,
+    };
+
+    const env = defs.current_env orelse return value_mod.nil;
+    const ns = env.findNs(ns_name) orelse return value_mod.nil;
+
+    // var 名をソートして表示
+    var names: [1024][]const u8 = undefined;
+    var count: usize = 0;
+    var iter = ns.getAllVars();
+    while (iter.next()) |entry| {
+        if (count >= names.len) break;
+        const v = entry.value_ptr.*;
+        // private はスキップ
+        if (v.private) continue;
+        names[count] = entry.key_ptr.*;
+        count += 1;
+    }
+
+    // ソート
+    std.mem.sort([]const u8, names[0..count], {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+
+    // 出力
+    for (names[0..count]) |n| {
+        helpers.writeToOutput(n);
+        helpers.writeToOutput("\n");
+    }
+
+    return value_mod.nil;
+}
+
+// ============================================================
 // builtins
 // ============================================================
 
@@ -387,4 +468,7 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "tap>", .func = tapSendFn },
     // test
     .{ .name = "test", .func = testFn },
+    // doc / dir
+    .{ .name = "__doc", .func = docFn },
+    .{ .name = "__dir", .func = dirFn },
 };

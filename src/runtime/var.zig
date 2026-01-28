@@ -37,6 +37,12 @@ pub const Var = struct {
     /// メタデータ（将来: *PersistentMap）
     meta: ?*const Value = null,
 
+    /// docstring
+    doc: ?[]const u8 = null,
+
+    /// 引数リスト（表示用、例: "[x y]", "([x] [x y])"）
+    arglists: ?[]const u8 = null,
+
     // === メソッド ===
 
     /// root 値を取得（thread-local を考慮しない）

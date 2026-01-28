@@ -57,6 +57,10 @@ pub const Analyzer = struct {
     source_line: u32 = 0,
     source_column: u32 = 0,
 
+    /// defn 展開時の一時保存: docstring と arglists
+    pending_doc: ?[]const u8 = null,
+    pending_arglists: ?[]const u8 = null,
+
     /// 初期化
     pub fn init(allocator: std.mem.Allocator, env: *Env) Analyzer {
         return .{
@@ -1208,8 +1212,13 @@ pub const Analyzer = struct {
             .sym_name = sym_name,
             .init = init_node,
             .is_dynamic = is_dynamic,
+            .doc = self.pending_doc,
+            .arglists = self.pending_arglists,
             .stack = self.currentSourceInfo(),
         };
+        // pending をクリア
+        self.pending_doc = null;
+        self.pending_arglists = null;
 
         const node = self.allocator.create(Node) catch return error.OutOfMemory;
         node.* = .{ .def_node = def_data };
@@ -1590,6 +1599,10 @@ pub const Analyzer = struct {
             return try self.expandDeftype(items);
         } else if (std.mem.eql(u8, name, "set!")) {
             return try self.expandSetBang(items);
+        } else if (std.mem.eql(u8, name, "doc")) {
+            return try self.expandDoc(items);
+        } else if (std.mem.eql(u8, name, "dir")) {
+            return try self.expandDir(items);
         }
         return null;
     }
@@ -1972,8 +1985,12 @@ pub const Analyzer = struct {
 
         // docstring + メタデータマップをスキップ
         var body_start: usize = 2;
+        // docstring を保存
+        self.pending_doc = null;
+        self.pending_arglists = null;
         if (body_start < items.len and items[body_start] == .string) {
-            body_start += 1; // docstring をスキップ
+            self.pending_doc = items[body_start].string;
+            body_start += 1;
         }
         if (body_start < items.len and items[body_start] == .map) {
             body_start += 1; // メタデータマップをスキップ
@@ -1982,6 +1999,9 @@ pub const Analyzer = struct {
         if (body_start >= items.len) {
             return self.analysisError(.invalid_arity, "defn requires at least one body");
         }
+
+        // arglists を構築（表示用文字列）
+        self.pending_arglists = self.buildArglists(items[body_start..]);
 
         // (def name (fn name ...)) を構築
         // fn 部分: items[body_start..] をそのまま fn に渡す
@@ -1998,6 +2018,107 @@ pub const Analyzer = struct {
         def_forms[1] = Form{ .symbol = name_sym };
         def_forms[2] = Form{ .list = fn_forms };
         return Form{ .list = def_forms };
+    }
+
+    /// 引数リスト表示文字列を構築
+    /// 単一アリティ: "[x y]", 複数アリティ: "([x] [x y])"
+    fn buildArglists(self: *Analyzer, rest: []const Form) ?[]const u8 {
+        if (rest.len == 0) return null;
+        // 単一アリティ: rest[0] が vector
+        if (rest[0] == .vector) {
+            return self.formatVector(rest[0].vector);
+        }
+        // 複数アリティ: rest の各要素が list (arity)
+        // 先頭要素が list の場合のみ
+        if (rest[0] == .list) {
+            var buf: [512]u8 = undefined;
+            var pos: usize = 0;
+            buf[pos] = '(';
+            pos += 1;
+            for (rest, 0..) |item, i| {
+                if (item != .list) break;
+                const arity = item.list;
+                if (arity.len > 0 and arity[0] == .vector) {
+                    if (i > 0) {
+                        buf[pos] = ' ';
+                        pos += 1;
+                    }
+                    const vstr = self.formatVector(arity[0].vector) orelse continue;
+                    if (pos + vstr.len >= buf.len - 1) break;
+                    @memcpy(buf[pos..][0..vstr.len], vstr);
+                    pos += vstr.len;
+                }
+            }
+            buf[pos] = ')';
+            pos += 1;
+            if (pos <= 2) return null; // "()" は無意味
+            const result = self.allocator.alloc(u8, pos) catch return null;
+            @memcpy(result, buf[0..pos]);
+            return result;
+        }
+        return null;
+    }
+
+    /// Form vector を "[x y z]" 文字列に変換
+    fn formatVector(self: *Analyzer, vec: []const Form) ?[]const u8 {
+        var buf: [256]u8 = undefined;
+        var pos: usize = 0;
+        buf[pos] = '[';
+        pos += 1;
+        for (vec, 0..) |elem, i| {
+            if (i > 0) {
+                buf[pos] = ' ';
+                pos += 1;
+            }
+            const name = switch (elem) {
+                .symbol => |s| s.name,
+                .keyword => |k| k.name,
+                else => "?",
+            };
+            // & を特別扱い
+            const text = if (elem == .symbol and std.mem.eql(u8, elem.symbol.name, "&")) "&" else name;
+            if (pos + text.len >= buf.len - 1) break;
+            @memcpy(buf[pos..][0..text.len], text);
+            pos += text.len;
+        }
+        buf[pos] = ']';
+        pos += 1;
+        const result = self.allocator.alloc(u8, pos) catch return null;
+        @memcpy(result, buf[0..pos]);
+        return result;
+    }
+
+    /// (doc name) → (__doc "name") builtin 関数呼び出し
+    fn expandDoc(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 2) {
+            return self.analysisError(.invalid_arity, "doc requires exactly 1 argument");
+        }
+        // items[1] はシンボル (クオート不要) — 名前を文字列として渡す
+        const name = switch (items[1]) {
+            .symbol => |s| s.name,
+            else => return self.analysisError(.invalid_token, "doc argument must be a symbol"),
+        };
+        // (__doc "name")
+        const forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        forms[0] = Form{ .symbol = form_mod.Symbol.init("__doc") };
+        forms[1] = Form{ .string = name };
+        return Form{ .list = forms };
+    }
+
+    /// (dir ns-name) → (__dir "ns-name") builtin 関数呼び出し
+    fn expandDir(self: *Analyzer, items: []const Form) err.Error!Form {
+        if (items.len != 2) {
+            return self.analysisError(.invalid_arity, "dir requires exactly 1 argument");
+        }
+        const name = switch (items[1]) {
+            .symbol => |s| s.name,
+            else => return self.analysisError(.invalid_token, "dir argument must be a symbol"),
+        };
+        // (__dir "ns-name")
+        const forms = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        forms[0] = Form{ .symbol = form_mod.Symbol.init("__dir") };
+        forms[1] = Form{ .string = name };
+        return Form{ .list = forms };
     }
 
     /// (if-not test then) → (if (not test) then)

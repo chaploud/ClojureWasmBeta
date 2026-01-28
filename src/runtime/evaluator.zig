@@ -718,6 +718,16 @@ fn runDef(node: *const node_mod.DefNode, ctx: *Context) EvalError!Value {
         v.dynamic = true;
     }
 
+    // docstring を設定
+    if (node.doc) |doc| {
+        v.doc = doc;
+    }
+
+    // arglists を設定
+    if (node.arglists) |arglists| {
+        v.arglists = arglists;
+    }
+
     // Var を返す（#'ns/name 形式）
     return Value{ .var_val = @ptrCast(v) };
 }
