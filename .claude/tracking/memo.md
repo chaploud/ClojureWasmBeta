@@ -464,6 +464,20 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 - **判断**: 現段階では投入コスト対効果が見合わない。ベンチマークで
   ボトルネックが判明した場合に再検討。
 
+### S1e: clojure.math 名前空間 — 完了
+
+- **`src/lib/core/math_fns.zig`**: 33 builtin 数学関数 (comptime ジェネリックラッパー)
+  - 三角: sin, cos, tan, asin, acos, atan, atan2
+  - 双曲線: sinh, cosh, tanh
+  - 指数/対数: exp, expm1, log, log10, log1p, pow
+  - 冪根: sqrt, cbrt, hypot
+  - 丸め: ceil, floor, rint, round
+  - 符号: signum, copy-sign, abs
+  - 整数: floor-div, floor-mod
+  - その他: IEEE-remainder, to-degrees, to-radians, random
+- **`src/clj/clojure/math.clj`**: E, PI 定数 + 33 defn ラッパー
+- **テスト**: `test/compat/clojure_math.clj` — 41 assertions (TreeWalk/VM/--compare 全 PASS)
+
 ### 推奨次回タスク
 
 1. **U4 残項目**: 既知バグ修正 (^:const, with-local-vars 等)
@@ -598,7 +612,8 @@ U4e の修正で 2 段ネストは修正されたが、3 段以上のネスト�
 | `test/compat/clojure_walk.clj`           | 9            | PASS |
 | `test/compat/clojure_edn.clj`            | 9            | PASS |
 | `test/compat/watches.clj`               | 12           | PASS |
-| **compat 合計**                          | **655**      |      |
+| `test/compat/clojure_math.clj`          | 41           | PASS |
+| **compat 合計**                          | **696**      |      |
 
 ### テスト基盤
 

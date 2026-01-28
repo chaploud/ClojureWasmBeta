@@ -319,7 +319,7 @@ doc/dir はマクロ展開、find-doc/apropos は builtin 関数。
 | ~~with-redefs VM クラッシュ~~ | ✅ 再現不可 (自然修正) |        |
 | ^:const 未対応                | 低     | 中     |
 | with-local-vars 未実装        | 低     | 中     |
-| add-watch on var 未実装       | 低     | 中     |
+| ~~add-watch on var 未実装~~   | ✅ 完了 (U4g) |        |
 | ~~thread-bound? 多引数~~      | ✅ 完了 (U4c) |        |
 | ~~^:private / defn- 未対応~~  | ✅ 完了 (U4d) |        |
 | defmacro inside defn          | 低     | 高     |
@@ -360,6 +360,7 @@ doc/dir はマクロ展開、find-doc/apropos は builtin 関数。
 | S1b  | clojure.set (11 関数)                        | ✅ 完了   |
 | S1c  | clojure.string 完全化 + clojure.walk (7 関数) | ✅ 完了   |
 | S1d  | clojure.edn (read-string)                    | ✅ 完了   |
+| S1e  | clojure.math (33 数学関数)                   | ✅ 完了   |
 
 **長期ビジョン**:
 - ブートストラップ `.clj` ファイル群を `src/clj/` に配置
