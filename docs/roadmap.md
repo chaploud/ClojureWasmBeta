@@ -314,9 +314,9 @@ user/-main    - user.clj:50:3
 
 | バグ                          | 優先度 | 難易度 |
 |-------------------------------|--------|--------|
-| map-as-fn 2-arity             | 中     | 低     |
-| symbol-as-fn                  | 中     | 低     |
-| sets-as-functions             | 中     | 中     |
+| ~~map-as-fn 2-arity~~         | ✅ 完了 (U4a) |        |
+| ~~symbol-as-fn~~              | ✅ 完了 (U4a) |        |
+| ~~sets-as-functions~~         | ✅ 完了 (U4a) |        |
 | with-redefs VM クラッシュ     | 高     | 高     |
 | ^:const 未対応                | 低     | 中     |
 | with-local-vars 未実装        | 低     | 中     |

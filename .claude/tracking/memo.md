@@ -218,6 +218,19 @@ babashka / SandboxClojureWasm の実際の出力を調査し、フォーマッ�
   ```
 - 全テスト維持 (760/1 compat, 270/274 zig)
 
+### U4a: map/set/symbol を関数として呼び出し — 完了
+
+map, set, symbol を Clojure 同様に関数として呼び出し可能に。
+
+- **evaluator.zig**: `callWithArgs` に `.map`, `.set`, `.symbol` ケース追加
+  - map-as-fn: `({:a 1} :a)` → `1`, `({:a 1} :c :default)` → `:default`
+  - set-as-fn: `(#{:a :b} :a)` → `:a`, `(#{:a :b} :c)` → `nil`
+  - symbol-as-fn: `('k {'k 1})` → `1`, `('k {} :d)` → `:d`
+- **vm.zig**: `callValue` に同一ロジック追加 (スタック操作版)
+- 全て 2-arity (デフォルト値) 対応
+- `--compare` モードで両バックエンド一致確認
+- 全テスト維持 (760/1 compat, 270/274 zig)
+
 ### 推奨次回タスク
 
 1. **U2c: スタックトレース** — 関数名 + ソース位置のコールスタック表示
@@ -373,8 +386,8 @@ deftest body 内 (= defn body 内) で使えない構文:
 | map/set リテラル in macro body         | load-file 時 | hash-map/hash-set                 | Q2a ✅    |
 | fn-level recur returns nil             | defn+recur   | loop+recur を使用                 | Q2b ✅    |
 | vector-list equality broken            | = [1] '(1)   | 修正済み (eql で sequential 比較) | 済        |
-| map-as-fn 2-arity                      | ({:a 1} k d) | get with default                  | —         |
-| symbol-as-fn                           | ('a map)     | get                               | —         |
+| map-as-fn 2-arity                      | ({:a 1} k d) | get with default                  | U4a ✅    |
+| symbol-as-fn                           | ('a map)     | get                               | U4a ✅    |
 | defonce not preventing redef           | defonce      | スキップ                          | Q3e ✅    |
 | letfn mutual recursion                 | letfn f→g    | スキップ                          | Q4b ✅    |
 | #'var as callable                      | (#'foo)      | スキップ                          | Q3b ✅    |
@@ -432,7 +445,7 @@ deftest body 内 (= defn body 内) で使えない構文:
 
 ### 既知の制限 (Phase 26 から引き継ぎ)
 
-- sets-as-functions 未対応 (`#{:a :b}` を関数として使用不可)
+- ~~sets-as-functions 未対応~~ → U4a で修正済み (map/set/symbol を関数として呼び出し可能)
 - フル medley の `compare-and-set!`/`deref-swap!`/`deref-reset!` 未実装
 - ~~文字列表示で `!` がエスケープされる~~ → シェル環境の問題 (コードバグではない)
 - VM での `with-redefs` 後のユーザー関数呼び出しクラッシュ (Phase 23 由来)
