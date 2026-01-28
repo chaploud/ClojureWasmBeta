@@ -453,6 +453,13 @@ pub const Compiler = struct {
 
     /// call
     fn emitCall(self: *Compiler, node: *const node_mod.CallNode) CompileError!void {
+        // 2引数の算術・比較演算を専用 opcode に置換 (高速パス)
+        if (node.args.len == 2) {
+            if (self.tryEmitArithmeticOpcode(node)) {
+                return;
+            }
+        }
+
         // 関数をコンパイル（sp_depth += 1 は子が処理）
         try self.compile(node.fn_node);
 
@@ -464,6 +471,61 @@ pub const Compiler = struct {
         // call 命令（fn + N引数をポップ、結果1つプッシュ → net -N）
         try self.chunk.emit(.call, @intCast(node.args.len));
         self.sp_depth -= @intCast(node.args.len);
+    }
+
+    /// 2引数の算術・比較関数呼び出しを専用 opcode に置換
+    /// 成功時は true を返し、emitCall の残りをスキップ
+    fn tryEmitArithmeticOpcode(self: *Compiler, node: *const node_mod.CallNode) bool {
+        // fn_node が clojure.core の算術/比較関数の Var 参照かチェック
+        const fn_node = node.fn_node;
+        if (fn_node.* != .var_ref) return false;
+
+        const v: *Var = @ptrCast(@alignCast(fn_node.var_ref.var_ref));
+
+        // clojure.core の関数のみ最適化
+        if (!std.mem.eql(u8, v.ns_name, "clojure.core")) return false;
+
+        const opcode: OpCode = switch (getArithmeticOpcode(v.sym.name)) {
+            .none => return false,
+            .add => .add,
+            .sub => .sub,
+            .mul => .mul,
+            .div => .div,
+            .lt => .lt,
+            .le => .le,
+            .gt => .gt,
+            .ge => .ge,
+        };
+
+        // 引数をコンパイル (関数はプッシュしない)
+        self.compile(node.args[0]) catch return false;
+        self.compile(node.args[1]) catch return false;
+
+        // 専用 opcode を発行 (2値ポップ、1値プッシュ → net -1)
+        self.chunk.emitOp(opcode) catch return false;
+        self.sp_depth -= 1;
+        return true;
+    }
+
+    /// 算術・比較 opcode の種類
+    const ArithOp = enum { none, add, sub, mul, div, lt, le, gt, ge };
+
+    /// 関数名から算術 opcode を判定
+    fn getArithmeticOpcode(name: []const u8) ArithOp {
+        if (name.len == 1) {
+            return switch (name[0]) {
+                '+' => .add,
+                '-' => .sub,
+                '*' => .mul,
+                '/' => .div,
+                '<' => .lt,
+                '>' => .gt,
+                else => .none,
+            };
+        }
+        if (std.mem.eql(u8, name, "<=")) return .le;
+        if (std.mem.eql(u8, name, ">=")) return .ge;
+        return .none;
     }
 
     /// def

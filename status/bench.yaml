@@ -97,3 +97,12 @@ history:
       map_filter: {time_s: 1.75, mem_mb: 27164.3}
       string_ops: {time_s: 0.09, mem_mb: 1278.8}
       data_transform: {time_s: 0.06, mem_mb: 782.4}
+  - date: 2026-01-29
+    version: "P3 TreeWalk fast arithmetic"
+    build: ReleaseFast
+    results:
+      fib30: {time_s: 0.92, mem_mb: 730.2}
+      sum_range: {time_s: 0.07, mem_mb: 133.2}
+      map_filter: {time_s: 1.57, mem_mb: 27479.2}
+      string_ops: {time_s: 0.09, mem_mb: 1278.8}
+      data_transform: {time_s: 0.06, mem_mb: 782.0}

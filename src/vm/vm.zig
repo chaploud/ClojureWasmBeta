@@ -582,6 +582,79 @@ pub const VM = struct {
                 // ═══════════════════════════════════════════════════════
                 // [Z] 予約・デバッグ
                 // ═══════════════════════════════════════════════════════
+                // ═══════════════════════════════════════════════════════
+                // [M] 算術・比較演算 (高速パス)
+                // ═══════════════════════════════════════════════════════
+                .add => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    const result = numericBinaryOp(a, b, .add) catch return error.TypeError;
+                    try self.push(result);
+                },
+                .sub => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    const result = numericBinaryOp(a, b, .sub) catch return error.TypeError;
+                    try self.push(result);
+                },
+                .mul => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    const result = numericBinaryOp(a, b, .mul) catch return error.TypeError;
+                    try self.push(result);
+                },
+                .div => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    const result = numericBinaryOp(a, b, .div) catch |e| {
+                        if (e == error.DivisionByZero) return error.DivisionByZero;
+                        return error.TypeError;
+                    };
+                    try self.push(result);
+                },
+                .lt => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    const result = numericCompare(a, b, .lt) catch return error.TypeError;
+                    try self.push(result);
+                },
+                .le => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    const result = numericCompare(a, b, .le) catch return error.TypeError;
+                    try self.push(result);
+                },
+                .gt => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    const result = numericCompare(a, b, .gt) catch return error.TypeError;
+                    try self.push(result);
+                },
+                .ge => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    const result = numericCompare(a, b, .ge) catch return error.TypeError;
+                    try self.push(result);
+                },
+                .inc => {
+                    const a = self.pop();
+                    const result = switch (a) {
+                        .int => |n| value_mod.intVal(n + 1),
+                        .float => |f| value_mod.floatVal(f + 1.0),
+                        else => return error.TypeError,
+                    };
+                    try self.push(result);
+                },
+                .dec => {
+                    const a = self.pop();
+                    const result = switch (a) {
+                        .int => |n| value_mod.intVal(n - 1),
+                        .float => |f| value_mod.floatVal(f - 1.0),
+                        else => return error.TypeError,
+                    };
+                    try self.push(result);
+                },
+
                 .nop => {},
                 .debug_print => {
                     // デバッグ用: スタックトップを表示（現時点では何もしない）
@@ -1620,6 +1693,84 @@ pub const VM = struct {
         return self.stack[self.sp - 1 - distance];
     }
 };
+
+// === 算術・比較ヘルパー (インライン展開用) ===
+
+const BinaryOp = enum { add, sub, mul, div };
+const CompareOp = enum { lt, le, gt, ge };
+
+/// 2項算術演算 (整数または浮動小数点)
+fn numericBinaryOp(a: Value, b: Value, op: BinaryOp) error{TypeError, DivisionByZero}!Value {
+    // int + int → int (div 以外)
+    if (a == .int and b == .int) {
+        const ai = a.int;
+        const bi = b.int;
+        return switch (op) {
+            .add => value_mod.intVal(ai +% bi),
+            .sub => value_mod.intVal(ai -% bi),
+            .mul => value_mod.intVal(ai *% bi),
+            .div => blk: {
+                if (bi == 0) return error.DivisionByZero;
+                // Clojure の / は常に有理数/浮動小数点を返すが、簡略化
+                break :blk value_mod.floatVal(@as(f64, @floatFromInt(ai)) / @as(f64, @floatFromInt(bi)));
+            },
+        };
+    }
+    // それ以外は float に変換
+    const af: f64 = switch (a) {
+        .int => |n| @floatFromInt(n),
+        .float => |f| f,
+        else => return error.TypeError,
+    };
+    const bf: f64 = switch (b) {
+        .int => |n| @floatFromInt(n),
+        .float => |f| f,
+        else => return error.TypeError,
+    };
+    return value_mod.floatVal(switch (op) {
+        .add => af + bf,
+        .sub => af - bf,
+        .mul => af * bf,
+        .div => blk: {
+            if (bf == 0) return error.DivisionByZero;
+            break :blk af / bf;
+        },
+    });
+}
+
+/// 2項比較演算 (整数または浮動小数点)
+fn numericCompare(a: Value, b: Value, op: CompareOp) error{TypeError}!Value {
+    // int vs int
+    if (a == .int and b == .int) {
+        const ai = a.int;
+        const bi = b.int;
+        const result = switch (op) {
+            .lt => ai < bi,
+            .le => ai <= bi,
+            .gt => ai > bi,
+            .ge => ai >= bi,
+        };
+        return if (result) value_mod.true_val else value_mod.false_val;
+    }
+    // float 変換
+    const af: f64 = switch (a) {
+        .int => |n| @floatFromInt(n),
+        .float => |f| f,
+        else => return error.TypeError,
+    };
+    const bf: f64 = switch (b) {
+        .int => |n| @floatFromInt(n),
+        .float => |f| f,
+        else => return error.TypeError,
+    };
+    const result = switch (op) {
+        .lt => af < bf,
+        .le => af <= bf,
+        .gt => af > bf,
+        .ge => af >= bf,
+    };
+    return if (result) value_mod.true_val else value_mod.false_val;
+}
 
 // === テスト ===
 

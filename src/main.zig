@@ -64,6 +64,7 @@ pub fn main() !void {
     var compare_mode = false;
     var gc_stats = false;
     var dump_bytecode = false;
+    var profile_mode = false;
     var nrepl_mode = false;
     var nrepl_port: u16 = 0; // 0 = OS 割り当て
 
@@ -119,6 +120,8 @@ pub fn main() !void {
             gc_stats = true;
         } else if (std.mem.eql(u8, args[i], "--dump-bytecode")) {
             dump_bytecode = true;
+        } else if (std.mem.eql(u8, args[i], "--profile")) {
+            profile_mode = true;
         } else if (std.mem.eql(u8, args[i], "--nrepl-server")) {
             nrepl_mode = true;
         } else if (std.mem.startsWith(u8, args[i], "--port=")) {
@@ -212,6 +215,12 @@ pub fn main() !void {
                 std.process.exit(1);
             };
             vm_snapshot = compare_out;
+        } else if (profile_mode) {
+            runWithProfile(&allocs, &env, expr, backend, stdout, stderr) catch |err| {
+                reportError(err, stderr);
+                base_error.setSourceText(null);
+                std.process.exit(1);
+            };
         } else {
             runWithBackend(&allocs, &env, expr, backend, stdout) catch |err| {
                 reportError(err, stderr);
@@ -226,6 +235,62 @@ pub fn main() !void {
         // 式境界で GC（閾値超過時のみ）
         allocs.collectGarbage(&env, core.getGcGlobals());
     }
+}
+
+/// プロファイル付きで式を評価 (各段階の時間を計測)
+fn runWithProfile(
+    allocs: *Allocators,
+    env: *Env,
+    source: []const u8,
+    backend: Backend,
+    writer: *std.Io.Writer,
+    profile_writer: *std.Io.Writer,
+) !void {
+    const Timer = std.time.Timer;
+
+    // 全体タイマー
+    var total_timer = Timer.start() catch return error.TimerUnavailable;
+
+    // === Reader ===
+    var reader_timer = Timer.start() catch return error.TimerUnavailable;
+    var reader = Reader.init(allocs.scratch(), source);
+    const located = try reader.readLocated() orelse return error.EmptyInput;
+    const reader_ns = reader_timer.read();
+
+    // === Analyzer ===
+    var analyzer_timer = Timer.start() catch return error.TimerUnavailable;
+    var analyzer = Analyzer.init(allocs.scratch(), env);
+    analyzer.source_line = located.line;
+    analyzer.source_column = located.column;
+    const node = try analyzer.analyze(located.form);
+    const analyzer_ns = analyzer_timer.read();
+
+    // === Engine ===
+    var engine_timer = Timer.start() catch return error.TimerUnavailable;
+    var eng = EvalEngine.init(allocs.persistent(), env, backend);
+    const raw_result = try eng.run(node);
+    const engine_ns = engine_timer.read();
+
+    // === LazySeq 実体化 ===
+    var realize_timer = Timer.start() catch return error.TimerUnavailable;
+    const result = core.ensureRealized(allocs.persistent(), raw_result) catch raw_result;
+    const realize_ns = realize_timer.read();
+
+    const total_ns = total_timer.read();
+
+    // 結果を出力
+    try printValue(writer, result);
+    try writer.writeByte('\n');
+    try writer.flush();
+
+    // プロファイル情報を出力
+    try profile_writer.writeAll("\n[Profile]\n");
+    try profile_writer.print("  Reader:    {d:>8.3} ms\n", .{@as(f64, @floatFromInt(reader_ns)) / 1_000_000.0});
+    try profile_writer.print("  Analyzer:  {d:>8.3} ms\n", .{@as(f64, @floatFromInt(analyzer_ns)) / 1_000_000.0});
+    try profile_writer.print("  Engine:    {d:>8.3} ms ({s})\n", .{ @as(f64, @floatFromInt(engine_ns)) / 1_000_000.0, @tagName(backend) });
+    try profile_writer.print("  Realize:   {d:>8.3} ms\n", .{@as(f64, @floatFromInt(realize_ns)) / 1_000_000.0});
+    try profile_writer.print("  Total:     {d:>8.3} ms\n", .{@as(f64, @floatFromInt(total_ns)) / 1_000_000.0});
+    try profile_writer.flush();
 }
 
 /// 指定バックエンドで式を評価して結果を出力
@@ -740,6 +805,7 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\  --backend=<backend>    Select backend: tree_walk (default), vm
         \\  --compare              Run both backends and compare results
         \\  --gc-stats             Show GC statistics on stderr
+        \\  --profile              Show timing profile for each pipeline stage
         \\  --dump-bytecode        Dump compiled bytecode (VM backend)
         \\  --nrepl-server         Start nREPL server
         \\  --port=<port>          nREPL server port (default: auto-assign)

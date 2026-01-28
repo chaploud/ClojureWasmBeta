@@ -242,6 +242,15 @@ fn runLetfn(node: *const node_mod.LetfnNode, ctx: *Context) EvalError!Value {
 
 /// call 評価
 fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
+    // 高速パス: 2引数の算術・比較演算を直接実行
+    if (node.args.len == 2) {
+        if (tryFastArithmetic(node, ctx)) |result| {
+            return result;
+        } else |_| {
+            // 高速パスが失敗した場合は通常パスにフォールバック
+        }
+    }
+
     // 関数を評価
     const fn_val = try run(node.fn_node, ctx);
 
@@ -256,6 +265,119 @@ fn runCall(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
         setSourceLocationFromNode(node.stack);
         attachCallstack();
         return e;
+    };
+}
+
+/// 高速パス: 2引数の算術・比較演算を直接実行
+/// clojure.core の +, -, *, /, <, <=, >, >= のみ対象
+fn tryFastArithmetic(node: *const node_mod.CallNode, ctx: *Context) EvalError!Value {
+    // fn_node が Var 参照かチェック
+    if (node.fn_node.* != .var_ref) return error.TypeError;
+
+    const v: *Var = @ptrCast(@alignCast(node.fn_node.var_ref.var_ref));
+
+    // clojure.core のみ最適化
+    if (!std.mem.eql(u8, v.ns_name, "clojure.core")) return error.TypeError;
+
+    const name = v.sym.name;
+
+    // 算術・比較演算子を判定
+    const op: enum { add, sub, mul, div, lt, le, gt, ge } = blk: {
+        if (name.len == 1) {
+            break :blk switch (name[0]) {
+                '+' => .add,
+                '-' => .sub,
+                '*' => .mul,
+                '/' => .div,
+                '<' => .lt,
+                '>' => .gt,
+                else => return error.TypeError,
+            };
+        }
+        if (std.mem.eql(u8, name, "<=")) break :blk .le;
+        if (std.mem.eql(u8, name, ">=")) break :blk .ge;
+        return error.TypeError;
+    };
+
+    // 引数を評価
+    const a = try run(node.args[0], ctx);
+    const b = try run(node.args[1], ctx);
+
+    // 算術演算
+    return switch (op) {
+        .add => fastAdd(a, b),
+        .sub => fastSub(a, b),
+        .mul => fastMul(a, b),
+        .div => fastDiv(a, b),
+        .lt => fastCompare(a, b, .lt),
+        .le => fastCompare(a, b, .le),
+        .gt => fastCompare(a, b, .gt),
+        .ge => fastCompare(a, b, .ge),
+    };
+}
+
+fn fastAdd(a: Value, b: Value) EvalError!Value {
+    if (a == .int and b == .int) {
+        return value_mod.intVal(a.int +% b.int);
+    }
+    const af = toFloat(a) orelse return error.TypeError;
+    const bf = toFloat(b) orelse return error.TypeError;
+    return value_mod.floatVal(af + bf);
+}
+
+fn fastSub(a: Value, b: Value) EvalError!Value {
+    if (a == .int and b == .int) {
+        return value_mod.intVal(a.int -% b.int);
+    }
+    const af = toFloat(a) orelse return error.TypeError;
+    const bf = toFloat(b) orelse return error.TypeError;
+    return value_mod.floatVal(af - bf);
+}
+
+fn fastMul(a: Value, b: Value) EvalError!Value {
+    if (a == .int and b == .int) {
+        return value_mod.intVal(a.int *% b.int);
+    }
+    const af = toFloat(a) orelse return error.TypeError;
+    const bf = toFloat(b) orelse return error.TypeError;
+    return value_mod.floatVal(af * bf);
+}
+
+fn fastDiv(a: Value, b: Value) EvalError!Value {
+    const af = toFloat(a) orelse return error.TypeError;
+    const bf = toFloat(b) orelse return error.TypeError;
+    if (bf == 0) return error.DivisionByZero;
+    return value_mod.floatVal(af / bf);
+}
+
+fn fastCompare(a: Value, b: Value, op: enum { lt, le, gt, ge }) EvalError!Value {
+    if (a == .int and b == .int) {
+        const ai = a.int;
+        const bi = b.int;
+        const result = switch (op) {
+            .lt => ai < bi,
+            .le => ai <= bi,
+            .gt => ai > bi,
+            .ge => ai >= bi,
+        };
+        return if (result) value_mod.true_val else value_mod.false_val;
+    }
+    const af = toFloat(a) orelse return error.TypeError;
+    const bf = toFloat(b) orelse return error.TypeError;
+    const result = switch (op) {
+        .lt => af < bf,
+        .le => af <= bf,
+        .gt => af > bf,
+        .ge => af >= bf,
+    };
+    return if (result) value_mod.true_val else value_mod.false_val;
+}
+
+fn toFloat(v: Value) ?f64 {
+    return switch (v) {
+        .int => |n| @floatFromInt(n),
+        .float => |f| f,
+        else => null,
     };
 }
 
