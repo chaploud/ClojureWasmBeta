@@ -226,12 +226,12 @@
   (do
     (is (= "hello world" (str "hello" " " "world")))
     (is (= "" (str)))
-    ;; core 関数名を使用 (clojure.string/* は名前空間修飾で使えない)
-    (is (= "HELLO" (upper-case "hello")))
-    (is (= "hello" (trim "  hello  ")))
-    (is (true? (includes? "hello world" "world")))
-    (is (= ["a" "b" "c"] (string-split "a,b,c" #",")))
-    (is (= "a,b,c" (string-join "," ["a" "b" "c"])))))
+    ;; clojure.string 関数 (本家と同じ名前空間配置)
+    (is (= "HELLO" (clojure.string/upper-case "hello")))
+    (is (= "hello" (clojure.string/trim "  hello  ")))
+    (is (true? (clojure.string/includes? "hello world" "world")))
+    (is (= ["a" "b" "c"] (clojure.string/split "a,b,c" #",")))
+    (is (= "a,b,c" (clojure.string/join "," ["a" "b" "c"])))))
 
 ;; =========================================================================
 ;; atoms
@@ -400,8 +400,8 @@
 ;; regex / some->
 ;; =========================================================================
 ;; マップリテラルを使うため、ヘルパー関数で検証
-(defn __rx-h1 [] (some-> (hash-map :a (hash-map :a nil)) :a :a :a lower-case))
-(defn __rx-h2 [] (some-> (hash-map :a (hash-map :a (hash-map :a "AAA"))) :a :a :a lower-case))
+(defn __rx-h1 [] (some-> (hash-map :a (hash-map :a nil)) :a :a :a clojure.string/lower-case))
+(defn __rx-h2 [] (some-> (hash-map :a (hash-map :a (hash-map :a "AAA"))) :a :a :a clojure.string/lower-case))
 
 (deftest regex-and-some-threading-test
   (do

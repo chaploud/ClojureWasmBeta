@@ -28,7 +28,7 @@
     (do
       (swap! __ct-fail inc)
       (println
-       (str "  FAIL in " (string-join " > " @__ct-context)))
+       (str "  FAIL in " (clojure.string/join " > " @__ct-context)))
       false)))
 
 ;; --- testing (関数版) ---

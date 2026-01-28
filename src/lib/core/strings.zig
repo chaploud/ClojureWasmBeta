@@ -1142,35 +1142,15 @@ pub fn trimNewline(allocator: std.mem.Allocator, args: []const Value) anyerror!V
 // builtins 登録
 // ============================================================
 
+// clojure.core に残す関数 (本家と同じ)
 pub const builtins = [_]BuiltinDef{
-    // 文字列
+    // 文字列 (clojure.core)
     .{ .name = "str", .func = strFn },
     .{ .name = "pr-str", .func = prStr },
     .{ .name = "subs", .func = subs },
     .{ .name = "name", .func = nameFn },
     .{ .name = "namespace", .func = namespaceFn },
-    .{ .name = "string-join", .func = stringJoin },
-    .{ .name = "upper-case", .func = upperCase },
-    .{ .name = "lower-case", .func = lowerCase },
-    .{ .name = "trim", .func = trimStr },
-    .{ .name = "triml", .func = trimlStr },
-    .{ .name = "trimr", .func = trimrStr },
-    .{ .name = "blank?", .func = isBlank },
-    .{ .name = "starts-with?", .func = startsWith },
-    .{ .name = "ends-with?", .func = endsWith },
-    .{ .name = "includes?", .func = includesStr },
-    .{ .name = "string-replace", .func = stringReplace },
-    .{ .name = "string-replace-first", .func = stringReplaceFirst },
-    .{ .name = "re-quote-replacement", .func = reQuoteReplacement },
     .{ .name = "char-at", .func = charAt },
-    .{ .name = "string-split", .func = stringSplit },
-    .{ .name = "capitalize", .func = capitalize },
-    .{ .name = "string-reverse", .func = stringReverse },
-    .{ .name = "index-of", .func = indexOf },
-    .{ .name = "last-index-of", .func = lastIndexOf },
-    .{ .name = "escape", .func = escapeFn },
-    .{ .name = "split-lines", .func = splitLines },
-    .{ .name = "trim-newline", .func = trimNewline },
     .{ .name = "format", .func = formatFn },
     .{ .name = "char-escape-string", .func = charEscapeStringFn },
     .{ .name = "char-name-string", .func = charNameStringFn },
@@ -1178,11 +1158,37 @@ pub const builtins = [_]BuiltinDef{
     .{ .name = "print-str", .func = printStr },
     .{ .name = "prn-str", .func = prnStr },
     .{ .name = "println-str", .func = printlnStr },
-    // 正規表現
+    // 正規表現 (clojure.core)
     .{ .name = "re-pattern", .func = rePatternFn },
     .{ .name = "re-matcher", .func = reMatcherFn },
     .{ .name = "re-find", .func = reFindFn },
     .{ .name = "re-matches", .func = reMatchesFn },
     .{ .name = "re-seq", .func = reSeqFn },
     .{ .name = "re-groups", .func = reGroupsFn },
+};
+
+// clojure.string 名前空間に直接登録する関数 (本家と同じ配置)
+// 名前は clojure.string の公開名 (replace, split, reverse 等)
+pub const string_ns_builtins = [_]BuiltinDef{
+    .{ .name = "upper-case", .func = upperCase },
+    .{ .name = "lower-case", .func = lowerCase },
+    .{ .name = "capitalize", .func = capitalize },
+    .{ .name = "trim", .func = trimStr },
+    .{ .name = "triml", .func = trimlStr },
+    .{ .name = "trimr", .func = trimrStr },
+    .{ .name = "trim-newline", .func = trimNewline },
+    .{ .name = "blank?", .func = isBlank },
+    .{ .name = "starts-with?", .func = startsWith },
+    .{ .name = "ends-with?", .func = endsWith },
+    .{ .name = "includes?", .func = includesStr },
+    .{ .name = "index-of", .func = indexOf },
+    .{ .name = "last-index-of", .func = lastIndexOf },
+    .{ .name = "replace", .func = stringReplace },
+    .{ .name = "replace-first", .func = stringReplaceFirst },
+    .{ .name = "split", .func = stringSplit },
+    .{ .name = "join", .func = stringJoin },
+    .{ .name = "reverse", .func = stringReverse },
+    .{ .name = "split-lines", .func = splitLines },
+    .{ .name = "escape", .func = escapeFn },
+    .{ .name = "re-quote-replacement", .func = reQuoteReplacement },
 };

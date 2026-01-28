@@ -47,12 +47,16 @@ pub const all_builtins = arithmetic.builtins ++
     misc.builtins ++
     math_fns.builtins;
 
+/// clojure.string 名前空間の builtins (本家と同じ配置)
+pub const string_ns_builtins = strings.string_ns_builtins;
+
 /// wasm 名前空間の builtins
 pub const wasm_builtins = wasm.builtins;
 
 // comptime 検証: 名前の重複チェック
 comptime {
     validateNoDuplicates(all_builtins, "clojure.core");
+    validateNoDuplicates(string_ns_builtins, "clojure.string");
     validateNoDuplicates(wasm_builtins, "wasm");
 }
 
@@ -88,11 +92,27 @@ pub fn registerCore(env: *Env, value_allocator: std.mem.Allocator) !void {
         v.bindRoot(Value{ .fn_val = fn_obj });
     }
 
+    // clojure.string 名前空間の関数を登録
+    try registerStringNs(env, value_allocator);
+
     // wasm 名前空間の関数を登録
     try registerWasmNs(env, value_allocator);
 
     // 動的 Var（値として登録）
     try registerDynamicVars(value_allocator, core_ns);
+}
+
+/// clojure.string 名前空間の組み込み関数を登録
+/// 本家と同様に clojure.string にのみ配置 (clojure.core にはない)
+fn registerStringNs(env: *Env, value_allocator: std.mem.Allocator) !void {
+    const str_ns = try env.findOrCreateNs("clojure.string");
+
+    for (string_ns_builtins) |b| {
+        const v = try str_ns.intern(b.name);
+        const fn_obj = try value_allocator.create(Fn);
+        fn_obj.* = Fn.initBuiltin(b.name, b.func);
+        v.bindRoot(Value{ .fn_val = fn_obj });
+    }
 }
 
 /// wasm 名前空間の組み込み関数を登録

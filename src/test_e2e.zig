@@ -1117,48 +1117,42 @@ test "compare: string operations" {
         \\(name "bar")
     , "bar");
 
-    // upper-case / lower-case
+    // clojure.string 関数 (本家と同じく clojure.string NS に配置)
     try expectStrBoth(allocator, &env,
-        \\(upper-case "hello")
+        \\(clojure.string/upper-case "hello")
     , "HELLO");
     try expectStrBoth(allocator, &env,
-        \\(lower-case "WORLD")
+        \\(clojure.string/lower-case "WORLD")
     , "world");
-
-    // trim
     try expectStrBoth(allocator, &env,
-        \\(trim "  hi  ")
+        \\(clojure.string/trim "  hi  ")
     , "hi");
-
-    // blank?
     try expectBoolBoth(allocator, &env,
-        \\(blank? "")
+        \\(clojure.string/blank? "")
     , true);
     try expectBoolBoth(allocator, &env,
-        \\(blank? "  ")
+        \\(clojure.string/blank? "  ")
     , true);
     try expectBoolBoth(allocator, &env,
-        \\(blank? "x")
-    , false);
-
-    // starts-with? / ends-with? / includes?
-    try expectBoolBoth(allocator, &env,
-        \\(starts-with? "hello" "he")
-    , true);
-    try expectBoolBoth(allocator, &env,
-        \\(starts-with? "hello" "lo")
+        \\(clojure.string/blank? "x")
     , false);
     try expectBoolBoth(allocator, &env,
-        \\(ends-with? "hello" "lo")
+        \\(clojure.string/starts-with? "hello" "he")
     , true);
     try expectBoolBoth(allocator, &env,
-        \\(ends-with? "hello" "he")
+        \\(clojure.string/starts-with? "hello" "lo")
     , false);
     try expectBoolBoth(allocator, &env,
-        \\(includes? "hello world" "lo wo")
+        \\(clojure.string/ends-with? "hello" "lo")
     , true);
     try expectBoolBoth(allocator, &env,
-        \\(includes? "hello" "xyz")
+        \\(clojure.string/ends-with? "hello" "he")
+    , false);
+    try expectBoolBoth(allocator, &env,
+        \\(clojure.string/includes? "hello world" "lo wo")
+    , true);
+    try expectBoolBoth(allocator, &env,
+        \\(clojure.string/includes? "hello" "xyz")
     , false);
 }
 
@@ -2728,38 +2722,38 @@ test "Phase 22: regex" {
 
     // --- Phase 22d: clojure.string 正規表現対応 ---
 
-    // string-split with regex
+    // clojure.string/split with regex
     try expectStrBoth(allocator, &env,
-        \\(pr-str (string-split "a-b--c" #"-+"))
+        \\(pr-str (clojure.string/split "a-b--c" #"-+"))
     , "[\"a\" \"b\" \"c\"]");
 
     try expectStrBoth(allocator, &env,
-        \\(pr-str (string-split "one::two:::three" #":+"))
+        \\(pr-str (clojure.string/split "one::two:::three" #":+"))
     , "[\"one\" \"two\" \"three\"]");
 
-    // string-replace with regex
+    // clojure.string/replace with regex
     try expectStrBoth(allocator, &env,
-        \\(string-replace "foo123bar456" #"\d+" "X")
+        \\(clojure.string/replace "foo123bar456" #"\d+" "X")
     , "fooXbarX");
 
-    // string-replace with group reference
+    // clojure.string/replace with group reference
     try expectStrBoth(allocator, &env,
-        \\(string-replace "2024-01-15" #"(\d{4})-(\d{2})-(\d{2})" "$2/$3/$1")
+        \\(clojure.string/replace "2024-01-15" #"(\d{4})-(\d{2})-(\d{2})" "$2/$3/$1")
     , "01/15/2024");
 
-    // string-replace-first
+    // clojure.string/replace-first
     try expectStrBoth(allocator, &env,
-        \\(string-replace-first "foo123bar456" #"\d+" "X")
+        \\(clojure.string/replace-first "foo123bar456" #"\d+" "X")
     , "fooXbar456");
 
-    // string-replace-first with string match
+    // clojure.string/replace-first with string match
     try expectStrBoth(allocator, &env,
-        \\(string-replace-first "hello world hello" "hello" "hi")
+        \\(clojure.string/replace-first "hello world hello" "hello" "hi")
     , "hi world hello");
 
-    // re-quote-replacement
+    // clojure.string/re-quote-replacement
     try expectStrBoth(allocator, &env,
-        \\(re-quote-replacement "price is $10")
+        \\(clojure.string/re-quote-replacement "price is $10")
     , "price is \\$10");
 }
 
@@ -2889,9 +2883,9 @@ test "Phase 24: all-ns returns namespaces" {
     var env = try setupTestEnv(allocator);
     defer env.deinit();
 
-    // 初期状態: clojure.core, user, wasm
+    // 初期状態: clojure.core, user, wasm, clojure.string
     const result = try evalExpr(allocator, &env, "(count (all-ns))");
-    try std.testing.expectEqual(Value{ .int = 3 }, result);
+    try std.testing.expectEqual(Value{ .int = 4 }, result);
 }
 
 test "Phase 24: find-ns / create-ns" {
@@ -2911,9 +2905,9 @@ test "Phase 24: find-ns / create-ns" {
     const r2 = try evalExpr(allocator, &env, "(find-ns 'my.test)");
     try std.testing.expect(r2 == .symbol);
 
-    // all-ns が 4 に増える (clojure.core + user + wasm + my.test)
+    // all-ns が 5 に増える (clojure.core + user + wasm + clojure.string + my.test)
     const r3 = try evalExpr(allocator, &env, "(count (all-ns))");
-    try std.testing.expectEqual(Value{ .int = 4 }, r3);
+    try std.testing.expectEqual(Value{ .int = 5 }, r3);
 }
 
 test "Phase 24: ns-name" {
