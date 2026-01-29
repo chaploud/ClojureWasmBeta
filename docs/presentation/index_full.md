@@ -8,7 +8,7 @@ Shibuya.lisp lispmeetup #117
 ## 自己紹介
 
 - [@\_\_chaploud\_\_](https://x.com/__chaploud__)
-- Clojure が好き。Zig も好き。
+- Clojureで仕事をしています。Emacsユーザー
 - Shibuya.lisp #113 で自作言語処理系 Sci-Lisp の紹介発表
 
 ---

@@ -3149,8 +3149,19 @@ pub const Analyzer = struct {
             ctx = ctx.withBindings(bindings) catch return error.OutOfMemory;
         }
 
-        // 引数をバインド
-        ctx = ctx.withBindings(args) catch return error.OutOfMemory;
+        // 引数をバインド（可変長対応）
+        if (arity.variadic) {
+            // 可変長: 固定引数 + rest リスト
+            const fixed_count = arity.params.len - 1; // rest パラメータを除く
+            var bindings_arr = self.allocator.alloc(Value, arity.params.len) catch return error.OutOfMemory;
+            @memcpy(bindings_arr[0..fixed_count], args[0..fixed_count]);
+            // 残りの引数をリストにまとめる
+            const rest_list = value_mod.PersistentList.fromSlice(self.allocator, args[fixed_count..]) catch return error.OutOfMemory;
+            bindings_arr[fixed_count] = Value{ .list = rest_list };
+            ctx = ctx.withBindings(bindings_arr) catch return error.OutOfMemory;
+        } else {
+            ctx = ctx.withBindings(args) catch return error.OutOfMemory;
+        }
 
         // ボディを評価
         const body: *const Node = @ptrCast(@alignCast(arity.body));

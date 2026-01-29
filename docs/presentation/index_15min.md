@@ -21,7 +21,7 @@ Shibuya.lisp lispmeetup #117
 ## 自己紹介
 
 - [@\_\_chaploud\_\_](https://x.com/__chaploud__)
-- Clojure が好き。Zig も好き。
+- Clojureで仕事をしています。Emacsユーザー
 - Shibuya.lisp #113 で自作言語処理系 Sci-Lisp の紹介発表
 
 ---
@@ -158,6 +158,9 @@ Source Code
 ```
 
 - **Form → Node → Value**: 各フェーズで関心を分離
+  - Form: S式構造
+  - Node: 意味解析済み中間表現
+  - Value: 実行時オブジェクト
 - **デュアルバックエンド**: `--compare` で回帰検出
 - **zware**: Pure Zig Wasm ランタイムで Value ↔ Wasm を自然に統合
 
@@ -166,6 +169,8 @@ Source Code
 ## 4. エンジニアリングハイライト (2:30)
 
 ### comptime テーブル結合
+
+コンパイル時に処理してしまい、実行時に処理を行わなくて良いというZigの機能
 
 ```zig
 // src/lib/core/registry.zig
@@ -187,6 +192,9 @@ comptime {
 → 中間 LazySeq 排除: **27GB → 2MB** (12,857x メモリ削減)
 
 ### セミスペース GC
+
+ヒープを2つの領域に分割し、一方を使用中、もう一方を空き領域として利用する方式
+オブジェクトの生存期間が短い場合に効率的であり、メモリ断片化を防ぐ
 
 sweep フェーズ: **1,146ms → 29ms** (40x 高速化)
 
@@ -226,7 +234,7 @@ sweep フェーズ: **1,146ms → 29ms** (40x 高速化)
 
 ### 今後
 
-- **NaN Boxing**: Value 24B → 8B (大規模変更のため設計文書作成中)
+- **NaN Boxing**: doubleのNaNビットを使ってValueを8Bに圧縮表現 (メモリ削減・高速化)
 - **Wasm ターゲット**: 処理系自体を Wasm にコンパイル → ブラウザで Clojure
 - **多言語 Wasm 連携**: Go (TinyGo) → Wasm → Clojure は動作確認済み。Rust, C 等も同様に可能
 - **Wasm クラウド**: Fermyon / WasmEdge / WASI 0.3 (2026)
@@ -251,5 +259,3 @@ ClojureWasm     — Wasm/組込み/エッジ ← New
 ---
 
 **ありがとうございました**
-
-リポジトリ: (非公開 / 後日公開予定)
