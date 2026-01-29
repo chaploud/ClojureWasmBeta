@@ -77,12 +77,15 @@ pub const Namespace = struct {
             return existing;
         }
 
+        // sym_name は scratch allocator 由来の場合があるため、
+        // persistent (self.allocator) に dupe して HashMap キーの寿命を保証
+        const owned_name = try self.allocator.dupe(u8, sym_name);
         const new_var = try self.allocator.create(Var);
         new_var.* = .{
-            .sym = Symbol.init(sym_name),
+            .sym = Symbol.init(owned_name),
             .ns_name = self.name,
         };
-        try self.mappings.put(self.allocator, sym_name, new_var);
+        try self.mappings.put(self.allocator, owned_name, new_var);
         return new_var;
     }
 

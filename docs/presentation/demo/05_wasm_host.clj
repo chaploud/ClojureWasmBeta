@@ -32,7 +32,7 @@
 (def print-mod
   (wasm/load-module "test/wasm/fixtures/04_imports.wasm"
                     {:imports {"env" {"print_i32" (fn [n] (println "wasm:" n))
-                                      "print_str" (fn [p l] nil)}}}))
+                                      "print_str" (fn [_ _] nil)}}}))
 
 (with-out-str (wasm/invoke print-mod "compute_and_print" 5 3))
 ;; => "wasm: 8\n"
