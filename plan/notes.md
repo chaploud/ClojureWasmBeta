@@ -382,6 +382,18 @@ clj-wasm --dump-bytecode -e '(load-file "test.clj")'
 出力にはオペコード名、定数テーブル、スロット番号が表示される。
 VM の動作を理解するのに有用。
 
+## Java Interop 互換
+
+- **tryJavaInterop (analyze.zig)**: リスト先頭のシンボルを検査し、Java 互換の呼び出しを builtin に変換
+  - `FormSymbol` (namespace + name) を受け取り、namespace/name ペアでマッチ
+  - `.getMessage` / `.getCause` → `ex-message` / `ex-cause` (ドットメソッド)
+  - `java.util.UUID/randomUUID` → `random-uuid`
+  - `System/nanoTime` / `java.lang.System/nanoTime` → `__nano-time`
+  - `System/currentTimeMillis` / `java.lang.System/currentTimeMillis` → `__current-time-millis`
+  - `clojure.lang.MapEntry.` → `vector`
+- **clojure.string NS 直接登録**: Zig builtin を `registerStringNs()` で直接登録。
+  `.clj` ラッパー経由だと nREPL で自己参照ループが発生するため。
+
 ## CLI テスト注意
 
 - bash/zsh 環境で `!` はスペース後に `\` が挿入される場合がある

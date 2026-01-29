@@ -29,7 +29,7 @@ alias clj-wasm="$(pwd)/zig-out/bin/ClojureWasmBeta"
 最適化ビルド:
 
 ```bash
-zig build -Doptimize=ReleaseFast
+zig build --release=fast
 ```
 
 ## 使い方
@@ -256,6 +256,7 @@ clj-wasm --gc-stats -e '(dotimes [_ 1000] (vec (range 100)))'
 | clojure.template      | apply-template, do-template                    |
 | clojure.zip           | zipper, vector-zip, seq-zip, xml-zip           |
 | clojure.test          | deftest, is, testing, run-tests                |
+| clojure.pprint        | pprint, print-table, cl-format                 |
 
 ---
 
