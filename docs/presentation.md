@@ -1,5 +1,11 @@
 # ClojureWasmBeta — Zig で Clojure 処理系をフルスクラッチ
 
+> **更新**: 発表資料は `docs/presentation/` に移動しました。
+> - 15分版: `docs/presentation/index_15min.md`
+> - 完全版: `docs/presentation/index_full.md`
+> - スピーカーノート: `docs/presentation/speaker_15min.md`
+> - デモファイル: `docs/presentation/demo/`
+
 > shibuya.lisp 発表資料 (15分 + デモ)
 
 ---
