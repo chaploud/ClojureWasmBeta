@@ -628,7 +628,9 @@ fn isTerminator(c: u8) bool {
 fn isSymbolChar(c: u8) bool {
     // ' はシンボル内部で有効 (coll', x', swap!'s 等)
     // ' が先頭の場合は next() で quote トークンとして処理済み
-    return !isWhitespace(c) and !isTerminator(c) and c != '#' and c != ':';
+    // # はシンボル内部で有効 (auto-gensym: foo# 等)
+    // # が先頭の場合は next() で dispatch として処理済み
+    return !isWhitespace(c) and !isTerminator(c) and c != ':';
 }
 
 // === テスト ===

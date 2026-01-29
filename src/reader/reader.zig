@@ -26,6 +26,9 @@ pub const LocatedForm = struct {
     column: u32,
 };
 
+/// syntax-quote の auto-gensym 用カウンタ（モジュールレベル）
+var sq_gensym_counter: u64 = 0;
+
 pub const Reader = struct {
     tokenizer: Tokenizer,
     source: []const u8,
@@ -115,7 +118,7 @@ pub const Reader = struct {
             // マクロ文字
             .quote => self.readWrapped("quote"),
             .deref => self.readWrapped("deref"),
-            .syntax_quote => self.readWrapped("syntax-quote"),
+            .syntax_quote => self.readSyntaxQuote(),
             .unquote => self.readWrapped("unquote"),
             .unquote_splicing => self.readWrapped("unquote-splicing"),
 
@@ -688,6 +691,190 @@ pub const Reader = struct {
         if (clj_form) |form| return form;
         if (default_form) |form| return form;
         return .nil;
+    }
+
+    // === syntax-quote 展開 ===
+
+    /// ` (syntax-quote) をリーダーレベルで展開
+    /// Clojure と同様に read time expansion を行う
+    fn readSyntaxQuote(self: *Reader) err.Error!Form {
+        const next = self.nextToken();
+        if (next.kind == .eof) {
+            return err.parseError(.unexpected_eof, "EOF after syntax-quote", .{});
+        }
+        const form = try self.readForm(next);
+
+        // auto-gensym 用マップ（`foo# → foo__N__auto` のマッピング）
+        var gensym_map: std.StringHashMapUnmanaged([]const u8) = .empty;
+        defer gensym_map.deinit(self.allocator);
+
+        return self.expandSyntaxQuote(form, &gensym_map);
+    }
+
+    /// syntax-quote のフォームを再帰的に展開
+    fn expandSyntaxQuote(self: *Reader, form: Form, gensym_map: *std.StringHashMapUnmanaged([]const u8)) err.Error!Form {
+        return switch (form) {
+            // リテラルはそのまま返す
+            .nil, .bool_true, .bool_false, .int, .float, .string, .regex => form,
+
+            // キーワードもそのまま
+            .keyword => form,
+
+            // シンボル → (quote sym) ※auto-gensym 処理あり
+            .symbol => |sym| {
+                // auto-gensym: foo# → foo__N__auto
+                if (sym.namespace == null and sym.name.len > 1 and sym.name[sym.name.len - 1] == '#') {
+                    const base = sym.name[0 .. sym.name.len - 1];
+                    const resolved = gensym_map.get(sym.name) orelse blk: {
+                        sq_gensym_counter += 1;
+                        var buf: [128]u8 = undefined;
+                        const gen_name = std.fmt.bufPrint(&buf, "{s}__{d}__auto", .{ base, sq_gensym_counter }) catch
+                            return error.OutOfMemory;
+                        const duped = self.allocator.dupe(u8, gen_name) catch return error.OutOfMemory;
+                        gensym_map.put(self.allocator, sym.name, duped) catch return error.OutOfMemory;
+                        break :blk duped;
+                    };
+                    return self.makeQuote(Form{ .symbol = Symbol.init(resolved) });
+                }
+                return self.makeQuote(form);
+            },
+
+            // (unquote x) → x
+            .list => |items| {
+                if (self.isUnquote(items)) {
+                    return items[1];
+                }
+                if (self.isUnquoteSplicing(items)) {
+                    return err.parseError(.invalid_token, "splice not in list", .{});
+                }
+                // リスト → (seq (concat ...))
+                return self.syntaxQuoteColl(items, .list, gensym_map);
+            },
+
+            // ベクタ → (apply vector (seq (concat ...)))
+            .vector => |items| {
+                return self.syntaxQuoteColl(items, .vector, gensym_map);
+            },
+
+            // マップ → (apply hash-map (seq (concat ...)))
+            .map => |items| {
+                return self.syntaxQuoteColl(items, .map, gensym_map);
+            },
+
+            // セット → (apply hash-set (seq (concat ...)))
+            .set => |items| {
+                return self.syntaxQuoteColl(items, .set, gensym_map);
+            },
+        };
+    }
+
+    /// コレクション型の展開種別
+    const CollKind = enum { list, vector, map, set };
+
+    /// コレクション要素を (seq (concat e1 e2 ...)) 形式に展開
+    fn syntaxQuoteColl(self: *Reader, items: []const Form, kind: CollKind, gensym_map: *std.StringHashMapUnmanaged([]const u8)) err.Error!Form {
+        // concat の引数リストを構築
+        var concat_args: std.ArrayListUnmanaged(Form) = .empty;
+        defer concat_args.deinit(self.allocator);
+
+        for (items) |item| {
+            const arg = switch (item) {
+                .list => |sub_items| blk: {
+                    if (self.isUnquote(sub_items)) {
+                        // ~x → (list x)
+                        break :blk try self.makeListCall(sub_items[1]);
+                    } else if (self.isUnquoteSplicing(sub_items)) {
+                        // ~@xs → xs (そのまま splice)
+                        break :blk sub_items[1];
+                    } else {
+                        // 通常要素 → (list <再帰展開>)
+                        const expanded = try self.expandSyntaxQuote(item, gensym_map);
+                        break :blk try self.makeListCall(expanded);
+                    }
+                },
+                else => blk: {
+                    const expanded = try self.expandSyntaxQuote(item, gensym_map);
+                    break :blk try self.makeListCall(expanded);
+                },
+            };
+            concat_args.append(self.allocator, arg) catch return error.OutOfMemory;
+        }
+
+        const args_slice = concat_args.toOwnedSlice(self.allocator) catch return error.OutOfMemory;
+        const seq_concat = try self.makeSeqConcat(args_slice);
+
+        // リストの場合はそのまま (seq (concat ...))
+        // ベクタ・マップ・セットの場合は (apply fn (seq (concat ...)))
+        return switch (kind) {
+            .list => seq_concat,
+            .vector => self.makeApplyCall("vector", seq_concat),
+            .map => self.makeApplyCall("hash-map", seq_concat),
+            .set => self.makeApplyCall("hash-set", seq_concat),
+        };
+    }
+
+    /// フォームが (unquote x) かどうか
+    fn isUnquote(self: *Reader, items: []const Form) bool {
+        _ = self;
+        if (items.len == 2) {
+            if (items[0] == .symbol) {
+                return std.mem.eql(u8, items[0].symbol.name, "unquote");
+            }
+        }
+        return false;
+    }
+
+    /// フォームが (unquote-splicing x) かどうか
+    fn isUnquoteSplicing(self: *Reader, items: []const Form) bool {
+        _ = self;
+        if (items.len == 2) {
+            if (items[0] == .symbol) {
+                return std.mem.eql(u8, items[0].symbol.name, "unquote-splicing");
+            }
+        }
+        return false;
+    }
+
+    /// (quote form) を生成
+    fn makeQuote(self: *Reader, form: Form) err.Error!Form {
+        const items = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        items[0] = Form{ .symbol = Symbol.init("quote") };
+        items[1] = form;
+        return Form{ .list = items };
+    }
+
+    /// (list form) を生成
+    fn makeListCall(self: *Reader, form: Form) err.Error!Form {
+        const items = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        items[0] = Form{ .symbol = Symbol.init("list") };
+        items[1] = form;
+        return Form{ .list = items };
+    }
+
+    /// (seq (concat arg1 arg2 ...)) を生成
+    fn makeSeqConcat(self: *Reader, args: []const Form) err.Error!Form {
+        // (concat arg1 arg2 ...)
+        const concat_items = self.allocator.alloc(Form, args.len + 1) catch return error.OutOfMemory;
+        concat_items[0] = Form{ .symbol = Symbol.init("concat") };
+        for (args, 0..) |arg, i| {
+            concat_items[i + 1] = arg;
+        }
+        const concat_form = Form{ .list = concat_items };
+
+        // (seq (concat ...))
+        const seq_items = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
+        seq_items[0] = Form{ .symbol = Symbol.init("seq") };
+        seq_items[1] = concat_form;
+        return Form{ .list = seq_items };
+    }
+
+    /// (apply fn-name inner) を生成
+    fn makeApplyCall(self: *Reader, fn_name: []const u8, inner: Form) err.Error!Form {
+        const items = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        items[0] = Form{ .symbol = Symbol.init("apply") };
+        items[1] = Form{ .symbol = Symbol.init(fn_name) };
+        items[2] = inner;
+        return Form{ .list = items };
     }
 
     // === トークン操作 ===
