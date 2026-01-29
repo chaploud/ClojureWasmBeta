@@ -11,95 +11,95 @@ Q&A や深堀り質問で「コード見せて」と言われたらここを開�
 
 ### comptime テーブル結合
 
-| ファイル                         | 行    | 内容                            |
-|----------------------------------|-------|---------------------------------|
-| `src/lib/core/registry.zig`      | 35    | `all_builtins` テーブル結合開始 |
-| `src/lib/core/registry.zig`      | 57-62 | `comptime` 重複検証ブロック     |
-| `src/lib/core/registry.zig`      | 63    | `validateNoDuplicates` 関数本体 |
-| `src/lib/core/registry.zig`      | 85    | `registerCore` (起動時の登録)   |
+| ファイル                    | 行    | 内容                            |
+|-----------------------------|-------|---------------------------------|
+| `src/lib/core/registry.zig` | 35    | `all_builtins` テーブル結合開始 |
+| `src/lib/core/registry.zig` | 57-62 | `comptime` 重複検証ブロック     |
+| `src/lib/core/registry.zig` | 63    | `validateNoDuplicates` 関数本体 |
+| `src/lib/core/registry.zig` | 85    | `registerCore` (起動時の登録)   |
 
 ### Value 型 (全体設計)
 
-| ファイル                         | 行    | 内容                              |
-|----------------------------------|-------|-----------------------------------|
-| `src/runtime/value.zig`          | 61-112 | Value tagged union 全フィールド  |
-| `src/runtime/value/types.zig`    | 354-360 | WasmModule 構造体定義           |
+| ファイル                      | 行      | 内容                            |
+|-------------------------------|---------|---------------------------------|
+| `src/runtime/value.zig`       | 61-112  | Value tagged union 全フィールド |
+| `src/runtime/value/types.zig` | 354-360 | WasmModule 構造体定義           |
 
 ### Fused Reduce
 
-| ファイル                         | 行    | 内容                             |
-|----------------------------------|-------|----------------------------------|
-| `src/lib/core/sequences.zig`     | 950   | Fused reduce 概要コメント        |
-| `src/lib/core/sequences.zig`     | 1029  | `reduceFused` 関数本体           |
-| `src/lib/core/sequences.zig`     | 902   | lazy_seq チェーン分岐            |
+| ファイル                     | 行   | 内容                      |
+|------------------------------|------|---------------------------|
+| `src/lib/core/sequences.zig` | 950  | Fused reduce 概要コメント |
+| `src/lib/core/sequences.zig` | 1029 | `reduceFused` 関数本体    |
+| `src/lib/core/sequences.zig` | 902  | lazy_seq チェーン分岐     |
 
 ### GC (セミスペース)
 
-| ファイル                         | 行    | 内容                             |
-|----------------------------------|-------|----------------------------------|
-| `src/gc/gc.zig`                  | 32    | GC.init                         |
-| `src/gc/gc.zig`                  | 37    | `collectGarbage` (GC 本体)      |
-| `src/gc/gc_allocator.zig`        | 109   | `mark` (マーキング)             |
-| `src/gc/gc_allocator.zig`        | 140   | `sweep` (スイープ)              |
-| `src/gc/gc_allocator.zig`        | 229   | `shouldCollect` (GC 判定)       |
+| ファイル                  | 行  | 内容                       |
+|---------------------------|-----|----------------------------|
+| `src/gc/gc.zig`           | 32  | GC.init                    |
+| `src/gc/gc.zig`           | 37  | `collectGarbage` (GC 本体) |
+| `src/gc/gc_allocator.zig` | 109 | `mark` (マーキング)        |
+| `src/gc/gc_allocator.zig` | 140 | `sweep` (スイープ)         |
+| `src/gc/gc_allocator.zig` | 229 | `shouldCollect` (GC 判定)  |
 
 ### Wasm 連携
 
-| ファイル                         | 行    | 内容                               |
-|----------------------------------|-------|------------------------------------|
-| `src/wasm/wasi.zig`              | 18-38 | WASI 19関数テーブル                |
-| `src/wasm/wasi.zig`              | 49    | `registerWasiFunctions`            |
-| `src/wasm/wasi.zig`              | 83    | `loadWasiModule` (load-wasi 本体) |
-| `src/wasm/loader.zig`            | 76    | `loadModule` (load-module 本体)   |
-| `src/wasm/runtime.zig`           | 13    | `invoke` (wasm/invoke 本体)       |
-| `src/wasm/host_functions.zig`    | 46    | `hostTrampoline` (Clj→Wasm ブリッジ) |
-| `src/wasm/host_functions.zig`    | 82    | `registerImports` (インポート登録)   |
-| `src/wasm/interop.zig`           | 23    | `readString` (メモリ読み出し)     |
-| `src/wasm/interop.zig`           | 40    | `writeBytes` (メモリ書き込み)     |
+| ファイル                      | 行    | 内容                                 |
+|-------------------------------|-------|--------------------------------------|
+| `src/wasm/wasi.zig`           | 18-38 | WASI 19関数テーブル                  |
+| `src/wasm/wasi.zig`           | 49    | `registerWasiFunctions`              |
+| `src/wasm/wasi.zig`           | 83    | `loadWasiModule` (load-wasi 本体)    |
+| `src/wasm/loader.zig`         | 76    | `loadModule` (load-module 本体)      |
+| `src/wasm/runtime.zig`        | 13    | `invoke` (wasm/invoke 本体)          |
+| `src/wasm/host_functions.zig` | 46    | `hostTrampoline` (Clj→Wasm ブリッジ) |
+| `src/wasm/host_functions.zig` | 82    | `registerImports` (インポート登録)   |
+| `src/wasm/interop.zig`        | 23    | `readString` (メモリ読み出し)        |
+| `src/wasm/interop.zig`        | 40    | `writeBytes` (メモリ書き込み)        |
 
 ### nREPL サーバー
 
-| ファイル                         | 行    | 内容                               |
-|----------------------------------|-------|------------------------------------|
-| `src/nrepl/server.zig`           | 45    | `startServer` (TCP サーバー起動)  |
-| `src/nrepl/server.zig`           | 185   | `dispatchOp` (op ディスパッチ)    |
-| `src/nrepl/server.zig`           | 323   | `opEval` (式評価ハンドラ)        |
-| `src/nrepl/server.zig`           | 546   | `opCompletions` (補完)           |
-| `src/nrepl/bencode.zig`          | -     | bencode エンコード/デコード       |
+| ファイル                | 行  | 内容                             |
+|-------------------------|-----|----------------------------------|
+| `src/nrepl/server.zig`  | 45  | `startServer` (TCP サーバー起動) |
+| `src/nrepl/server.zig`  | 185 | `dispatchOp` (op ディスパッチ)   |
+| `src/nrepl/server.zig`  | 323 | `opEval` (式評価ハンドラ)        |
+| `src/nrepl/server.zig`  | 546 | `opCompletions` (補完)           |
+| `src/nrepl/bencode.zig` | -   | bencode エンコード/デコード      |
 
 ### 正規表現エンジン
 
-| ファイル                         | 行    | 内容                             |
-|----------------------------------|-------|----------------------------------|
-| `src/regex/regex.zig`            | -     | パーサー + コンパイラ            |
-| `src/regex/matcher.zig`          | -     | バックトラッキングマッチャー     |
+| ファイル                | 行 | 内容                         |
+|-------------------------|----|------------------------------|
+| `src/regex/regex.zig`   | -  | パーサー + コンパイラ        |
+| `src/regex/matcher.zig` | -  | バックトラッキングマッチャー |
 
 ### メインエントリポイント
 
-| ファイル                         | 行    | 内容                             |
-|----------------------------------|-------|----------------------------------|
-| `src/main.zig`                   | 40    | `main` (CLI エントリ)           |
-| `src/main.zig`                   | 303   | `runWithBackend` (評価実行)     |
-| `src/main.zig`                   | 372   | `runCompare` (--compare 実装)   |
-| `src/main.zig`                   | 595   | `runRepl` (REPL ループ)         |
+| ファイル       | 行  | 内容                          |
+|----------------|-----|-------------------------------|
+| `src/main.zig` | 40  | `main` (CLI エントリ)         |
+| `src/main.zig` | 303 | `runWithBackend` (評価実行)   |
+| `src/main.zig` | 372 | `runCompare` (--compare 実装) |
+| `src/main.zig` | 595 | `runRepl` (REPL ループ)       |
 
 ### デモファイル (発表時に開くもの)
 
-| ファイル                                 | 内容                   |
-|------------------------------------------|------------------------|
-| `docs/presentation/demo/01_basics.clj`   | REPL 基本 + 遅延       |
-| `docs/presentation/demo/02_protocols.clj`| プロトコル             |
-| `docs/presentation/demo/03_macros_atoms.clj` | マクロ + アトム    |
-| `docs/presentation/demo/04_wasm.clj`     | Wasm 基本              |
-| `docs/presentation/demo/05_wasm_host.clj`| ホスト関数注入         |
-| `docs/presentation/demo/06_go_wasm.clj`  | Go → Wasm              |
+| ファイル                                     | 内容             |
+|----------------------------------------------|------------------|
+| `docs/presentation/demo/01_basics.clj`       | REPL 基本 + 遅延 |
+| `docs/presentation/demo/02_protocols.clj`    | プロトコル       |
+| `docs/presentation/demo/03_macros_atoms.clj` | マクロ + アトム  |
+| `docs/presentation/demo/04_wasm.clj`         | Wasm 基本        |
+| `docs/presentation/demo/05_wasm_host.clj`    | ホスト関数注入   |
+| `docs/presentation/demo/06_go_wasm.clj`      | Go → Wasm        |
 
 ### Go Wasm ソース
 
-| ファイル                                 | 内容                   |
-|------------------------------------------|------------------------|
-| `test/wasm/src/go_math.go`               | Go ソース (24行)       |
-| `test/wasm/fixtures/08_go_math.wasm`     | コンパイル済み (20KB)  |
+| ファイル                             | 内容                  |
+|--------------------------------------|-----------------------|
+| `test/wasm/src/go_math.go`           | Go ソース (24行)      |
+| `test/wasm/fixtures/08_go_math.wasm` | コンパイル済み (20KB) |
 
 ---
 
