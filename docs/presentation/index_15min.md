@@ -42,7 +42,7 @@ Zig で Clojure 処理系をフルスクラッチ実装。JVM 不要、Wasm ネ�
 ### なぜ作ったか
 
 - **JVM 脱却**: 起動 300ms+、メモリ 100MB+ から解放
-- **JavaInterop → WasmInterop**: Java API 再実装地獄を避ける
+- **JavaInterop → WasmInterop**: Java API 再実装地獄を避ける (Go 等の他言語 Wasm も呼べる)
 - **全レイヤーを自分で**: Tokenizer → Reader → Analyzer → VM → GC → Wasm
 
 ### ポジショニング
@@ -119,6 +119,19 @@ Zig で Clojure 処理系をフルスクラッチ実装。JVM 不要、Wasm ネ�
 
 (wasm/invoke imports-mod "compute_and_print" 3 7)
 @captured ;; => [10]
+```
+
+### Demo 6: Go → Wasm (多言語連携)
+
+```clojure
+;; TinyGo でコンパイルした Go の Wasm をロード
+(def go-math (wasm/load-wasi "test/wasm/fixtures/08_go_math.wasm"))
+(wasm/invoke go-math "add" 3 4)       ;; => 7
+(wasm/invoke go-math "fibonacci" 10)  ;; => 55
+
+;; Clojure の高階関数で Go 関数を活用
+(map #(wasm/invoke go-math "fibonacci" %) (range 1 11))
+;; => (1 1 2 3 5 8 13 21 34 55)
 ```
 
 ---
@@ -213,6 +226,7 @@ sweep フェーズ: **1,146ms → 29ms** (40x 高速化)
 
 - **NaN Boxing**: Value 24B → 8B (大規模変更のため設計文書作成中)
 - **Wasm ターゲット**: 処理系自体を Wasm にコンパイル → ブラウザで Clojure
+- **多言語 Wasm 連携**: Go (TinyGo) → Wasm → Clojure は動作確認済み。Rust, C 等も同様に可能
 - **Wasm クラウド**: Fermyon / WasmEdge / WASI 0.3 (2026)
 
 ### 「第4のClojure」
@@ -228,7 +242,7 @@ ClojureWasm     — Wasm/組込み/エッジ ← New
 
 - Zig フルスクラッチで Clojure を再実装 (40,000行)
 - 起動 2-70ms / メモリ 2-22MB で JVM の 1/50
-- WasmInterop で JavaInterop の代替を提案
+- WasmInterop で JavaInterop の代替を提案 (Go/Rust/C の Wasm を直接呼び出し)
 - CIDER から使える nREPL サーバー
 - Clojure の設計は美しい。実装してわかる。
 

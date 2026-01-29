@@ -3,10 +3,10 @@
 ## 事前準備チェックリスト
 
 - [ ] `zig build --release=fast` でリリースビルド済み
-- [ ] Emacs 起動、フォントサイズ拡大 (発表用: `C-x C-+` 数回)
+- [ ] Emacs 起動、フォントサイズ拡大 `SPC t p`
 - [ ] `clj-wasm --nrepl-server --port=7888` を別ターミナルで起動
-- [ ] Emacs: `M-x cider-connect` → localhost:7888 で接続確認
-- [ ] `docs/presentation/demo/` の5ファイルを Emacs で開いておく
+- [ ] Emacs: `SPC m c j` → localhost:7888 で接続確認
+- [ ] `docs/presentation/demo/` の6ファイルを Emacs で開いておく
 - [ ] ターミナルも1つ用意 (`--compare` デモ用)
 - [ ] CWD = ClojureWasmBeta/ (Wasm パスの相対パス前提)
 
@@ -26,7 +26,7 @@
 - 自己紹介: Clojure 好き、Zig 好き、#113 で Sci-Lisp 発表した
 - 「Clojure を Zig で作ったら？」→ 作った
 - JVM の起動時間・メモリが気になる → Zig で解決
-- JavaInterop を捨てて WasmInterop を入れた
+- JavaInterop を捨てて WasmInterop を入れた (Go 等の Wasm も呼べる)
 - ポジショニング表をさっと見せる (Clojure / Babashka / ClojureWasm)
 
 **ポイント**:
@@ -40,7 +40,8 @@
 **操作手順**:
 
 1. **01_basics.clj** を Emacs で表示 (1:00)
-   - `(+ 1 2 3)` → `C-c C-e` → 6 が出る
+   - CIDER Connectする様子 + REPL表示 + 補完が出る様子(println)
+   - `(+ 1 2 3)` → `, e f` → 6 が出る
    - `(greet "Shibuya.lisp")` → 文字列結合
    - `(take 10 (filter odd? (range)))` → 遅延シーケンスのデモ
    - threading macro → 「Clojure らしい書き方がそのまま動く」
@@ -65,6 +66,13 @@
    - atom でキャプチャ → Wasm が Clojure 関数を呼ぶ
    - with-out-str でキャプチャ → 標準出力も取れる
    - 「Clojure と Wasm が双方向にやり取りできる」
+
+6. **06_go_wasm.clj** (1:00)
+   - 「Go のコードも Wasm 経由で呼べる」
+   - TinyGo でコンパイルした Go の Wasm をロード (`wasm/load-wasi`)
+   - add, multiply, fibonacci を呼び出し
+   - `map` で fibonacci を Go 関数で計算 → 「Clojure の高階関数 + Go の関数」
+   - 「Wasm がユニバーサルなバイナリフォーマット。言語を問わず連携できる」
 
 **もし時間が余ったら**: ターミナルで `--compare` デモ
 
@@ -133,6 +141,7 @@ clj-wasm --compare -e "(map inc [1 2 3])"
 **話すこと**:
 - NaN Boxing: Value を 24B → 8B に (保留中、大規模変更)
 - Wasm ターゲット: 処理系自体を Wasm にコンパイル → ブラウザで Clojure
+- 多言語 Wasm 連携: Go (TinyGo) は動作確認済み。Rust/C も同様に可能
 - Wasm クラウド: Fermyon, WasmEdge, WASI 0.3 (2026)
 - 「第4のClojure」のポジション
 - まとめ:
@@ -150,5 +159,6 @@ clj-wasm --compare -e "(map inc [1 2 3])"
 - **本家 Clojure との互換性は?**: 1036 テスト pass。clojure.core の 76% 実装。動作互換 (ブラックボックス) を目指すが完全互換は非目標
 - **実用的に使える?**: CLI/スクリプト用途なら使える。サーバー用途は JVM Clojure が良い
 - **Babashka と何が違う?**: Babashka は SCI (Clojure で書かれた Clojure インタプリタ) の GraalVM ネイティブ。CWB は Zig フルスクラッチで Wasm 連携がある
+- **Go の Wasm も動く?**: TinyGo でコンパイルした Go の Wasm は動作確認済み。WASI 関数 (fd_write, proc_exit, random_get) をサポートしているので、TinyGo の wasi ターゲットがそのまま動く。Rust/C の Wasm も同様に呼べるはず
 - **STM は?**: 実装しない。atom のみ。シングルスレッドなので STM の意味がない
 - **マルチスレッドは?**: 現在はシングルスレッド。将来的に検討

@@ -13,7 +13,7 @@ JVM を一切使わず、Tokenizer から GC まで全てを Zig で書き上げ
 - **デュアルバックエンド**: TreeWalk (正確性検証) と BytecodeVM (高速実行) の2系統を搭載。`--compare` で常に回帰検出
 - **フルスクラッチ GC**: セミスペース Arena Mark-Sweep を自前実装。sweep 40x 高速化を達成
 - **正規表現エンジン**: java.util.regex 互換を目指した Zig 製バックトラッキングエンジン
-- **Wasm 連携**: zware (pure Zig Wasm ランタイム) で .wasm ファイルを直接ロード・実行
+- **Wasm 連携**: zware (pure Zig Wasm ランタイム) で .wasm ファイルを直接ロード・実行。Go (TinyGo) 等の他言語で書いた Wasm も呼び出せる
 - **nREPL 互換**: CIDER (Emacs) / Calva (VS Code) / Conjure (Neovim) からそのまま接続可能
 
 ## ベンチマーク
@@ -57,7 +57,7 @@ Fused Reduce が効く map_filter では CWB が 4x 上回る。
 | Zig ソースコード      | ~38,000 行                                     |
 | バックエンド          | TreeWalk + BytecodeVM (デュアル)               |
 | GC                    | セミスペース Arena Mark-Sweep + 世代別 GC 基盤 |
-| Wasm 連携             | zware (pure Zig, WASI 対応)                    |
+| Wasm 連携             | zware (pure Zig, WASI 対応, Go/TinyGo 動作確認済み) |
 | 正規表現              | Zig フルスクラッチ (Java regex 互換目標)       |
 | nREPL                 | CIDER / Calva / Conjure 互換                   |
 
@@ -136,9 +136,13 @@ zig build --release=fast  # 最適化ビルド (ベンチマーク用)
   `(if (not ~test) (do ~@body)))
 (unless false (println "executed!"))
 
-;; Wasm 連携
+;; Wasm 連携 (手書き WAT)
 (def m (wasm/load-module "add.wasm"))
 (wasm/invoke m "add" 3 4)  ;; => 7
+
+;; Go → Wasm 連携 (TinyGo でコンパイルした Go コード)
+(def go (wasm/load-wasi "go_math.wasm"))
+(wasm/invoke go "fibonacci" 10)  ;; => 55
 
 ;; System 互換
 (System/nanoTime)            ;; => 1769643920644642000

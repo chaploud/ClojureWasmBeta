@@ -200,6 +200,54 @@ M-x cider-connect → localhost → 7888
 
 ---
 
+## Wasm 連携
+
+### 基本 (手書き WAT / Wasm)
+
+```clojure
+;; Wasm モジュールをロード
+(def m (wasm/load-module "test/wasm/fixtures/01_add.wasm"))
+(wasm/invoke m "add" 3 4)  ;; => 7
+```
+
+### Go (TinyGo) → Wasm
+
+Go で書いた関数を TinyGo で Wasm にコンパイルし、Clojure から呼び出せる。
+
+```go
+// test/wasm/src/go_math.go
+package main
+
+//export add
+func add(a, b int32) int32 { return a + b }
+
+//export fibonacci
+func fibonacci(n int32) int32 { ... }
+
+func main() {}
+```
+
+```bash
+# TinyGo でコンパイル
+tinygo build -o go_math.wasm -target=wasi -no-debug go_math.go
+```
+
+```clojure
+;; WASI モジュールとしてロード (TinyGo は WASI ターゲット)
+(def go (wasm/load-wasi "go_math.wasm"))
+(wasm/invoke go "add" 3 4)       ;; => 7
+(wasm/invoke go "fibonacci" 10)  ;; => 55
+
+;; Clojure の高階関数と組み合わせ
+(map #(wasm/invoke go "fibonacci" %) (range 1 11))
+;; => (1 1 2 3 5 8 13 21 34 55)
+```
+
+`wasm/load-wasi` は WASI インポート (`fd_write`, `proc_exit` 等) を自動登録する。
+TinyGo の `wasi` ターゲットが要求する WASI 関数は全てサポート済み。
+
+---
+
 ## デバッグ機能
 
 ### バイトコードダンプ

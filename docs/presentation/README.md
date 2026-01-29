@@ -10,3 +10,4 @@
 | `demo/03_macros_atoms.clj` | マクロ + アトム                   |
 | `demo/04_wasm.clj`    | Wasm基本連携                           |
 | `demo/05_wasm_host.clj` | ホスト関数注入                       |
+| `demo/06_go_wasm.clj` | Go → Wasm 連携                        |

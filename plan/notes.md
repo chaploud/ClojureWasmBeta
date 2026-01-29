@@ -570,6 +570,14 @@ if (result_count == 0) return nil;
 - モジュールのインポートを走査し、`wasi_snapshot_preview1` の関数のみ登録
 - WASI `fd_write` はシステムコール経由のため `with-out-str` でキャプチャ不可
 
+#### Go (TinyGo) Wasm 対応
+
+- TinyGo `-target=wasi` でコンパイルした Wasm を `wasm/load-wasi` で正常ロード・実行可能
+- TinyGo が要求する WASI インポートは 3 関数: `fd_write`, `proc_exit`, `random_get` — 全て実装済み
+- `_start` エクスポートが生成されるが、`//export` した関数は個別に `wasm/invoke` で呼び出せる
+- Wasm サイズ: `-no-debug` で約 20KB (シンプルな数学関数の場合)
+- `test/wasm/src/go_math.go` / `test/wasm/fixtures/08_go_math.wasm` にサンプルあり
+
 ### エラーマッピング
 
 - Unreachable → `{:type :wasm/trap}`

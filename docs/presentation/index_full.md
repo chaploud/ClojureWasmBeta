@@ -37,7 +37,7 @@ JVM を使わず、Clojure の動作互換 (ブラックボックステスト) �
 ### モチベーション
 
 1. **JVM 脱却**: 起動 300ms+、メモリ 100MB+ の JVM 制約から解放されたい
-2. **JavaInterop 排除**: Java API の無限再実装地獄を避ける → **WasmInterop** で代替
+2. **JavaInterop 排除**: Java API の無限再実装地獄を避ける → **WasmInterop** で代替 (Go 等の他言語の Wasm も呼べる)
 3. **全レイヤーを理解**: Tokenizer から GC まで自分で書きたい
 4. **Wasm ネイティブ**: Pure Zig の zware で Wasm ↔ ホスト間が自然に統合
 
@@ -158,7 +158,23 @@ ClojureWasm は Zig フルスクラッチで全レイヤー再実装、Wasm 連�
 @captured ;; => [10]  — Wasm が Clojure 関数を呼んだ
 ```
 
-### Demo 6: --compare モード (ターミナル)
+### Demo 6: Go → Wasm 連携 (`demo/06_go_wasm.clj`)
+
+```clojure
+;; TinyGo でコンパイルした Go の Wasm をロード
+(def go-math (wasm/load-wasi "test/wasm/fixtures/08_go_math.wasm"))
+
+;; Go 関数を Clojure から呼び出し
+(wasm/invoke go-math "add" 3 4)       ;; => 7
+(wasm/invoke go-math "multiply" 6 7)  ;; => 42
+(wasm/invoke go-math "fibonacci" 10)  ;; => 55
+
+;; Clojure の高階関数で Go 関数を活用
+(map #(wasm/invoke go-math "fibonacci" %) (range 1 11))
+;; => (1 1 2 3 5 8 13 21 34 55)
+```
+
+### Demo 7: --compare モード (ターミナル)
 
 ```bash
 $ clj-wasm --compare -e "(map inc [1 2 3])"
@@ -310,6 +326,7 @@ fn validateNoDuplicates(comptime table: anytype, comptime ns_name: []const u8) v
 3. **Clojure 設計の美しさの再発見**: 実装してわかる一貫性と拡張性
 4. **comptime が強力**: ビルトイン関数テーブル、エラーメッセージ、重複検出を全てコンパイル時に
 5. **Arena は正義**: フェーズ単位の一括解放でメモリ管理が劇的に楽に
+6. **多言語 Wasm**: Go (TinyGo) のコードを Wasm 経由で Clojure から呼べた瞬間
 
 ---
 
@@ -380,6 +397,13 @@ Apple M4 Pro, 48 GB RAM, macOS (Darwin 25.2.0)
 - 全 Value 表現の大規模変更 → 事前に設計文書が必要
 - 実装されれば全ベンチで大幅改善が見込まれる
 
+### 多言語 Wasm 連携 (実証済み)
+
+- Go (TinyGo) → Wasm → ClojureWasm の連携は**動作確認済み**
+- TinyGo `-target=wasi` でコンパイル → `wasm/load-wasi` で即座にロード・実行
+- Rust, C 等の Wasm 出力も同様に呼び出し可能
+- Wasm がユニバーサルなバイナリフォーマットとして機能する実例
+
 ### Wasm ターゲット (ブラウザ Clojure)
 
 - 処理系自体を Wasm にコンパイル
@@ -418,6 +442,7 @@ ClojureWasm — Wasm/組込み/エッジ ← New
 | WAT               | WebAssembly Text Format。Wasm のテキスト表現                 |
 | ホスト関数        | Wasm モジュールに外部から注入する関数                         |
 | NaN Boxing        | IEEE 754 NaN の未使用ビットに型情報と値を埋め込む手法       |
+| TinyGo            | Go のサブセットコンパイラ。Wasm/WASI ターゲット対応           |
 | zware             | Pure Zig の Wasm ランタイム                                   |
 
 ---
