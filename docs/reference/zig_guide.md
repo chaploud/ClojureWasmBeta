@@ -288,10 +288,10 @@ Zig は「処理系を書くための言語」として非常に相性が良い�
 ### C-1. stdout の取得
 
 ```zig
-// ❌ 存在しない API
+// × 存在しない API
 const stdout = std.io.getStdOut().writer();
 
-// ✅ Zig 0.15.2 の正しい方法（バッファ必須）
+// ○ Zig 0.15.2 の正しい方法（バッファ必須）
 var stdout_buf: [4096]u8 = undefined;
 var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
 const stdout = &stdout_writer.interface;
@@ -305,10 +305,10 @@ try stdout.flush();  // 忘れずに flush
 "ambiguous format string" エラーが発生する。
 
 ```zig
-// ❌ エラー: ambiguous format string
+// × エラー: ambiguous format string
 try writer.print("location: {}", .{self.location});
 
-// ✅ 明示的に format メソッドを呼ぶ
+// ○ 明示的に format メソッドを呼ぶ
 try writer.writeAll("location: ");
 try self.location.format("", .{}, writer);
 ```
@@ -325,10 +325,10 @@ pub const Value = union(enum) {
     // ...
 
     pub fn isNil(self: Value) bool {
-        // ❌ 古い書き方（動かない場合あり）
+        // × 古い書き方（動かない場合あり）
         // return self == .nil;
 
-        // ✅ switch で明示的に判定
+        // ○ switch で明示的に判定
         return switch (self) {
             .nil => true,
             else => false,
@@ -338,10 +338,10 @@ pub const Value = union(enum) {
 
 // テスト時の注意
 test "nil check" {
-    // ❌ Value.nil だと enum タグとして解釈される可能性
+    // × Value.nil だと enum タグとして解釈される可能性
     // const nil = Value.nil;
 
-    // ✅ 型を明示
+    // ○ 型を明示
     const nil: Value = .nil;
     try std.testing.expect(nil.isNil());
 }
@@ -354,10 +354,10 @@ test "nil check" {
 ```zig
 pub fn next(self: *Tokenizer) Token {
     // ...
-    // ❌ メソッド名 next と衝突
+    // × メソッド名 next と衝突
     // const next = self.peek();
 
-    // ✅ 別の名前を使う
+    // ○ 別の名前を使う
     const next_char = self.peek();
 }
 ```

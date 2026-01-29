@@ -59,8 +59,8 @@ JVM を使わず、Clojure の動作互換 (ブラックボックステスト) �
 | ランタイム   | JVM           | JS Engine       | GraalVM Native | Zig Native         |
 | 起動時間     | 300-400ms     | 即時 (ブラウザ) | 10-150ms       | 2-70ms             |
 | メモリ       | 100-120MB     | ブラウザ依存    | 30-70MB        | 2-22MB             |
-| JavaInterop  | ✅ 完全       | ❌             | ✅ 制限付き    | ❌               |
-| WasmInterop  | ❌            | ❌             | ❌             | ✅               |
+| JavaInterop  | ○ 完全        | ×               | ○ 制限付き     | ×                  |
+| WasmInterop  | ×             | ×               | ×              | ○                  |
 | clojure.core | 完全          | ほぼ完全        | 大部分         | 545/714 (76%)      |
 | 用途         | サーバー全般  | フロントエンド  | CLI/スクリプト | CLI/Wasm/組込み    |
 | 実装         | Java          | Clojure→JS      | SCI (Clojure)  | Zig フルスクラッチ |

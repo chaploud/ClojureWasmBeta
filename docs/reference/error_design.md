@@ -203,9 +203,9 @@ user/main         - src/main.clj:10:3
 
 以下は全て実装済み (Phase U2a-U2d で完了):
 
-1. ~~**Phase 1**: ErrorKind, SourceLocation, 基本メッセージ~~ ✅
-2. ~~**Phase 2**: スタックトレース収集~~ ✅
-3. ~~**Phase 3**: コンテキスト表示（周辺ソースコード）~~ ✅
+1. ~~**Phase 1**: ErrorKind, SourceLocation, 基本メッセージ~~ ○
+2. ~~**Phase 2**: スタックトレース収集~~ ○
+3. ~~**Phase 3**: コンテキスト表示（周辺ソースコード）~~ ○
 
 ## 参考ファイル
 

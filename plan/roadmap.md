@@ -17,14 +17,14 @@
 
 ## 完了済みフェーズ (サマリ)
 
-| フェーズ | 状態            | 概要                                                                                     |
-|----------|-----------------|------------------------------------------------------------------------------------------|
-| Phase R  | ✅ R1-R7 完了   | リファクタリング (core.zig/value.zig 分割, branchHint, 死コード除去, Zig イディオム改善) |
-| Phase P  | ✅ P1-P2c 完了  | 高速化 (ベンチマーク基盤, VM最適化, Map ハッシュ)                                        |
-| Phase G  | ✅ G1a-G1c 完了 | GC (計測基盤, セミスペース Arena 40x 高速化)                                             |
-| Phase U  | ✅ U1-U6 完了   | UX (REPL readline, エラー表示, doc/dir, バグ修正, CLI, nREPL)                            |
-| Phase S  | S1a-S1j 完了    | セルフホスト (10 標準名前空間)                                                           |
-| Phase D  | ✅ D1-D3 完了   | ドキュメント (presentation, getting_started, developer_guide)                            |
+| フェーズ | 状態           | 概要                                                                                     |
+|----------|----------------|------------------------------------------------------------------------------------------|
+| Phase R  | ○ R1-R7 完了   | リファクタリング (core.zig/value.zig 分割, branchHint, 死コード除去, Zig イディオム改善) |
+| Phase P  | ○ P1-P2c 完了  | 高速化 (ベンチマーク基盤, VM最適化, Map ハッシュ)                                        |
+| Phase G  | ○ G1a-G1c 完了 | GC (計測基盤, セミスペース Arena 40x 高速化)                                             |
+| Phase U  | ○ U1-U6 完了   | UX (REPL readline, エラー表示, doc/dir, バグ修正, CLI, nREPL)                            |
+| Phase S  | S1a-S1j 完了   | セルフホスト (10 標準名前空間)                                                           |
+| Phase D  | ○ D1-D3 完了   | ドキュメント (presentation, getting_started, developer_guide)                            |
 
 ---
 

@@ -52,7 +52,7 @@ Zig で Clojure 処理系をフルスクラッチ実装。JVM 不要、Wasm ネ�
 | ランタイム  | JVM           | GraalVM Native | Zig Native         |
 | 起動時間    | 300-400ms     | 10-150ms       | 2-70ms             |
 | メモリ      | 100-120MB     | 30-70MB        | 2-22MB             |
-| WasmInterop | ❌            | ❌            | ✅                |
+| WasmInterop | ×             | ×              | ○                  |
 | 実装        | Java          | SCI (Clojure)  | Zig フルスクラッチ |
 
 ---

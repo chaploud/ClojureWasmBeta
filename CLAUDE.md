@@ -131,25 +131,25 @@ bash bench/run_bench.sh --quick --hyperfine
 詳細: `docs/reference/zig_guide.md`
 
 ```zig
-// ✅ ArrayList（.empty で初期化）
+// ○ ArrayList（.empty で初期化）
 var list: std.ArrayList(u8) = .empty;
 defer list.deinit(allocator);
 try list.append(allocator, 42);
 
-// ✅ HashMap（Unmanaged形式）
+// ○ HashMap（Unmanaged形式）
 var map: std.AutoHashMapUnmanaged(u32, []const u8) = .empty;
 defer map.deinit(allocator);
 try map.put(allocator, key, value);
 
-// ✅ stdout（バッファ必須）
+// ○ stdout（バッファ必須）
 var buf: [4096]u8 = undefined;
 var writer = std.fs.File.stdout().writer(&buf);
 const stdout = &writer.interface;
 try stdout.flush();  // 忘れずに
 
-// ✅ tagged union の判定は switch
+// ○ tagged union の判定は switch
 return switch (self) { .nil => true, else => false };
-// ❌ self == .nil は不安定
+// × self == .nil は不安定
 ```
 
 ## 設計原則
