@@ -7,7 +7,7 @@
 
 ;; --- モジュールロード ---
 (def math (wasm/load-module "test/wasm/fixtures/01_add.wasm"))
-(println "loaded:" math)
+math
 ;; => loaded: #<wasm-module>
 
 ;; --- 関数呼び出し (add) ---

@@ -166,9 +166,52 @@ Value ↔ Wasm                     (実行)
 
 ## 4. エンジニアリングハイライト (2:30)
 
-### comptime テーブル結合
+### Value 型: tagged union で全ランタイム値を表現
 
-コンパイル時に処理してしまい、実行時に処理を行わなくて良いというZigの機能
+```zig
+// src/runtime/value.zig:58
+pub const Value = union(enum) {
+    nil,
+    bool_val: bool,
+    int: i64,
+    float: f64,
+    string: *String,
+    keyword: *Keyword,
+    symbol: *Symbol,
+    list: *PersistentList,
+    vector: *PersistentVector,
+    map: *PersistentMap,
+    fn_val: *Fn,
+    lazy_seq: *LazySeq,
+    atom: *Atom,
+    wasm_module: *WasmModule,
+    // ... 全24バリアント
+};
+```
+
+- Clojure の**全ランタイム型**を Zig の tagged union で表現
+- switch による網羅性チェック → 型の追加漏れは**コンパイルエラー**
+
+### バイトコードコンパイラ: `if` のコード生成
+
+```zig
+// src/compiler/emit.zig:181
+fn emitIf(self: *Compiler, node: *const IfNode) !void {
+    try self.compile(node.test_node);           // test を評価
+    const jf = self.chunk.emitJump(.jump_if_false); // 偽ならジャンプ
+    try self.compile(node.then_node);           // then ブランチ
+    const je = self.chunk.emitJump(.jump);      // else をスキップ
+    self.chunk.patchJump(jf);                   // false ジャンプ先をパッチ
+    if (node.else_node) |e| try self.compile(e) // else ブランチ
+    else { try self.chunk.emitOp(.nil); }
+    self.chunk.patchJump(je);                   // else スキップ先をパッチ
+}
+```
+
+- `(if test then else)` → **ジャンプ命令 + パッチ** で分岐を実現
+- Node (意味解析済み中間表現) から直接バイトコードを emit
+
+### comptime テーブル結合
 
 ```zig
 // src/lib/core/registry.zig
@@ -176,9 +219,7 @@ pub const all_builtins = arithmetic.builtins ++
     predicates.builtins ++ collections.builtins ++
     sequences.builtins ++ strings.builtins ++ ...;
 
-comptime {
-    validateNoDuplicates(all_builtins, "clojure.core");
-}
+comptime { validateNoDuplicates(all_builtins, "clojure.core"); }
 ```
 
 - 545 関数を **ランタイムコストゼロ** で登録
@@ -191,10 +232,7 @@ comptime {
 
 ### セミスペース GC
 
-ヒープを2つの領域に分割し、一方を使用中、もう一方を空き領域として利用する方式
-オブジェクトの生存期間が短い場合に効率的であり、メモリ断片化を防ぐ
-
-sweep フェーズ: **1,146ms → 29ms** (40x 高速化)
+ヒープを2分割、コピー式で断片化なし。sweep: **1,146ms → 29ms** (40x 高速化)
 
 ### その他
 
