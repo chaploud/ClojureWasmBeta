@@ -331,6 +331,6 @@ clojure.zip, clojure.test, clojure.pprint (全12名前空間)
 
 ### SCI との違いは? (技術的に詳しい人向け)
 - SCI: Clojure で書かれた Clojure インタプリタ。GraalVM でネイティブ化
-- CWB: Zig で全レイヤーをフルスクラッチ (GC も自前)
-- SCI は Clojure の eval を使わずに独自評価器。CWB も同じアプローチ
-- SCI は Clojure のデータ構造をそのまま使う。CWB は全部自前実装
+- ClojureWasm: Zig で全レイヤーをフルスクラッチ (GC も自前)
+- SCI は Clojure の eval を使わずに独自評価器。ClojureWasm も同じアプローチ
+- SCI は Clojure のデータ構造をそのまま使う。ClojureWasm は全部自前実装

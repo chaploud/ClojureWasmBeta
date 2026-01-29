@@ -158,7 +158,7 @@ clj-wasm --compare -e "(map inc [1 2 3])"
 - **なぜ Rust じゃないの?**: 自作 GC を作りたかった (Rust の所有権と GC は相性悪い)、comptime の魅力
 - **本家 Clojure との互換性は?**: 1036 テスト pass。clojure.core の 76% 実装。動作互換 (ブラックボックス) を目指すが完全互換は非目標
 - **実用的に使える?**: CLI/スクリプト用途なら使える。サーバー用途は JVM Clojure が良い
-- **Babashka と何が違う?**: Babashka は SCI (Clojure で書かれた Clojure インタプリタ) の GraalVM ネイティブ。CWB は Zig フルスクラッチで Wasm 連携がある
+- **Babashka と何が違う?**: Babashka は SCI (Clojure で書かれた Clojure インタプリタ) の GraalVM ネイティブ。ClojureWasm は Zig フルスクラッチで Wasm 連携がある
 - **Go の Wasm も動く?**: TinyGo でコンパイルした Go の Wasm は動作確認済み。WASI 関数 (fd_write, proc_exit, random_get) をサポートしているので、TinyGo の wasi ターゲットがそのまま動く。Rust/C の Wasm も同様に呼べるはず
 - **STM は?**: 実装しない。atom のみ。シングルスレッドなので STM の意味がない
 - **マルチスレッドは?**: 現在はシングルスレッド。将来的に検討

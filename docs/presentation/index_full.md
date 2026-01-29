@@ -351,16 +351,16 @@ Apple M4 Pro, 48 GB RAM, macOS (Darwin 25.2.0)
 
 ### JVM warm 比較 (JIT warm-up 後)
 
-| ベンチマーク      | JVM Clj (warm) | CWB (warm) | 比率       |
+| ベンチマーク      | JVM Clj (warm) | ClojureWasm (warm) | 比率       |
 |-------------------|----------------|------------|------------|
 | fib30             | 10.1ms         | 63.8ms     | JVM 6x速   |
 | sum_range         | 5.9ms          | 10.4ms     | JVM 2x速   |
-| map_filter        | 1.4ms          | 0.4ms      | CWB 4x速   |
+| map_filter        | 1.4ms          | 0.4ms      | ClojureWasm 4x速   |
 | string_ops        | 1.9ms          | 59.4ms     | JVM 31x速  |
 | data_transform    | 1.5ms          | 6.7ms      | JVM 4x速   |
 
 - JIT warm-up 後は JVM が数値演算・文字列で優位
-- **map_filter は CWB が 4x 速い** (Fused Reduce の効果)
+- **map_filter は ClojureWasm が 4x 速い** (Fused Reduce の効果)
 
 ### 最適化前後
 

@@ -22,7 +22,7 @@ Apple M4 Pro, 48 GB RAM, macOS。hyperfine で計測。
 
 ### Cold start (コマンドライン実行)
 
-| ベンチマーク   | C     | Zig   | Java | Python | Ruby  | JVM Clojure | Babashka | **CWB** |
+| ベンチマーク   | C     | Zig   | Java | Python | Ruby  | JVM Clojure | Babashka | **ClojureWasm** |
 |----------------|-------|-------|------|--------|-------|-------------|----------|---------|
 | fib30          | 6.4ms | 4.5ms | 33ms | 77ms   | 135ms | 384ms       | 152ms    | **69ms**  |
 | sum_range      | 4.1ms | 3.8ms | 35ms | 20ms   | 103ms | 307ms       | 22ms     | **13ms**  |
@@ -35,18 +35,18 @@ map_filter (遅延シーケンスチェーン) では Fused Reduce の効果で�
 
 ### Warm (JIT / nREPL warm-up 後)
 
-| ベンチマーク   | JVM Clojure (warm) | CWB (warm) | 比率     |
+| ベンチマーク   | JVM Clojure (warm) | ClojureWasm (warm) | 比率     |
 |----------------|---------------------|------------|----------|
 | fib30          | 10ms                | 64ms       | JVM 7x速  |
 | sum_range      | 5.9ms               | 10ms       | JVM 2x速  |
-| map_filter     | 1.4ms               | 0.4ms      | CWB 4x速  |
+| map_filter     | 1.4ms               | 0.4ms      | ClojureWasm 4x速  |
 | string_ops     | 1.9ms               | 59ms*      | JVM 33x速 |
 | data_transform | 1.5ms               | 6.7ms      | JVM 4x速  |
 
 *string_ops: nREPL 内タイミングラッパーでクラッシュするため壁時計計測 (精度低)
 
 JIT warm-up 後の JVM Clojure は fib30 等の純粋な計算で強いが、
-Fused Reduce が効く map_filter では CWB が 4x 上回る。
+Fused Reduce が効く map_filter では ClojureWasm が 4x 上回る。
 
 ## プロジェクト指標
 
