@@ -27,3 +27,5 @@ bench/**/bench_c
 bench/**/bench_cpp
 bench/**/bench_zig
 bench/**/*.class
+
+.tmp/
