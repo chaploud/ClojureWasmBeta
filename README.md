@@ -23,25 +23,25 @@ Apple M4 Pro, 48 GB RAM, macOS。hyperfine で計測。
 ### Cold start (コマンドライン実行)
 
 | ベンチマーク   | C     | Zig   | Java | Python | Ruby  | JVM Clojure | Babashka | **ClojureWasm** |
-|----------------|-------|-------|------|--------|-------|-------------|----------|---------|
-| fib30          | 6.4ms | 4.5ms | 33ms | 77ms   | 135ms | 384ms       | 152ms    | **69ms**  |
-| sum_range      | 4.1ms | 3.8ms | 35ms | 20ms   | 103ms | 307ms       | 22ms     | **13ms**  |
-| map_filter     | 3.2ms | 4.0ms | 44ms | 15ms   | 97ms  | 383ms       | 13ms     | **2.3ms** |
-| string_ops     | 5.1ms | 3.9ms | 49ms | 18ms   | 98ms  | 320ms       | 13ms     | **6.4ms** |
-| data_transform | 3.8ms | 3.3ms | 32ms | 17ms   | 100ms | 385ms       | 13ms     | **11ms**  |
+|----------------|-------|-------|------|--------|-------|-------------|----------|-----------------|
+| fib30          | 6.4ms | 4.5ms | 33ms | 77ms   | 135ms | 384ms       | 152ms    | **69ms**        |
+| sum_range      | 4.1ms | 3.8ms | 35ms | 20ms   | 103ms | 307ms       | 22ms     | **13ms**        |
+| map_filter     | 3.2ms | 4.0ms | 44ms | 15ms   | 97ms  | 383ms       | 13ms     | **2.3ms**       |
+| string_ops     | 5.1ms | 3.9ms | 49ms | 18ms   | 98ms  | 320ms       | 13ms     | **6.4ms**       |
+| data_transform | 3.8ms | 3.3ms | 32ms | 17ms   | 100ms | 385ms       | 13ms     | **11ms**        |
 
 Cold start では JVM Clojure に対して 5-200x 速く、babashka と同等以上。
 map_filter (遅延シーケンスチェーン) では Fused Reduce の効果で全言語中最速を記録。
 
 ### Warm (JIT / nREPL warm-up 後)
 
-| ベンチマーク   | JVM Clojure (warm) | ClojureWasm (warm) | 比率     |
-|----------------|---------------------|------------|----------|
-| fib30          | 10ms                | 64ms       | JVM 7x速  |
-| sum_range      | 5.9ms               | 10ms       | JVM 2x速  |
-| map_filter     | 1.4ms               | 0.4ms      | ClojureWasm 4x速  |
-| string_ops     | 1.9ms               | 59ms*      | JVM 33x速 |
-| data_transform | 1.5ms               | 6.7ms      | JVM 4x速  |
+| ベンチマーク   | JVM Clojure (warm) | ClojureWasm (warm) | 比率             |
+|----------------|--------------------|--------------------|------------------|
+| fib30          | 10ms               | 64ms               | JVM 7x速         |
+| sum_range      | 5.9ms              | 10ms               | JVM 2x速         |
+| map_filter     | 1.4ms              | 0.4ms              | ClojureWasm 4x速 |
+| string_ops     | 1.9ms              | 59ms*              | JVM 33x速        |
+| data_transform | 1.5ms              | 6.7ms              | JVM 4x速         |
 
 *string_ops: nREPL 内タイミングラッパーでクラッシュするため壁時計計測 (精度低)
 
@@ -50,16 +50,16 @@ Fused Reduce が効く map_filter では ClojureWasm が 4x 上回る。
 
 ## プロジェクト指標
 
-| 項目                  | 状態                                           |
-|-----------------------|------------------------------------------------|
-| テスト                | 1036 pass / 1 fail (意図的)                    |
-| clojure.core 実装     | 545 done / 169 skip (JVM 固有)                 |
-| Zig ソースコード      | ~38,000 行                                     |
-| バックエンド          | TreeWalk + BytecodeVM (デュアル)               |
-| GC                    | セミスペース Arena Mark-Sweep + 世代別 GC 基盤 |
-| Wasm 連携             | zware (pure Zig, WASI 対応, Go/TinyGo 動作確認済み) |
-| 正規表現              | Zig フルスクラッチ (Java regex 互換目標)       |
-| nREPL                 | CIDER / Calva / Conjure 互換                   |
+| 項目              | 状態                                                |
+|-------------------|-----------------------------------------------------|
+| テスト            | 1036 pass / 1 fail (意図的)                         |
+| clojure.core 実装 | 545 done / 169 skip (JVM 固有)                      |
+| Zig ソースコード  | ~38,000 行                                          |
+| バックエンド      | TreeWalk + BytecodeVM (デュアル)                    |
+| GC                | セミスペース Arena Mark-Sweep + 世代別 GC 基盤      |
+| Wasm 連携         | zware (pure Zig, WASI 対応, Go/TinyGo 動作確認済み) |
+| 正規表現          | Zig フルスクラッチ (Java regex 互換目標)            |
+| nREPL             | CIDER / Calva / Conjure 互換                        |
 
 ### 標準名前空間
 
@@ -187,30 +187,30 @@ Source Code (.clj / -e / REPL / nREPL)
 
 ## 本家 Clojure との主な差異
 
-| 項目                  | 本家 Clojure       | ClojureWasmBeta          |
-|-----------------------|--------------------|--------------------------|
-| ランタイム            | JVM                | Zig ネイティブ           |
-| Java Interop          | あり               | なし (System/* は互換)   |
-| 整数型                | long (64bit)       | i64                      |
-| BigDecimal/BigInteger | あり               | なし                     |
-| Agent/STM             | あり               | なし                     |
-| Wasm 連携             | なし               | あり (zware)             |
-| 正規表現              | java.util.regex    | Zig フルスクラッチ       |
-| 起動時間              | 300-400ms          | 2-10ms                   |
-| メモリ (典型的)       | 100-120MB          | 2-22MB                   |
+| 項目                  | 本家 Clojure    | ClojureWasmBeta        |
+|-----------------------|-----------------|------------------------|
+| ランタイム            | JVM             | Zig ネイティブ         |
+| Java Interop          | あり            | なし (System/* は互換) |
+| 整数型                | long (64bit)    | i64                    |
+| BigDecimal/BigInteger | あり            | なし                   |
+| Agent/STM             | あり            | なし                   |
+| Wasm 連携             | なし            | あり (zware)           |
+| 正規表現              | java.util.regex | Zig フルスクラッチ     |
+| 起動時間              | 300-400ms       | 2-10ms                 |
+| メモリ (典型的)       | 100-120MB       | 2-22MB                 |
 
 ## ドキュメント
 
-| パス                             | 内容                             |
-|----------------------------------|----------------------------------|
-| `docs/getting_started.md`        | 導入ガイド・使い方               |
-| `docs/developer_guide.md`        | 開発者向け技術ガイド             |
-| `docs/presentation.md`           | 発表資料 (ベンチマーク含む)      |
-| `docs/reference/architecture.md` | 全体設計・ディレクトリ構成       |
-| `docs/reference/vm_design.md`    | VM 設計・スタック・クロージャ    |
-| `docs/reference/gc_design.md`    | GC 設計・セミスペース            |
-| `status/vars.yaml`               | clojure.core 実装状況            |
-| `status/bench.yaml`              | ベンチマーク履歴                 |
+| パス                             | 内容                          |
+|----------------------------------|-------------------------------|
+| `docs/getting_started.md`        | 導入ガイド・使い方            |
+| `docs/developer_guide.md`        | 開発者向け技術ガイド          |
+| `docs/presentation.md`           | 発表資料 (ベンチマーク含む)   |
+| `docs/reference/architecture.md` | 全体設計・ディレクトリ構成    |
+| `docs/reference/vm_design.md`    | VM 設計・スタック・クロージャ |
+| `docs/reference/gc_design.md`    | GC 設計・セミスペース         |
+| `status/vars.yaml`               | clojure.core 実装状況         |
+| `status/bench.yaml`              | ベンチマーク履歴              |
 
 ## ベンチマーク実行
 

@@ -12,16 +12,16 @@
 
 ### プロジェクト指標
 
-| 指標                  | 値                                     |
-|-----------------------|----------------------------------------|
-| テスト                | 1036 pass / 1 fail (意図的)            |
-| clojure.core 実装状況 | 545 done / 169 skip                    |
-| Zig ソースコード      | ~38,000 行 (src/ 以下)                 |
-| デュアルバックエンド  | TreeWalk + BytecodeVM                  |
-| GC                    | セミスペース Arena Mark-Sweep (式境界) |
-| Wasm                  | zware (10 API 関数)                    |
+| 指標                  | 値                                                                     |
+|-----------------------|------------------------------------------------------------------------|
+| テスト                | 1036 pass / 1 fail (意図的)                                            |
+| clojure.core 実装状況 | 545 done / 169 skip                                                    |
+| Zig ソースコード      | ~38,000 行 (src/ 以下)                                                 |
+| デュアルバックエンド  | TreeWalk + BytecodeVM                                                  |
+| GC                    | セミスペース Arena Mark-Sweep (式境界)                                 |
+| Wasm                  | zware (10 API 関数)                                                    |
 | 標準 NS               | string/set/walk/edn/math/repl/data/stacktrace/template/zip/test/pprint |
-| nREPL                 | CIDER/Calva/Conjure 互換              |
+| nREPL                 | CIDER/Calva/Conjure 互換                                               |
 
 ### 直近の完了
 
@@ -56,28 +56,28 @@ bash bench/run_bench.sh --quick
 bash bench/run_bench.sh --quick --record --version="P3 NaN boxing"
 ```
 
-| #   | Phase | タスク                | 状態     | 備考                                      |
-|-----|-------|----------------------|----------|-------------------------------------------|
-| 1   | U4    | 既知バグ修正         | 完了     | ^:const, with-local-vars, defmacro in defn |
-| 2   | S1    | clojure.pprint       | 完了     | pprint, print-table, cl-format (最小限)    |
-| 3   | P0a   | TW vs VM 比較        | 完了     | 同等速度。両者のボトルネックが同じ (builtin call) |
-| 4   | P0b   | --profile フラグ     | 完了     | Reader/Analyzer/Engine/Realize の時間計測可能 |
-| 5   | P3    | TW 高速算術          | 完了     | fib30: 1.66s→0.92s (45% 改善)             |
-| 6   | P3    | VM 算術 opcode 化    | 完了     | VM: fib30 65ms (TW 811ms の 12倍高速)     |
-| 7   | BUG   | VM defn 再帰バグ     | 修正済   | closure作成時に自己参照をbindingsに追加    |
-| 8   | BUG   | named fn スロット不整合 | 修正済  | let+named fn のキャプチャスロット計算修正  |
-| 9   | BUG   | テストVM検証漏れ     | 修正済   | strict_vm_check=true で厳格検証            |
-| 10  | BUG   | load-file バックエンド | 修正済   | defs.current_backend でバックエンド統一   |
-| 11  | P1a   | Safe Point GC        | 完了     | recur/call で GC チェック、lazy seq は別対応 |
-| 12  | P3    | NaN boxing           | 保留     | 大規模変更、事前に設計文書が必要           |
-| 7   | G2a-c | 世代別 GC 基盤       | 完了     | Nursery bump allocator + minor GC + promotion |
-| 8   | G2d-e | 世代別 GC 統合       | 保留     | 式境界GCでは効果限定的、ベンチ確認後に検討 |
-| 9   | P3    | inline caching       | 保留     | VM 既に最適化済み (tryInlineCall)、効果限定 |
-| 10  | P3    | 定数畳み込み         | 完了     | Analyzer で算術・比較演算の定数畳み込み    |
-| 11  | P3    | tail call dispatch   | 保留     | Zig では実現困難、効果限定的               |
-| 12  | P1b   | 遅延 take/reduce     | 完了     | LazySeq.Take 追加、遅延イテレーション実装  |
-| 13  | P1c   | fused reduce         | 完了     | map_filter 27GB→2MB、sum_range 401MB→2MB   |
-| 14  | P1c   | VM ベンチ標準化      | 完了     | run_bench.sh を --backend=vm に変更        |
+| #  | Phase | タスク                  | 状態   | 備考                                              |
+|----|-------|-------------------------|--------|---------------------------------------------------|
+| 1  | U4    | 既知バグ修正            | 完了   | ^:const, with-local-vars, defmacro in defn        |
+| 2  | S1    | clojure.pprint          | 完了   | pprint, print-table, cl-format (最小限)           |
+| 3  | P0a   | TW vs VM 比較           | 完了   | 同等速度。両者のボトルネックが同じ (builtin call) |
+| 4  | P0b   | --profile フラグ        | 完了   | Reader/Analyzer/Engine/Realize の時間計測可能     |
+| 5  | P3    | TW 高速算術             | 完了   | fib30: 1.66s→0.92s (45% 改善)                     |
+| 6  | P3    | VM 算術 opcode 化       | 完了   | VM: fib30 65ms (TW 811ms の 12倍高速)             |
+| 7  | BUG   | VM defn 再帰バグ        | 修正済 | closure作成時に自己参照をbindingsに追加           |
+| 8  | BUG   | named fn スロット不整合 | 修正済 | let+named fn のキャプチャスロット計算修正         |
+| 9  | BUG   | テストVM検証漏れ        | 修正済 | strict_vm_check=true で厳格検証                   |
+| 10 | BUG   | load-file バックエンド  | 修正済 | defs.current_backend でバックエンド統一           |
+| 11 | P1a   | Safe Point GC           | 完了   | recur/call で GC チェック、lazy seq は別対応      |
+| 12 | P3    | NaN boxing              | 保留   | 大規模変更、事前に設計文書が必要                  |
+| 7  | G2a-c | 世代別 GC 基盤          | 完了   | Nursery bump allocator + minor GC + promotion     |
+| 8  | G2d-e | 世代別 GC 統合          | 保留   | 式境界GCでは効果限定的、ベンチ確認後に検討        |
+| 9  | P3    | inline caching          | 保留   | VM 既に最適化済み (tryInlineCall)、効果限定       |
+| 10 | P3    | 定数畳み込み            | 完了   | Analyzer で算術・比較演算の定数畳み込み           |
+| 11 | P3    | tail call dispatch      | 保留   | Zig では実現困難、効果限定的                      |
+| 12 | P1b   | 遅延 take/reduce        | 完了   | LazySeq.Take 追加、遅延イテレーション実装         |
+| 13 | P1c   | fused reduce            | 完了   | map_filter 27GB→2MB、sum_range 401MB→2MB          |
+| 14 | P1c   | VM ベンチ標準化         | 完了   | run_bench.sh を --backend=vm に変更               |
 
 ### スコープ外 (将来検討)
 

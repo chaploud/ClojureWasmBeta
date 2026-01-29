@@ -5,14 +5,14 @@ Zig実装での対応方針を検討するための資料。
 
 ## 概要
 
-| 名前空間 | 機能 | Zig対応方針 |
-|---------|------|------------|
-| clojure.java.io | ファイル・ストリームI/O | 必要（優先度高） |
-| clojure.java.shell | サブプロセス実行（旧API） | 検討 |
-| clojure.java.process | サブプロセス実行（新API 1.12+） | 検討 |
-| clojure.java.browse | ブラウザ起動 | スキップ |
-| clojure.java.javadoc | Javadocブラウズ | スキップ |
-| clojure.java.basis | deps.edn/CLI情報 | スキップ |
+| 名前空間             | 機能                            | Zig対応方針      |
+|----------------------|---------------------------------|------------------|
+| clojure.java.io      | ファイル・ストリームI/O         | 必要（優先度高） |
+| clojure.java.shell   | サブプロセス実行（旧API）       | 検討             |
+| clojure.java.process | サブプロセス実行（新API 1.12+） | 検討             |
+| clojure.java.browse  | ブラウザ起動                    | スキップ         |
+| clojure.java.javadoc | Javadocブラウズ                 | スキップ         |
+| clojure.java.basis   | deps.edn/CLI情報                | スキップ         |
 
 ---
 
@@ -22,27 +22,27 @@ I/O操作の中核。Zigのstd.fsとstd.ioで大部分を代替可能。
 
 ### プロトコル
 
-| 名前 | 説明 | Zig対応案 |
-|-----|------|----------|
+| 名前        | 説明                     | Zig対応案                |
+|-------------|--------------------------|--------------------------|
 | `Coercions` | as-file, as-url への変換 | パス文字列の正規化で対応 |
-| `IOFactory` | Reader/Writer/Stream生成 | Zig std.fs.File で代替 |
+| `IOFactory` | Reader/Writer/Stream生成 | Zig std.fs.File で代替   |
 
 ### 公開関数
 
-| 関数 | 説明 | Zig対応案 |
-|-----|------|----------|
-| `reader` | BufferedReader取得 | std.io.bufferedReader |
-| `writer` | BufferedWriter取得 | std.io.bufferedWriter |
-| `input-stream` | BufferedInputStream取得 | std.fs.File.reader |
-| `output-stream` | BufferedOutputStream取得 | std.fs.File.writer |
-| `copy` | 入力→出力コピー | 手動実装 |
-| `file` | File オブジェクト生成 | パス文字列で代替 |
-| `delete-file` | ファイル削除 | std.fs.deleteFile |
-| `make-parents` | 親ディレクトリ作成 | std.fs.makePath |
-| `as-file` | Fileへ変換 | パス正規化 |
-| `as-url` | URLへ変換 | URL非対応（ファイルパスのみ） |
-| `as-relative-path` | 相対パス取得 | パス操作 |
-| `resource` | クラスパスリソース取得 | 別途検討（組み込みリソース？） |
+| 関数               | 説明                     | Zig対応案                      |
+|--------------------|--------------------------|--------------------------------|
+| `reader`           | BufferedReader取得       | std.io.bufferedReader          |
+| `writer`           | BufferedWriter取得       | std.io.bufferedWriter          |
+| `input-stream`     | BufferedInputStream取得  | std.fs.File.reader             |
+| `output-stream`    | BufferedOutputStream取得 | std.fs.File.writer             |
+| `copy`             | 入力→出力コピー          | 手動実装                       |
+| `file`             | File オブジェクト生成    | パス文字列で代替               |
+| `delete-file`      | ファイル削除             | std.fs.deleteFile              |
+| `make-parents`     | 親ディレクトリ作成       | std.fs.makePath                |
+| `as-file`          | Fileへ変換               | パス正規化                     |
+| `as-url`           | URLへ変換                | URL非対応（ファイルパスのみ）  |
+| `as-relative-path` | 相対パス取得             | パス操作                       |
+| `resource`         | クラスパスリソース取得   | 別途検討（組み込みリソース？） |
 
 ### オプション
 
@@ -63,11 +63,11 @@ I/O操作の中核。Zigのstd.fsとstd.ioで大部分を代替可能。
 
 ### 公開関数・マクロ
 
-| 名前 | 種別 | 説明 | Zig対応案 |
-|-----|------|------|----------|
-| `sh` | fn | コマンド実行、stdout/stderr/exit取得 | std.process.Child |
-| `with-sh-dir` | macro | 作業ディレクトリ設定 | 実行時にcwd指定 |
-| `with-sh-env` | macro | 環境変数設定 | 実行時にenv指定 |
+| 名前          | 種別  | 説明                                 | Zig対応案         |
+|---------------|-------|--------------------------------------|-------------------|
+| `sh`          | fn    | コマンド実行、stdout/stderr/exit取得 | std.process.Child |
+| `with-sh-dir` | macro | 作業ディレクトリ設定                 | 実行時にcwd指定   |
+| `with-sh-env` | macro | 環境変数設定                         | 実行時にenv指定   |
 
 ### sh オプション
 
@@ -93,16 +93,16 @@ Clojure 1.12+ の新しいプロセスAPI。より柔軟な制御が可能。
 
 ### 公開関数
 
-| 名前 | 説明 | Zig対応案 |
-|-----|------|----------|
-| `start` | プロセス起動、Process返却 | std.process.Child.spawn |
-| `exec` | 起動→完了待ち→stdout返却 | spawn + wait + read |
-| `stdin` | プロセスの標準入力取得 | child.stdin |
-| `stdout` | プロセスの標準出力取得 | child.stdout |
-| `stderr` | プロセスの標準エラー取得 | child.stderr |
-| `exit-ref` | 終了待ちの参照（deref可能） | wait + 終了コード |
-| `to-file` | リダイレクト先ファイル指定 | ファイルへ出力 |
-| `from-file` | リダイレクト元ファイル指定 | ファイルから入力 |
+| 名前        | 説明                        | Zig対応案               |
+|-------------|-----------------------------|-------------------------|
+| `start`     | プロセス起動、Process返却   | std.process.Child.spawn |
+| `exec`      | 起動→完了待ち→stdout返却    | spawn + wait + read     |
+| `stdin`     | プロセスの標準入力取得      | child.stdin             |
+| `stdout`    | プロセスの標準出力取得      | child.stdout            |
+| `stderr`    | プロセスの標準エラー取得    | child.stderr            |
+| `exit-ref`  | 終了待ちの参照（deref可能） | wait + 終了コード       |
+| `to-file`   | リダイレクト先ファイル指定  | ファイルへ出力          |
+| `from-file` | リダイレクト元ファイル指定  | ファイルから入力        |
 
 ### start オプション
 
@@ -119,8 +119,8 @@ Clojure 1.12+ の新しいプロセスAPI。より柔軟な制御が可能。
 
 デスクトップブラウザを開く機能。REPL/開発ツール向け。
 
-| 名前 | 説明 |
-|-----|------|
+| 名前         | 説明                          |
+|--------------|-------------------------------|
 | `browse-url` | URLをデフォルトブラウザで開く |
 
 **スキップ理由**: Wasm環境での利用シーン無し。
@@ -131,11 +131,11 @@ Clojure 1.12+ の新しいプロセスAPI。より柔軟な制御が可能。
 
 Javadocをブラウザで開く機能。
 
-| 名前 | 説明 |
-|-----|------|
-| `javadoc` | クラスのJavadocをブラウザで表示 |
-| `add-local-javadoc` | ローカルJavadocパス追加 |
-| `add-remote-javadoc` | リモートJavadocURL追加 |
+| 名前                 | 説明                            |
+|----------------------|---------------------------------|
+| `javadoc`            | クラスのJavadocをブラウザで表示 |
+| `add-local-javadoc`  | ローカルJavadocパス追加         |
+| `add-remote-javadoc` | リモートJavadocURL追加          |
 
 **スキップ理由**: Java固有。
 
@@ -145,10 +145,10 @@ Javadocをブラウザで開く機能。
 
 Clojure CLIのdeps.edn情報を取得。
 
-| 名前 | 説明 |
-|-----|------|
+| 名前            | 説明              |
+|-----------------|-------------------|
 | `initial-basis` | 起動時のbasis情報 |
-| `current-basis` | 現在のbasis情報 |
+| `current-basis` | 現在のbasis情報   |
 
 **スキップ理由**: Clojure CLI/tools.deps固有。
 
@@ -162,10 +162,10 @@ Javaクラスのリフレクション情報をClojureデータとして取得す
 
 ### 主要関数
 
-| 名前 | 説明 |
-|-----|------|
-| `reflect` | オブジェクト/クラスのリフレクション情報取得 |
-| `type-reflect` | 型参照からリフレクション情報取得 |
+| 名前           | 説明                                        |
+|----------------|---------------------------------------------|
+| `reflect`      | オブジェクト/クラスのリフレクション情報取得 |
+| `type-reflect` | 型参照からリフレクション情報取得            |
 
 ### 戻り値の構造
 

@@ -6,24 +6,24 @@ Clojure処理系における値の3段階表現。sci/babashka/本家Clojureの�
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ 1. Reader Phase: 構文表現                            │
-│    src/reader/form.zig - Form型                      │
+│ 1. Reader Phase: 構文表現                           │
+│    src/reader/form.zig - Form型                     │
 │    Symbol, List, Vector, Keyword, etc.              │
 │    + メタデータ(line/column/file)                   │
 └─────────────────────────────────────────────────────┘
                     ↓ analyze (マクロ展開含む)
 ┌─────────────────────────────────────────────────────┐
-│ 2. Analyzer Phase: 実行可能ノード                    │
-│    src/analyzer/node.zig - Node型                    │
+│ 2. Analyzer Phase: 実行可能ノード                   │
+│    src/analyzer/node.zig - Node型                   │
 │    fn(ctx, bindings) -> Value                       │
 │    ConstantNode, VarNode, CallNode, IfNode, etc.    │
-│    + スタック情報（ソース位置）                      │
+│    + スタック情報（ソース位置）                     │
 └─────────────────────────────────────────────────────┘
                     ↓ 評価
 ┌─────────────────────────────────────────────────────┐
-│ 3. Runtime Phase: 実際の値                           │
-│    src/runtime/value.zig - Value型                   │
-│    Var, Fn, 数値, 文字列, コレクション等             │
+│ 3. Runtime Phase: 実際の値                          │
+│    src/runtime/value.zig - Value型                  │
+│    Var, Fn, 数値, 文字列, コレクション等            │
 │    + thread-local dynamic bindings                  │
 └─────────────────────────────────────────────────────┘
 ```
@@ -68,17 +68,17 @@ src/
 
 ## ファイル構成
 
-| ファイル                       | 型        | フェーズ   | 状態   |
-|--------------------------------|-----------|------------|--------|
-| `src/reader/form.zig`          | Form      | Reader     | 実装済 |
-| `src/reader/reader.zig`        | Reader    | Reader     | 実装済 |
-| `src/analyzer/node.zig`        | Node      | Analyzer   | 実装済 |
-| `src/analyzer/analyze.zig`     | Analyzer  | Analyzer   | 実装済 |
-| `src/runtime/value.zig`        | Value     | Runtime    | 実装済 |
-| `src/runtime/var.zig`          | Var       | Runtime    | 実装済 |
-| `src/runtime/namespace.zig`    | Namespace | Runtime    | 実装済 |
-| `src/runtime/env.zig`          | Env       | Runtime    | 実装済 |
-| `src/runtime/context.zig`      | Context   | 評価器     | 実装済 |
+| ファイル                    | 型        | フェーズ | 状態   |
+|-----------------------------|-----------|----------|--------|
+| `src/reader/form.zig`       | Form      | Reader   | 実装済 |
+| `src/reader/reader.zig`     | Reader    | Reader   | 実装済 |
+| `src/analyzer/node.zig`     | Node      | Analyzer | 実装済 |
+| `src/analyzer/analyze.zig`  | Analyzer  | Analyzer | 実装済 |
+| `src/runtime/value.zig`     | Value     | Runtime  | 実装済 |
+| `src/runtime/var.zig`       | Var       | Runtime  | 実装済 |
+| `src/runtime/namespace.zig` | Namespace | Runtime  | 実装済 |
+| `src/runtime/env.zig`       | Env       | Runtime  | 実装済 |
+| `src/runtime/context.zig`   | Context   | 評価器   | 実装済 |
 
 ## Form (Reader出力)
 
@@ -311,13 +311,13 @@ pub const Context = struct {
 
 ## 参考実装
 
-| 概念 | 本家Clojure | SCI | このプロジェクト |
-|------|------------|-----|----------------|
-| Reader出力 | IObj + メタ | edamame | Form |
-| Analyzer出力 | Expr | Node protocol | Node |
-| 実行時値 | Object | any | Value |
-| 変数 | Var.java | Var type | Var |
-| 名前空間 | Namespace.java | Namespace | Namespace |
+| 概念         | 本家Clojure    | SCI           | このプロジェクト |
+|--------------|----------------|---------------|------------------|
+| Reader出力   | IObj + メタ    | edamame       | Form             |
+| Analyzer出力 | Expr           | Node protocol | Node             |
+| 実行時値     | Object         | any           | Value            |
+| 変数         | Var.java       | Var type      | Var              |
+| 名前空間     | Namespace.java | Namespace     | Namespace        |
 
 ### 参考ファイル
 

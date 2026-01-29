@@ -105,23 +105,23 @@ bash bench/run_bench.sh --quick --hyperfine
 
 ### オプション一覧
 
-| オプション         | 効果                                    |
-|--------------------|-----------------------------------------|
-| (なし)             | 全7言語実行                             |
-| `--quick`          | ClojureWasmBeta のみ (開発中推奨)       |
-| `--record`         | status/bench.yaml に履歴追記            |
-| `--version="名前"` | 記録時のバージョン名 (タスク名を推奨)   |
+| オプション         | 効果                                     |
+|--------------------|------------------------------------------|
+| (なし)             | 全7言語実行                              |
+| `--quick`          | ClojureWasmBeta のみ (開発中推奨)        |
+| `--record`         | status/bench.yaml に履歴追記             |
+| `--version="名前"` | 記録時のバージョン名 (タスク名を推奨)    |
 | `--hyperfine`      | ms 精度計測 (要: brew install hyperfine) |
 
 ### 5種類のベンチマーク
 
-| 名前           | 内容                       | 主な計測対象                |
-|----------------|----------------------------|-----------------------------|
-| fib30          | 再帰 fib(30)               | 関数呼び出しオーバーヘッド  |
-| sum_range      | range(1M) + sum            | 数値シーケンス              |
+| 名前           | 内容                         | 主な計測対象               |
+|----------------|------------------------------|----------------------------|
+| fib30          | 再帰 fib(30)                 | 関数呼び出しオーバーヘッド |
+| sum_range      | range(1M) + sum              | 数値シーケンス             |
 | map_filter     | filter/map/take/sum チェイン | HOF + lazy seq GC 圧力     |
-| string_ops     | upper-case + 結合 ×10000   | 文字列処理                  |
-| data_transform | マップ作成・変換 ×10000    | データ構造                  |
+| string_ops     | upper-case + 結合 ×10000     | 文字列処理                 |
+| data_transform | マップ作成・変換 ×10000      | データ構造                 |
 
 現在値は `status/bench.yaml` (hyperfine)。改善履歴は `status/bench_improvement.yaml`。
 `yq '.history' status/bench_improvement.yaml` で改善経過を参照可能。

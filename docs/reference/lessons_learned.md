@@ -246,10 +246,10 @@ VM のバグは大抵クラッシュではなく「間違った値を返す」�
 
 ### 5. 双方向の変更を忘れない
 
-| 変更箇所         | 影響を受ける箇所                               |
-|------------------|------------------------------------------------|
-| Value に新タグ   | traceValue, fixupValue, deepClone, format, eql |
-| 新 opcode 追加   | emit.zig (emit側) + vm.zig (execute側)         |
-| FnProto 変更     | emit.zig (設定側) + vm.zig (読取側)            |
-| ローカル追加方式 | emit.zig (addLocal) + vm.zig (local_load/store) |
+| 変更箇所         | 影響を受ける箇所                                           |
+|------------------|------------------------------------------------------------|
+| Value に新タグ   | traceValue, fixupValue, deepClone, format, eql             |
+| 新 opcode 追加   | emit.zig (emit側) + vm.zig (execute側)                     |
+| FnProto 変更     | emit.zig (設定側) + vm.zig (読取側)                        |
+| ローカル追加方式 | emit.zig (addLocal) + vm.zig (local_load/store)            |
 | 新 Node 型追加   | node.zig + analyze.zig + evaluator.zig + emit.zig + vm.zig |

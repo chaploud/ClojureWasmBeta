@@ -274,37 +274,37 @@ clj-wasm --gc-stats -e '(dotimes [_ 1000] (vec (range 100)))'
 
 ## 本家 Clojure との主な差異
 
-| 項目                     | 本家 Clojure      | ClojureWasmBeta         |
-|--------------------------|--------------------|-------------------------|
-| ランタイム               | JVM                | Zig ネイティブ          |
-| Java Interop             | あり               | なし                    |
-| 整数型                   | long (64bit)       | i64                     |
-| BigDecimal/BigInteger    | あり               | なし                    |
-| Agent/STM                | あり               | なし                    |
-| Proxy                    | あり               | なし                    |
-| Wasm 連携                | なし               | あり (zware)            |
-| nREPL                    | nREPL (JVM)        | 互換実装 (Zig)          |
-| 正規表現                 | java.util.regex    | Zig フルスクラッチ      |
+| 項目                  | 本家 Clojure    | ClojureWasmBeta    |
+|-----------------------|-----------------|--------------------|
+| ランタイム            | JVM             | Zig ネイティブ     |
+| Java Interop          | あり            | なし               |
+| 整数型                | long (64bit)    | i64                |
+| BigDecimal/BigInteger | あり            | なし               |
+| Agent/STM             | あり            | なし               |
+| Proxy                 | あり            | なし               |
+| Wasm 連携             | なし            | あり (zware)       |
+| nREPL                 | nREPL (JVM)     | 互換実装 (Zig)     |
+| 正規表現              | java.util.regex | Zig フルスクラッチ |
 
 ---
 
 ## 利用可能な標準名前空間
 
-| 名前空間              | 主な関数                                       |
-|-----------------------|------------------------------------------------|
-| clojure.core          | 545 関数 (map, filter, reduce, defprotocol 等) |
-| clojure.string        | join, split, upper-case, replace 等            |
-| clojure.set           | union, intersection, difference 等             |
-| clojure.walk          | walk, postwalk, prewalk, keywordize-keys       |
-| clojure.edn           | read-string                                    |
-| clojure.math          | sin, cos, pow, log, sqrt 等 (33 関数)          |
-| clojure.repl          | doc, find-doc, apropos, source                 |
-| clojure.data          | diff                                           |
-| clojure.stacktrace    | print-stack-trace                              |
-| clojure.template      | apply-template, do-template                    |
-| clojure.zip           | zipper, vector-zip, seq-zip, xml-zip           |
-| clojure.test          | deftest, is, testing, run-tests                |
-| clojure.pprint        | pprint, print-table, cl-format                 |
+| 名前空間           | 主な関数                                       |
+|--------------------|------------------------------------------------|
+| clojure.core       | 545 関数 (map, filter, reduce, defprotocol 等) |
+| clojure.string     | join, split, upper-case, replace 等            |
+| clojure.set        | union, intersection, difference 等             |
+| clojure.walk       | walk, postwalk, prewalk, keywordize-keys       |
+| clojure.edn        | read-string                                    |
+| clojure.math       | sin, cos, pow, log, sqrt 等 (33 関数)          |
+| clojure.repl       | doc, find-doc, apropos, source                 |
+| clojure.data       | diff                                           |
+| clojure.stacktrace | print-stack-trace                              |
+| clojure.template   | apply-template, do-template                    |
+| clojure.zip        | zipper, vector-zip, seq-zip, xml-zip           |
+| clojure.test       | deftest, is, testing, run-tests                |
+| clojure.pprint     | pprint, print-table, cl-format                 |
 
 ---
 

@@ -51,18 +51,18 @@ M-x cider-connect-clj RET
 
 ## サポート ops
 
-| op           | 説明                                       |
-|--------------|--------------------------------------------|
-| clone        | 新規セッション作成                         |
-| close        | セッション削除                             |
-| describe     | サーバー情報・サポート ops 一覧            |
-| eval         | 式評価 (stdout キャプチャ付き)             |
-| load-file    | ファイル内容を eval として実行             |
-| completions  | 補完候補 (プレフィックスマッチ)            |
-| info/lookup  | シンボル情報 (doc/arglists)                |
-| eldoc        | 引数リスト                                 |
-| ls-sessions  | アクティブセッション一覧                   |
-| ns-list      | 全名前空間一覧                             |
+| op          | 説明                            |
+|-------------|---------------------------------|
+| clone       | 新規セッション作成              |
+| close       | セッション削除                  |
+| describe    | サーバー情報・サポート ops 一覧 |
+| eval        | 式評価 (stdout キャプチャ付き)  |
+| load-file   | ファイル内容を eval として実行  |
+| completions | 補完候補 (プレフィックスマッチ) |
+| info/lookup | シンボル情報 (doc/arglists)     |
+| eldoc       | 引数リスト                      |
+| ls-sessions | アクティブセッション一覧        |
+| ns-list     | 全名前空間一覧                  |
 
 ## 動作仕様
 

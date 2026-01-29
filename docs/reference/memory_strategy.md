@@ -8,10 +8,10 @@ Zig はランタイム GC を持たないため、オブジェクトの寿命に
 
 ## 寿命の分類
 
-| 分類 | 寿命 | アロケータ | 例 |
-|------|------|-----------|-----|
-| **persistent** | プロセス終了まで | GPA（親） | Var, Namespace, 組み込み関数 |
-| **scratch** | 式の評価完了まで | Arena | Form, Node, 評価中間構造 |
+| 分類           | 寿命             | アロケータ | 例                           |
+|----------------|------------------|------------|------------------------------|
+| **persistent** | プロセス終了まで | GPA（親）  | Var, Namespace, 組み込み関数 |
+| **scratch**    | 式の評価完了まで | Arena      | Form, Node, 評価中間構造     |
 
 ## Allocators 構造体
 
@@ -75,16 +75,16 @@ defer allocs.deinit();
 
 ## オブジェクト別アロケータ選択
 
-| オブジェクト | アロケータ | 理由 |
-|------------|-----------|------|
-| Form (Reader出力) | scratch | 評価後は不要 |
-| Node (Analyzer出力) | scratch | 評価後は不要 |
-| Env | persistent | プロセス全体で使用 |
-| Namespace | persistent | def された値を保持 |
-| Var | persistent | 状態を保持 |
-| 組み込み関数 (Fn) | persistent | 常に参照される |
-| ユーザー定義関数 (Fn) | persistent | スコープを超えて参照される可能性 |
-| 評価中の引数配列 | scratch (将来) | 関数呼び出し後は不要 |
+| オブジェクト          | アロケータ     | 理由                             |
+|-----------------------|----------------|----------------------------------|
+| Form (Reader出力)     | scratch        | 評価後は不要                     |
+| Node (Analyzer出力)   | scratch        | 評価後は不要                     |
+| Env                   | persistent     | プロセス全体で使用               |
+| Namespace             | persistent     | def された値を保持               |
+| Var                   | persistent     | 状態を保持                       |
+| 組み込み関数 (Fn)     | persistent     | 常に参照される                   |
+| ユーザー定義関数 (Fn) | persistent     | スコープを超えて参照される可能性 |
+| 評価中の引数配列      | scratch (将来) | 関数呼び出し後は不要             |
 
 ## GC による解決 (実装済み)
 
@@ -99,12 +99,12 @@ defer allocs.deinit();
 
 ## Zig アロケータ比較
 
-| アロケータ | 用途 | 特徴 |
-|-----------|------|------|
+| アロケータ              | 用途     | 特徴                     |
+|-------------------------|----------|--------------------------|
 | GeneralPurposeAllocator | デバッグ | リーク検出、二重解放検出 |
-| ArenaAllocator | 一括解放 | 高速確保、まとめて解放 |
-| FixedBufferAllocator | 制限環境 | ヒープ不使用、サイズ固定 |
-| page_allocator | 大規模 | OS 直接、ページ単位 |
+| ArenaAllocator          | 一括解放 | 高速確保、まとめて解放   |
+| FixedBufferAllocator    | 制限環境 | ヒープ不使用、サイズ固定 |
+| page_allocator          | 大規模   | OS 直接、ページ単位      |
 
 ## 参考
 

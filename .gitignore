@@ -11,6 +11,7 @@ zig-cache/
 *.swp
 *.swo
 *~
+.nrepl-port
 
 # OS
 .DS_Store
