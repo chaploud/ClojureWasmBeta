@@ -27,6 +27,7 @@
   (list 'if test (cons 'do body) nil))
 
 ;; 使ってみる: 条件が true なので本体が順に実行される
+;; これは, iで挿入して実行した方が分かりやすい
 (my-when true
          (println "hello")
          (println "world")
