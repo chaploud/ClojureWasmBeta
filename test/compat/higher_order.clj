@@ -1,5 +1,6 @@
 ;; higher_order.clj — 高階関数テスト
 (load-file "test/lib/test_runner.clj")
+(require '[clojure.string :refer [upper-case]])
 
 (println "[higher_order] running...")
 
