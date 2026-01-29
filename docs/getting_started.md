@@ -12,9 +12,9 @@ ClojureWasmBeta の導入と基本的な使い方。
 ## ビルド
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/chaploud/ClojureWasmBeta
 cd ClojureWasmBeta
-zig build
+zig build # リリースビルドにしたいなら、--release=fastを付ける
 ```
 
 ビルド成功後、`zig-out/bin/ClojureWasmBeta` にバイナリが生成される。

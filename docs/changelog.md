@@ -87,6 +87,8 @@
 | P1c   | Fused reduce (map_filter 27GB→2MB, sum_range 401MB→2MB)      |
 | P1c   | ジェネレータ直接ルーティング + スタック引数バッファ            |
 | P1c   | VM ベンチ標準化 (全ベンチ Java 同等以上の性能達成)            |
+| P0a   | TW vs VM 比較分析 (同等速度、ボトルネックは builtin call)     |
+| P0b   | --profile フラグ (Reader/Analyzer/Engine/Realize の時間計測)  |
 
 ## GC フェーズ (Phase G)
 
@@ -117,6 +119,7 @@
 | U5a   | ファイル直接実行オプション                                    |
 | U5b   | バイトコードダンプモード                                      |
 | U6    | nREPL サーバー (CIDER/Calva/Conjure 互換)                     |
+| U4    | 既知バグ修正 (^:const インライン化, with-local-vars 実装, defmacro in defn エラー改善) |
 
 ## セルフホストフェーズ (Phase S)
 
@@ -132,6 +135,7 @@
 | S1h   | clojure.stacktrace (print-stack-trace 等)                     |
 | S1i   | clojure.template (apply-template/do-template)                 |
 | S1j   | clojure.zip (zipper ツリー操作)                               |
+| S1    | clojure.pprint (pprint, print-table, cl-format 最小限)        |
 
 ## リファクタリング追加 (Phase R7)
 
@@ -152,3 +156,20 @@
 | Phase | 内容                                                          |
 |-------|---------------------------------------------------------------|
 | Bench | fib(38) 全言語比較基盤 (C/C++/Zig/Java/Python/Ruby/ClojureWasmBeta) |
+| Bench | cwb_warm_bench.sh — nREPL 経由 warm ベンチマーク追加          |
+
+## バグ修正
+
+| Phase | 内容                                                          |
+|-------|---------------------------------------------------------------|
+| BUG   | VM defn 再帰バグ修正 (closure 作成時に自己参照を bindings に追加) |
+| BUG   | named fn スロット不整合修正 (let+named fn のキャプチャスロット計算) |
+| BUG   | テスト VM 検証漏れ修正 (strict_vm_check=true で厳格検証)      |
+| BUG   | load-file バックエンド修正 (defs.current_backend で統一)      |
+
+## 互換性改善
+
+| Phase | 内容                                                          |
+|-------|---------------------------------------------------------------|
+| —     | Java Interop: System/nanoTime, System/currentTimeMillis 実装 + tryJavaInterop NS 対応 |
+| —     | clojure.string: Zig builtin を NS に直接登録 (nREPL 自己参照ループ回避) |
