@@ -127,9 +127,10 @@ ClojureWasm は Zig フルスクラッチで全レイヤー再実装、Wasm 連�
 @counter ;; => 5
 ```
 
-### Demo 4: Wasm 基本連携 (`demo/04_wasm.clj`)
+### Demo 4: Wasm 連携 (`demo/04_wasm.clj`)
 
 ```clojure
+;; Part 1: Wasm モジュールのロードと関数呼び出し
 (def math (wasm/load-module "test/wasm/fixtures/01_add.wasm"))
 (wasm/invoke math "add" 3 4) ;; => 7
 
@@ -140,12 +141,8 @@ ClojureWasm は Zig フルスクラッチで全レイヤー再実装、Wasm 連�
 (def mem-mod (wasm/load-module "test/wasm/fixtures/03_memory.wasm"))
 (wasm/memory-write mem-mod 256 "Hello, Wasm!")
 (wasm/memory-read mem-mod 256 12) ;; => "Hello, Wasm!"
-```
 
-### Demo 5: ホスト関数注入 (`demo/05_wasm_host.clj`)
-
-```clojure
-;; Clojure 関数を Wasm にエクスポート
+;; Part 2: Clojure 関数を Wasm にエクスポート (双方向連携)
 (def captured (atom []))
 (defn my-print-i32 [n] (swap! captured conj n))
 
@@ -158,7 +155,7 @@ ClojureWasm は Zig フルスクラッチで全レイヤー再実装、Wasm 連�
 @captured ;; => [10]  — Wasm が Clojure 関数を呼んだ
 ```
 
-### Demo 6: Go → Wasm 連携 (`demo/06_go_wasm.clj`)
+### Demo 5: Go → Wasm 連携 (`demo/05_go_wasm.clj`)
 
 ```clojure
 ;; TinyGo でコンパイルした Go の Wasm をロード
@@ -174,7 +171,7 @@ ClojureWasm は Zig フルスクラッチで全レイヤー再実装、Wasm 連�
 ;; => (1 1 2 3 5 8 13 21 34 55)
 ```
 
-### Demo 7: --compare モード (ターミナル)
+### Demo 6: --compare モード (ターミナル)
 
 ```bash
 $ clj-wasm --compare -e "(map inc [1 2 3])"
@@ -323,7 +320,6 @@ fn validateNoDuplicates(comptime table: anytype, comptime ns_name: []const u8) v
 
 1. **最適化の達成感**: fib30 で 1.9s → 69ms、map_filter で 27GB → 2MB
 2. **nREPL で CIDER 接続した瞬間**: 自作処理系が Emacs から動く
-3. **Clojure 設計の美しさの再発見**: 実装してわかる一貫性と拡張性
 4. **comptime が強力**: ビルトイン関数テーブル、エラーメッセージ、重複検出を全てコンパイル時に
 5. **Arena は正義**: フェーズ単位の一括解放でメモリ管理が劇的に楽に
 6. **多言語 Wasm**: Go (TinyGo) のコードを Wasm 経由で Clojure から呼べた瞬間

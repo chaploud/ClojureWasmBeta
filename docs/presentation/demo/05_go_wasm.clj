@@ -1,4 +1,4 @@
-;; 06_go_wasm.clj — Go → Wasm → ClojureWasm
+;; 05_go_wasm.clj — Go → Wasm → ClojureWasm (多言語連携)
 ;; デモ: CWD = プロジェクトルート (ClojureWasmBeta/) で実行
 
 ;; --- Go のコードをコンパイルした Wasm をロード ---
@@ -18,4 +18,4 @@
 (reduce + (map #(wasm/invoke go-math "multiply" % %) (range 1 6)))
 ;; => 55  (1 + 4 + 9 + 16 + 25)
 
-(println "06_go_wasm done.")
+(println "05_go_wasm done.")

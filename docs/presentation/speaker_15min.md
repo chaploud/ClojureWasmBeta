@@ -54,20 +54,16 @@
    - defmacro unless → macroexpand-1 で展開を見せる
    - atom/swap! → 状態管理
 
-4. **04_wasm.clj** (1:15)
+4. **04_wasm.clj** (1:30)
    - 「ここからが WasmInterop」
-   - wasm/load-module → add.wasm ロード
-   - wasm/invoke → 関数呼び出し
+   - Part 1: wasm/load-module → add.wasm ロード → wasm/invoke
    - fib(10) = 55 → Wasm でフィボナッチ
    - memory-write/read → 文字列の round-trip
-
-5. **05_wasm_host.clj** (1:15)
-   - 「逆方向: Clojure 関数を Wasm にエクスポート」
+   - Part 2: 「逆方向: Clojure 関数を Wasm にエクスポート」
    - atom でキャプチャ → Wasm が Clojure 関数を呼ぶ
-   - with-out-str でキャプチャ → 標準出力も取れる
    - 「Clojure と Wasm が双方向にやり取りできる」
 
-6. **06_go_wasm.clj** (1:00)
+5. **05_go_wasm.clj** (1:00)
    - 「Go のコードも Wasm 経由で呼べる」
    - TinyGo でコンパイルした Go の Wasm をロード (`wasm/load-wasi`)
    - add, multiply, fibonacci を呼び出し

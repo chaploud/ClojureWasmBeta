@@ -92,13 +92,13 @@
 
 ---
 
-### Demo 4: Wasm 基本 (1:15)
+### Demo 4: Wasm 連携 (1:30)
 
 > ここからが WasmInterop です。
 
 **操作: 04_wasm.clj を表示**
 
-**操作: wasm/load-module → wasm/invoke "add" 3 4**
+**操作: Part 1 — wasm/load-module → wasm/invoke "add" 3 4**
 
 > Wasm ファイルをロードして、関数を呼びます。
 > add(3, 4) = 7。
@@ -112,17 +112,9 @@
 > Wasm のリニアメモリに文字列を書いて読み戻す。
 > "Hello, Wasm!" が round-trip できます。
 
----
+**操作: Part 2 — atom → defn my-print-i32 → wasm/load-module with imports**
 
-### Demo 5: ホスト関数注入 (1:15)
-
-> 今度は逆方向です。Clojure の関数を Wasm にエクスポートします。
-
-**操作: 05_wasm_host.clj を表示**
-
-**操作: atom → defn my-print-i32 → wasm/load-module with imports**
-
-> Clojure の関数をインポートマップで渡しています。
+> 今度は逆方向です。Clojure の関数をインポートマップで渡しています。
 
 **操作: wasm/invoke "compute_and_print" 3 7 → @captured**
 
@@ -132,11 +124,11 @@
 
 ---
 
-### Demo 6: Go → Wasm (1:00)
+### Demo 5: Go → Wasm (1:00)
 
 > さらに。Go のコードも Wasm 経由で呼べます。
 
-**操作: 06_go_wasm.clj を表示**
+**操作: 05_go_wasm.clj を表示**
 
 **操作: wasm/load-wasi で Go Wasm をロード**
 

@@ -17,9 +17,8 @@
 | `demo/01_basics.clj`       | REPL基本 + 遅延シーケンス   |
 | `demo/02_protocols.clj`    | プロトコル + マルチメソッド |
 | `demo/03_macros_atoms.clj` | マクロ + アトム             |
-| `demo/04_wasm.clj`         | Wasm 基本連携               |
-| `demo/05_wasm_host.clj`    | ホスト関数注入              |
-| `demo/06_go_wasm.clj`      | Go → Wasm 連携 (TinyGo)     |
+| `demo/04_wasm.clj`         | Wasm 連携 (基本 + ホスト関数) |
+| `demo/05_go_wasm.clj`      | Go → Wasm 連携 (TinyGo)      |
 
 ## Go Wasm ソース
 

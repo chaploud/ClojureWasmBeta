@@ -1,5 +1,9 @@
-;; 04_wasm.clj — Wasm 基本連携
+;; 04_wasm.clj — Wasm 連携 (基本 + ホスト関数)
 ;; デモ: CWD = プロジェクトルート (ClojureWasmBeta/) で実行
+
+;; ============================================================
+;; Part 1: 基本連携 — Wasm モジュールのロードと関数呼び出し
+;; ============================================================
 
 ;; --- モジュールロード ---
 (def math (wasm/load-module "test/wasm/fixtures/01_add.wasm"))
@@ -47,5 +51,45 @@
 (wasm/close math)
 (wasm/closed? math)
 ;; => true
+
+;; ============================================================
+;; Part 2: ホスト関数注入 — Clojure 関数を Wasm にエクスポート
+;; ============================================================
+
+;; --- atom でキャプチャ ---
+(def captured (atom []))
+
+(defn my-print-i32 [n]
+  (swap! captured conj n))
+
+(defn my-print-str [ptr len]
+  (swap! captured conj [ptr len]))
+
+;; --- ホスト関数付きモジュールロード ---
+(def imports-mod
+  (wasm/load-module "test/wasm/fixtures/04_imports.wasm"
+                    {:imports {"env" {"print_i32" my-print-i32
+                                      "print_str" my-print-str}}}))
+
+;; --- greet: Wasm から Clojure 関数を呼ぶ ---
+(reset! captured [])
+(wasm/invoke imports-mod "greet")
+@captured
+;; => [[0 16]]  (print_str が ptr=0, len=16 で呼ばれた)
+
+;; --- compute_and_print: 計算結果を Clojure に返す ---
+(reset! captured [])
+(wasm/invoke imports-mod "compute_and_print" 3 7)
+@captured
+;; => [10]  (print_i32 が 10 で呼ばれた)
+
+;; --- println 版: with-out-str でキャプチャ ---
+(def print-mod
+  (wasm/load-module "test/wasm/fixtures/04_imports.wasm"
+                    {:imports {"env" {"print_i32" (fn [n] (println "wasm:" n))
+                                      "print_str" (fn [_ _] nil)}}}))
+
+(with-out-str (wasm/invoke print-mod "compute_and_print" 5 3))
+;; => "wasm: 8\n"
 
 (println "04_wasm done.")

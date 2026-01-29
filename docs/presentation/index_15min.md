@@ -100,18 +100,16 @@ Zig で Clojure 処理系をフルスクラッチ実装。JVM 不要、Wasm ネ�
 @counter                      ;; => 5
 ```
 
-### Demo 4: Wasm 連携
+### Demo 4: Wasm 連携 (基本 + ホスト関数)
 
 ```clojure
+;; Part 1: Wasm モジュールのロードと関数呼び出し
 (def math (wasm/load-module "test/wasm/fixtures/01_add.wasm"))
 (wasm/invoke math "add" 3 4) ;; => 7
 
 (wasm/invoke fib-mod "fib" 10) ;; => 55
-```
 
-### Demo 5: ホスト関数注入 (Clojure → Wasm コールバック)
-
-```clojure
+;; Part 2: Clojure 関数を Wasm にエクスポート (双方向連携)
 (def captured (atom []))
 (defn my-print-i32 [n] (swap! captured conj n))
 
@@ -120,10 +118,10 @@ Zig で Clojure 処理系をフルスクラッチ実装。JVM 不要、Wasm ネ�
     {:imports {"env" {"print_i32" my-print-i32 ...}}}))
 
 (wasm/invoke imports-mod "compute_and_print" 3 7)
-@captured ;; => [10]
+@captured ;; => [10]  — Wasm が Clojure 関数を呼んだ
 ```
 
-### Demo 6: Go → Wasm (多言語連携)
+### Demo 5: Go → Wasm (多言語連携)
 
 ```clojure
 ;; TinyGo でコンパイルした Go の Wasm をロード
@@ -145,16 +143,16 @@ Zig で Clojure 処理系をフルスクラッチ実装。JVM 不要、Wasm ネ�
 ```
 Source Code
      ↓
- Tokenizer → Reader → Form        (構文)
+Tokenizer → Reader → Form        (構文)
      ↓
- Analyzer → Node                   (意味)
+Analyzer → Node                  (意味)
      ↓
- ┌─────────────┬───────────────┐
- │ TreeWalk    │ Compiler → VM │
- │ (正確性)    │ (性能)        │
- └─────────────┴───────────────┘
+┌─────────────┬───────────────┐
+│ TreeWalk    │ Compiler → VM │
+│ (正確性)    │ (性能)        │
+└─────────────┴───────────────┘
      ↓
- Value ↔ Wasm                      (実行)
+Value ↔ Wasm                     (実行)
 ```
 
 - **Form → Node → Value**: 各フェーズで関心を分離
@@ -237,7 +235,7 @@ sweep フェーズ: **1,146ms → 29ms** (40x 高速化)
 - **NaN Boxing**: doubleのNaNビットを使ってValueを8Bに圧縮表現 (メモリ削減・高速化)
 - **Wasm ターゲット**: 処理系自体を Wasm にコンパイル → ブラウザで Clojure
 - **多言語 Wasm 連携**: Go (TinyGo) → Wasm → Clojure は動作確認済み。Rust, C 等も同様に可能
-- **Wasm クラウド**: Fermyon / WasmEdge / WASI 0.3 (2026)
+- **Wasm クラウド**: Fermyon / WasmEdge / WASI 0.3 (2026): Wasmさえ置いとけば環境構築の大変さや差分なしにWebサービスが動くイメージ
 
 ### 「第4のClojure」
 
@@ -254,7 +252,6 @@ ClojureWasm     — Wasm/組込み/エッジ ← New
 - 起動 2-70ms / メモリ 2-22MB で JVM の 1/50
 - WasmInterop で JavaInterop の代替を提案 (Go/Rust/C の Wasm を直接呼び出し)
 - CIDER から使える nREPL サーバー
-- Clojure の設計は美しい。実装してわかる。
 
 ---
 

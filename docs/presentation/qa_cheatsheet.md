@@ -90,9 +90,8 @@ Q&A や深堀り質問で「コード見せて」と言われたらここを開�
 | `docs/presentation/demo/01_basics.clj`       | REPL 基本 + 遅延 |
 | `docs/presentation/demo/02_protocols.clj`    | プロトコル       |
 | `docs/presentation/demo/03_macros_atoms.clj` | マクロ + アトム  |
-| `docs/presentation/demo/04_wasm.clj`         | Wasm 基本        |
-| `docs/presentation/demo/05_wasm_host.clj`    | ホスト関数注入   |
-| `docs/presentation/demo/06_go_wasm.clj`      | Go → Wasm        |
+| `docs/presentation/demo/04_wasm.clj`         | Wasm 連携 (基本 + ホスト関数) |
+| `docs/presentation/demo/05_go_wasm.clj`      | Go → Wasm                     |
 
 ### Go Wasm ソース
 
