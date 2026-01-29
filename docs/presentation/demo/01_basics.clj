@@ -1,6 +1,16 @@
 ;; 01_basics.clj — REPL 基本 + 遅延シーケンス
-;; デモ: form ごとに C-c C-e で評価
+;; デモ: form ごとに , e f で評価
 
+;; --- REPL接続・補完の様子 ---
+;; ./zig-out/bin/ClojureWasmBeta --nrepl-server --port=7888
+;; SPC m c j => localhost:7888
+;; , t => REPL表示
+;; (println "Hello, REPL!")
+;; (def m {:a 1 :b 2})
+;; m
+;; (:a m)
+
+;; ここからは、REPLを閉じて , e fで評価
 ;; --- 基本演算 ---
 (+ 1 2 3)
 ;; => 6
@@ -9,10 +19,10 @@
 ;; => 200
 
 ;; --- 関数定義 ---
-(defn greet [name]
+(defn hello [name]
   (str "Hello, " name "!"))
 
-(greet "Shibuya.lisp")
+(hello "Shibuya.lisp")
 ;; => "Hello, Shibuya.lisp!"
 
 ;; --- 遅延シーケンス ---

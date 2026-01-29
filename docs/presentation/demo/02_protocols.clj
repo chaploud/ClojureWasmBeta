@@ -1,9 +1,11 @@
 ;; 02_protocols.clj — プロトコル + マルチメソッド
-;; デモ: form ごとに C-c C-e で評価
+;; デモ: form ごとに , e f で評価
 
 ;; --- defprotocol + extend-type ---
 (defprotocol Greetable
   (greet [this]))
+
+;; 引数の型ごとに実装を追加
 
 (extend-type String
   Greetable
@@ -20,6 +22,7 @@
 ;; => "Number 42"
 
 ;; --- satisfies? ---
+;; 型がプロトコルを実装しているか確認
 (satisfies? Greetable "hello")
 ;; => true
 
@@ -27,6 +30,7 @@
 ;; => false
 
 ;; --- defrecord ---
+;; 構造体のようなものを定義
 (defrecord Point [x y])
 
 (def p (->Point 3 4))
@@ -36,6 +40,7 @@
 ;; => 4
 
 ;; --- マルチメソッド ---
+;; 柔軟な引数による動的ディスパッチ
 (defmulti area :shape)
 
 (defmethod area :circle [{:keys [radius]}]

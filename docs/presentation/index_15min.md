@@ -45,6 +45,8 @@ Zig で Clojure 処理系をフルスクラッチ実装。JVM 不要、Wasm ネ�
 - **JavaInterop → WasmInterop**: Java API 再実装地獄を避ける (Go 等の他言語 Wasm も呼べる)
 - **全レイヤーを自分で**: Tokenizer → Reader → Analyzer → VM → GC → Wasm
 
+=> Wasm大統一時代が来るとしたら、開発者は好きな言語を選んでも他言語エコシステムを活用できる
+
 ### ポジショニング
 
 | 特性        | Clojure (JVM) | Babashka       | ClojureWasm        |

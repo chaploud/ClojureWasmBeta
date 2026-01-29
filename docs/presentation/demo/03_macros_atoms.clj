@@ -1,21 +1,25 @@
 ;; 03_macros_atoms.clj — マクロ + アトム
-;; デモ: form ごとに C-c C-e で評価
+;; デモ: form ごとに , e f で評価
 
 ;; --- defmacro ---
-(defmacro unless [pred then else]
+;; マクロ定義
+(defmacro my-unless [pred then else]
   (list 'if pred else then))
 
-(unless false "yes" "no")
+(my-unless false "yes" "no")
 ;; => "yes"
 
-(unless true "yes" "no")
+(my-unless true "yes" "no")
 ;; => "no"
 
 ;; --- macroexpand-1 ---
-(macroexpand-1 '(unless false "yes" "no"))
+(macroexpand-1 '(my-unless false "yes" "no"))
 ;; => (if false "no" "yes")
 
+;; より複雑なマクロ定義
+
 ;; --- atom / swap! / deref ---
+;; 単一情報源による状態管理
 (def counter (atom 0))
 
 (dotimes [_ 5]
