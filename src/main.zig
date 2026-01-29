@@ -825,7 +825,7 @@ fn printHelp(writer: *std.Io.Writer) !void {
         \\  clj-wasm script.clj
         \\  clj-wasm -e "(+ 1 2 3)"
         \\  clj-wasm -e "(def x 10)" -e "(+ x 5)"
-        \\  clj-wasm --classpath=src:test/libs -e "(require 'my.lib)"
+        \\  clj-wasm --classpath=src:lib -e "(require 'my.lib)"
         \\  clj-wasm --backend=vm -e "(+ 1 2)"
         \\  clj-wasm --compare -e "(if true 1 2)"
         \\  clj-wasm --dump-bytecode -e "(defn f [x] (+ x 1))"

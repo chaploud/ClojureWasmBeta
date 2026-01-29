@@ -23,7 +23,7 @@
 | 23       | 動的バインディング (本格実装)                                                                     |
 | 24       | 名前空間 (本格実装)                                                                               |
 | 25       | REPL (対話型シェル)                                                                               |
-| 26       | Reader Conditionals + 外部ライブラリ統合テスト (medley v1.4.0)                                    |
+| 26       | Reader Conditionals                                                                               |
 
 ## テストフェーズ (Phase T)
 
