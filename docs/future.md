@@ -212,10 +212,20 @@ zware / Wasmtime / 自作エンジンを差し替え可能にする。
 - 用途: CLI ツール、Server Function、Edge Computing
 
 ### wasm_rt 路線 (Wasm ランタイムフリーライド)
-- GC: WasmGC に委ねられる部分は委ねる
-- 最適化: ランタイムの JIT / TCO を活用
-- 配布: .wasm ファイル、WasmEdge 等のランタイム上で実行
+
+ClojureWasm 自体を `zig build -target wasm32-wasi` で .wasm にコンパイルする路線。
+ネイティブバイナリではなく、Wasm ランタイム上で動く処理系そのものを配布する。
+
+- ビルド: Zig の Wasm ターゲットで処理系全体を .wasm 化
+- GC: WasmGC アノテーションを活用し、ランタイムの GC に協調
+- 最適化: ランタイムの JIT / TCO を活用。Wasm tail-call proposal 等に対応
+- 配布: .wasm ファイル、WasmEdge / Wasmtime 等で実行
 - 用途: ポータブルなサービス、Wasm-first なプラットフォーム
+
+**native との違い**: ビルドされたバイナリ自体が Wasm なので、
+処理系が実行中に .clj を処理する際も Wasm ランタイムの機能 (JIT, GC, TCO) が効く。
+Wasm のデータ型・構造に寄せた内部表現を採用することで、
+ランタイムが最適化しやすいコードを生成できる可能性がある。
 
 **重要な決断**
 - 一本化しない
@@ -311,11 +321,29 @@ Env/Namespace/Var/HashMap は GPA 直接管理 (GC 対象外)、
 Clojure Value のみ GcAllocator 経由という分離は正しかった。
 正式版でも「インフラ vs ユーザー値」の寿命分離を初期設計に含める。
 
-### 9.5 永続データ構造への移行
+### 9.5 コレクション実装の見直し
 
 Beta では配列ベースの簡易コレクション実装を採用した (Vector = ArrayList)。
-正式版では HAMT / RRB-Tree 等の永続データ構造を最初から導入し、
-構造共有による GC 負荷軽減と Clojure 意味論の正確な再現を目指す。
+正式版ではインターフェースの互換性を維持しつつ、実装は Zig の強みを活かす。
+
+**方針**: 本家の HAMT / RRB-Tree をそのまま模倣するのではなく、
+メモリ効率・速度で上回れる Zig ネイティブな実装を探求する。
+Zig の comptime、Arena allocator、値型セマンティクスを活かした
+高速実装が可能であれば、それを採用すべき。
+
+**段階的アプローチ**:
+1. 初期は Beta と同じ配列ベースで開始 (動作の正確性を優先)
+2. プロファイル結果を見てボトルネックのコレクションから最適化
+3. Vector が最も使用頻度が高いため、最初の最適化候補
+
+**インターフェース要件** (本家互換):
+- persistent (既存コレクションは変更されない)
+- structural sharing (大きなコレクションのコピーコストを抑える)
+- O(log32 N) の lookup/update (Map, Vector)
+
+**GC との相互作用に注意**: 構造共有を導入すると、複数の Value が同じ内部ノードを
+参照するため、fixup が木構造を辿る必要がある。Beta の「fixup 漏れ = 即死」教訓が
+さらに厳しくなる。comptime での検証がより重要になる。
 
 ---
 
@@ -343,6 +371,23 @@ vars.yaml で関数の実装状況 (done/skip) を追跡しているが、
 **原則**: 入出力の等価性を保証する。内部実装の詳細 (realize タイミング等) は、
 観測可能な結果が同じであれば許容する。fused reduce 等の最適化は
 「外から見た振る舞いを変えない」ことが条件。
+既存の Pure Clojure コードベースを実行した際に、
+ユーザーのビジネスロジックの結果が変わることは許容しない。
+
+**注意: 副作用を含む lazy-seq と chunked sequence**
+
+本家 Clojure は内部的に chunked sequence (32 要素単位の先読み) を使う。
+そのため `(take 3 (map #(do (println %) %) (range 100)))` は
+本家では 0〜31 が println される可能性がある (chunk 単位の先読み)。
+
+ClojureWasm の fused reduce は厳密に必要な 3 要素だけ処理する。
+これは**観測可能な副作用の差異**であり、互換性テストで `diff` になりうる。
+
+ただし本家の chunked seq の挙動自体が「仕様ではなく実装詳細」とされており、
+Pure Clojure のコード (副作用のない map/filter) では問題にならない。
+副作用を持つ lazy 変換に依存するコードはそもそも non-idiomatic であり、
+この差異は許容する判断とする。compat_status.yaml では `diff` として記録し、
+理由を明記する。
 
 ### テストカタログの真実のソース
 
@@ -547,7 +592,38 @@ Java Interop は排除するが、プログラミング上必須な機能はエ�
 
 ---
 
-## 12. まとめ
+## 12. OSS 化とネーミング
+
+### ライセンス
+
+Clojure 本家は EPL-1.0。ClojureWasm が本家コードを直接利用していなくても、
+テストカタログの移植やインターフェース互換を謳う以上、EPL-1.0 が自然な選択。
+初期は破壊的変更ありの割り切りで進める (SemVer 0.x)。
+
+### ネーミング
+
+「Clojure」を名前に含めるかは慎重に検討が必要。
+
+| プロジェクト   | 名前に「Clojure」 | 背景                                   |
+|---------------|-------------------|----------------------------------------|
+| ClojureScript | あり               | Rich Hickey 自身が設計・主導           |
+| ClojureCLR    | あり               | clojure org 配下 (公式)                |
+| ClojureDart   | あり               | コミュニティ重鎮、Conj 発表、公式紹介  |
+| Babashka      | なし               | SCI ベース、独自名                     |
+| SCI           | なし               | "Small Clojure Interpreter"            |
+| Jank          | なし               | "A Clojure dialect on LLVM"            |
+
+ClojureDart は Clojure 公式 Deref で紹介され Clojure/Conj で発表されているが、
+Rich Hickey から明示的な商標許諾があったかは公開情報では確認できない。
+Babashka / SCI / Jank は意図的に「Clojure」を名前から外している。
+
+**結論**: 正式版の名前は OSS 公開時に決定する。
+候補は仮置きしておくが、早い段階で Clojure コミュニティとの関係を整理する。
+名前に「Clojure」を含めるなら、コミュニティへの貢献実績と認知が先。
+
+---
+
+## 13. まとめ
 
 ClojureWasm は
 「超高速単一バイナリとして成立する Clojure」をまず極め、
