@@ -51,6 +51,19 @@ ZigでClojure処理系をフルスクラッチ実装。動作互換（ブラッ�
 | `status/bench_improvement.yaml`     | ベンチマーク改善履歴 (--record 追記) | パフォーマンス改善時   |
 | `status/README.md`                  | status/ のスキーマ定義               | status/ 編集時         |
 
+## 開発環境 (Nix Flake)
+
+ツールチェインは `flake.nix` + `flake.lock` で固定。開発時は Nix シェルに入ること。
+
+```bash
+# 開発シェルに入る (全ツールが PATH に載る)
+nix develop
+```
+
+含まれるツール: Zig 0.15.2, wasmtime, hyperfine, yq, jq, Clojure, JDK 21, Babashka, Python 3
+
+**注意**: `flake.lock` をコミットに含めること。これがバージョン固定の実体。
+
 ## コーディング規約
 
 - **日本語コメント**: ソースコード内は日本語

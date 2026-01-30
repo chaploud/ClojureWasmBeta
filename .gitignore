@@ -30,3 +30,8 @@ bench/**/bench_zig
 bench/**/*.class
 
 .tmp/
+
+# Nix
+result
+result-*
+.direnv/
