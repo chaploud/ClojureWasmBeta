@@ -80,6 +80,7 @@ computed goto 相当の最適化。末尾呼び出しをジャンプに変換。
 
 - **S2**: セルフホスト化 (pure 関数の .clj 移行)
 - **S1**: clojure.core.protocols, clojure.java.io サブセット
+- **正式版設計構想**: `docs/future.md` — native/wasm 二路線分離、WIT/Component Model、GC 二層モデル等の方針メモ
 
 ---
 
