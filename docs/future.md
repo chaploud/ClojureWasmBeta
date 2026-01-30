@@ -617,9 +617,13 @@ ClojureDart は Clojure 公式 Deref で紹介され Clojure/Conj で発表さ�
 Rich Hickey から明示的な商標許諾があったかは公開情報では確認できない。
 Babashka / SCI / Jank は意図的に「Clojure」を名前から外している。
 
-**結論**: 正式版の名前は OSS 公開時に決定する。
-候補は仮置きしておくが、早い段階で Clojure コミュニティとの関係を整理する。
-名前に「Clojure」を含めるなら、コミュニティへの貢献実績と認知が先。
+**方針**: リポジトリ名 **ClojureWasm**、CLI コマンド **`cljw`** を第一候補とする。
+
+- `cljs` (ClojureScript), `cljd` (ClojureDart) と同じ命名パターン
+- 「Java 非依存の Clojure をエッジ環境向けに Zig で再実装」は
+  Clojure コミュニティへの貢献であり、名前を使う正当性がある
+- 万一コミュニティから異議があればリネームする (リダイレクト対応可能)
+- `cljw` は左右交互の打鍵で ergonomics も良好
 
 ---
 
