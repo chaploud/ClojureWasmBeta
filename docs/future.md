@@ -260,15 +260,15 @@ src/
 
 Beta の経験から、共有しやすい / しにくい領域:
 
-| 層             | 共有可能性 | 理由                                                     |
-|----------------|------------|----------------------------------------------------------|
-| Reader         | 高         | 純粋なパーサ、バックエンド非依存                         |
-| Analyzer       | 中〜高     | マクロ展開は共通だが、最適化パスが分岐する可能性         |
-| OpCode 定義    | 中         | 意味論は共通、native 固有の高速 opcode が入る可能性      |
-| VM             | 低         | 実行エンジンの中核。native と wasm_rt で根本的に異なる   |
-| GC             | 低         | 責務が完全に異なる                                       |
-| Value 型定義   | 中         | variant は共通だが内部表現 (NaN boxing 等) は路線依存    |
-| builtin 関数   | 中〜高     | 意味論は共通、GC/アロケータ依存コードは路線別            |
+| 層           | 共有可能性 | 理由                                                   |
+|--------------|------------|--------------------------------------------------------|
+| Reader       | 高         | 純粋なパーサ、バックエンド非依存                       |
+| Analyzer     | 中〜高     | マクロ展開は共通だが、最適化パスが分岐する可能性       |
+| OpCode 定義  | 中         | 意味論は共通、native 固有の高速 opcode が入る可能性    |
+| VM           | 低         | 実行エンジンの中核。native と wasm_rt で根本的に異なる |
+| GC           | 低         | 責務が完全に異なる                                     |
+| Value 型定義 | 中         | variant は共通だが内部表現 (NaN boxing 等) は路線依存  |
+| builtin 関数 | 中〜高     | 意味論は共通、GC/アロケータ依存コードは路線別          |
 
 ### Zig の活用
 - comptime で世界線をビルド時に切替
@@ -319,7 +319,216 @@ Beta では配列ベースの簡易コレクション実装を採用した (Vect
 
 ---
 
-## 10. 進め方
+## 10. 互換性検証戦略
+
+### 課題: Clojure には仕様書がない
+
+Clojure は「本家実装が仕様」であり、形式仕様が先にある言語ではない。
+そのため「動作互換」を検証するには本家の振る舞いを機械的に参照するしかない。
+
+Beta では場当たり的にテストを書いた (35 ファイル, ~3,265 行)。
+vars.yaml で関数の実装状況 (done/skip) を追跡しているが、
+「存在する」と「正しく動く」の間に大きなギャップがある。
+
+### 互換性のレベル定義
+
+| レベル | 検証内容                                 | 重要度 | 検証方法            |
+|--------|------------------------------------------|--------|---------------------|
+| L0     | 関数/マクロが存在する                    | 必須   | vars.yaml で追跡    |
+| L1     | 基本的な入出力が一致する                 | 必須   | テストオラクル      |
+| L2     | 辺境値・エラーケースが一致する           | 高     | upstream テスト移植 |
+| L3     | 遅延評価・副作用の観測可能な振る舞い     | 中     | 意味論テスト        |
+| L4     | エラーメッセージ・スタックトレースの形式 | 低     | 互換性は追求しない  |
+
+**原則**: 入出力の等価性を保証する。内部実装の詳細 (realize タイミング等) は、
+観測可能な結果が同じであれば許容する。fused reduce 等の最適化は
+「外から見た振る舞いを変えない」ことが条件。
+
+### テストカタログの真実のソース
+
+3つの upstream から機械的にテストを取り込み、継続的に同期する:
+
+```
+upstream テスト (Clojure / ClojureScript / SCI)
+        ↓
+   Tier 1: 決定論的ルール変換 (構文変換、NS 置換)
+   Tier 2: 決定論的 Java エイリアス置換 (tryJavaInterop 拡張)
+   Tier 3: AI 補助変換 → 人間レビュー → コミット (コミット後は決定論的)
+        ↓
+imported/ テストファイル群
+        ↓ ClojureWasm で実行
+        ↓
+結果 → compat_status.yaml に記録
+        ↓
+未対応 → issue or skip (理由付き)
+```
+
+#### ソース別の特性
+
+| ソース        | 規模       | Java 汚染    | 変換コスト | テスト行数の期待値   |
+|---------------|------------|--------------|------------|----------------------|
+| SCI           | ~4,650 行  | 低 (.cljc)   | 低         | ~4,000 行 (大半取込) |
+| ClojureScript | ~21,400 行 | なし (.cljs) | 中         | ~15,000 行 (JS 除去) |
+| Clojure 本家  | ~14,300 行 | 高 (.clj)    | 高         | ~5,000 行 (Tier 2/3) |
+
+合計: **~24,000 行** のテストカタログを構築可能 (現在の ~3,265 行の 7 倍以上)
+
+#### 3 段階の変換パイプライン
+
+**Tier 1: 決定論的ルール変換** (SCI + CLJS)
+
+変換が機械的で、結果が一意に定まるもの。最優先で取り組む。
+
+SCI (.cljc):
+- `eval*` → 直接実行
+- `tu/native?` 分岐 → `true` 側を採用
+- マップリテラル `{}` → `(hash-map ...)` (deftest body 内)
+- Beta で 5 ファイル移植済み → 残り ~15 ファイルを同ルールで処理
+
+ClojureScript (.cljs):
+- `cljs.test` → `clojure.test` (ClojureWasm の互換層)
+- `js/Error` → ClojureWasm のエラー型
+- `js/Object`, `js/Array` → skip
+- `satisfies?` → ClojureWasm の protocol チェック
+- `catch :default` → `catch` (ClojureWasm の catch-all)
+
+**Tier 2: Java エイリアス置換** (Clojure 本家)
+
+Java Interop 呼び出しを ClojureWasm のネイティブ代替に変換する。
+テスト関数単位で処理し、変換できたもののみ取り込む。
+
+決定論的に変換可能なパターン:
+- `System/nanoTime` → `(__nano-time)`
+- `System/currentTimeMillis` → `(__current-time-millis)`
+- `Thread/sleep` → `(__sleep ms)`
+- `(instance? String x)` → `(string? x)`
+- `(instance? Long x)` → `(integer? x)`
+- `(.length s)` → `(count s)`
+- `(.toUpperCase s)` → `(clojure.string/upper-case s)`
+- `(import ...)` → 除去 (エイリアスでカバーされていれば)
+
+変換不能なパターン → Tier 3 または skip:
+- `proxy`, `reify`, `gen-class`
+- `java.util.concurrent.*`
+- reflection (`(.getMethod ...)`)
+- `java.io.*` の深い利用
+
+**Tier 3: AI 補助 + 人間レビュー** (残り)
+
+Tier 2 で変換できなかったテストのうち、テストの意図が Java 非依存なもの:
+- AI にテストの意図を解析させ、等価な Java-free テストを生成
+- 人間がレビューし、正しければコミット
+- コミット後は決定論的なテストとして扱う
+- 変換元の upstream ref とレビュー者を記録
+
+原則: AI 生成テストは必ず人間レビューを経る。
+レビューなしの自動生成テストは信頼しない。
+
+#### cljs.test 互換層
+
+ClojureScript テスト (~21,400 行) をそのまま実行するため、
+`cljs.test` の主要マクロを ClojureWasm で実装する:
+
+```clojure
+;; ClojureWasm が提供する cljs.test 互換 NS
+(ns cljs.test)
+
+;; 必要なマクロ/関数:
+;; deftest, is, are, testing, run-tests, use-fixtures
+;; assert-expr (multimethod), do-report
+```
+
+ClojureScript テストの JS 固有部分の扱い:
+
+| CLJS パターン             | ClojureWasm での扱い              |
+|---------------------------|-----------------------------------|
+| `js/Error`                | ClojureWasm の例外型にマッピング  |
+| `js/Object`               | skip (JS 固有)                    |
+| `js/Array`                | skip (JS 固有)                    |
+| `js/parseInt`             | `Integer/parseInt` エイリアス     |
+| `(catch :default e ...)`  | `(catch e ...)` (catch-all)       |
+| `satisfies?`              | protocol チェック (Beta 実装済み) |
+| `(exists? js/Symbol)`     | `false` (JS ランタイム不在)       |
+| `#js [...]` / `#js {...}` | skip (JS リテラル)                |
+
+#### upstream 同期の自動化
+
+- upstream リポジトリの特定コミット/タグをサブモジュールまたは snapshot で追跡
+- CI でテスト生成 → 実行 → 結果を YAML に記録
+- 新テストが追加されたら自動で取り込み、初回は `pending` ステータス
+- upstream の変更差分から影響テストを特定し、再変換・再実行
+
+### ステータス管理
+
+vars.yaml (関数存在) に加え、テスト単位のステータスを管理する:
+
+```yaml
+# compat_status.yaml (構想)
+tests:
+  sci/core_test:
+    test-eval:
+      status: pass          # pass | fail | skip | pending
+      source: sci
+      upstream_ref: "abc123"
+    test-map-indexed:
+      status: skip
+      source: sci
+      reason: "java.util.ArrayList 依存"
+      issue: null
+
+  clojure/data_structures:
+    test-associative:
+      status: pass
+      source: clojure
+      upstream_ref: "def456"
+    test-sorted-maps:
+      status: fail
+      source: clojure
+      reason: "Sorted map 未実装"
+      issue: "#42"
+```
+
+#### ステータスの意味
+
+| ステータス | 意味                                                   |
+|------------|--------------------------------------------------------|
+| pass       | テストが通る                                           |
+| fail       | テストが落ちる (実装が必要、またはバグ)                |
+| skip       | 意図的に見送り (Java 依存、未実装型等)。理由を必ず記録 |
+| pending    | 未評価 (upstream から新規取り込み、まだ実行していない) |
+| diff       | 動作するが本家と微妙に異なる。差異の内容を記録         |
+
+### Java Interop 排除と互換エイリアス
+
+Java Interop は排除するが、プログラミング上必須な機能はエイリアスで提供する:
+
+| 本家 (Java)                     | ClojureWasm              | 方針               |
+|---------------------------------|--------------------------|--------------------|
+| `System/nanoTime`               | `__nano-time` (Zig 実装) | Beta で対応済み    |
+| `System/currentTimeMillis`      | `__current-time-millis`  | Beta で対応済み    |
+| `slurp` / `spit`                | Zig ファイル I/O で実装  | 正式版で対応       |
+| `clojure.java.io/reader`        | ネイティブ I/O で代替    | エイリアス提供     |
+| `clojure.string/*`              | Zig builtin で直接実装   | Beta で対応済み    |
+| `Thread/sleep`                  | Zig の `std.time.sleep`  | エイリアス提供     |
+| `java.util.regex.Pattern`       | Zig フルスクラッチ regex | Beta で対応済み    |
+| `BigDecimal` / `BigInteger`     | skip                     | 正式版で要検討     |
+| `proxy` / `reify` / `gen-class` | skip                     | JVM 固有、代替なし |
+
+**方針**: `tryJavaInterop` パターン (Beta の analyze.zig) を拡張し、
+本家テストに含まれる `System/foo` や `java.lang.*` 呼び出しを
+自動的にネイティブ代替にルーティングする。
+これにより、本家テストをできるだけ「そのまま」実行できるようにする。
+
+### Beta での教訓
+
+- `--compare` (TW vs VM) は「内部一貫性」の検証。外部互換性の検証は別途必要
+- 場当たり的なテスト追加では抜け漏れが避けられない
+- SCI 移植ルールの文書化は有効だった → 自動化すればさらに効果的
+- vars.yaml の `done/skip` 二値では「動くが微妙に違う」を表現できなかった
+
+---
+
+## 11. 進め方
 
 1. **native 路線を完成させる**
    - NaN boxing / 永続 DS / GC 改良で到達点を把握
@@ -334,10 +543,11 @@ Beta では配列ベースの簡易コレクション実装を採用した (Vect
    - 両路線の知見を統合
    - 英語・OSS 体裁・ライセンス整備
    - §9 の知見を設計の前提として組み込む
+   - §10 の互換性検証パイプラインを初期から構築
 
 ---
 
-## 11. まとめ
+## 12. まとめ
 
 ClojureWasm は
 「超高速単一バイナリとして成立する Clojure」をまず極め、
