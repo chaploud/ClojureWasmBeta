@@ -1926,7 +1926,10 @@ clojurewasm/
 ├── third-party/              # ベンダリングされた依存 (§14.4)
 │   └── versions.txt
 │
-├── book/                     # mdBook ソース (§18、別リポの場合もある)
+├── core/                     # Clojure ソース (AOT コンパイル対象、§9.6)
+│   └── core.clj
+│
+├── book/                     # mdBook ソース (§18)
 │   └── src/
 │
 ├── doc/
@@ -1953,6 +1956,7 @@ clojurewasm/
 | 項目         | Beta                         | 正式版                                    |
 |--------------|------------------------------|-------------------------------------------|
 | ソース構成   | `src/` フラット              | `src/api,common,native,wasm_rt/`          |
+| Clojure ソース | なし (全て Zig)            | `core/core.clj` (AOT コンパイル、§9.6)    |
 | テスト構成   | `test/` フラット             | `test/unit,e2e,imported/`                 |
 | 依存管理     | Git submodule (zware)        | `third-party/` ベンダリング               |
 | ドキュメント | `docs/` (Markdown)           | `book/` (mdBook) + `doc/adr/`             |
