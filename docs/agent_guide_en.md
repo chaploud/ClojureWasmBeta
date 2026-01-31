@@ -77,7 +77,10 @@ clojurewasm/
 │   │       └── references/edge-cases.md
 │   └── agents/                  # Custom subagents
 │       ├── security-reviewer.md
-│       └── compat-checker.md
+│       ├── compat-checker.md
+│       ├── test-runner.md
+│       ├── codebase-explorer.md
+│       └── debugger.md
 ├── flake.nix                    # Toolchain definition
 ├── flake.lock
 ├── build.zig
@@ -532,7 +535,20 @@ references/edge-cases.md:
 ## 5. Subagent Definitions
 
 > Subagents are a Claude Code specific feature (separate from Skills).
-> Use `tools` to restrict accessible tools, `model` to tune cost/speed.
+> Each subagent runs in an independent context window and returns a summary on completion.
+>
+> **Key configuration fields**:
+> - `tools` / `disallowedTools`: tool allowlist / denylist
+> - `model`: `haiku` (fast, low-cost) / `sonnet` (balanced) / `opus` / `inherit`
+> - `permissionMode`: `default` / `acceptEdits` / `dontAsk` / `bypassPermissions` / `plan`
+> - `skills`: skills to inject into context at startup (parent skills are not inherited)
+> - `hooks`: lifecycle hooks active only within this subagent
+>
+> **Usage patterns** (detailed in §5.6):
+> - Verbose output isolation (test runs, log processing)
+> - Parallel research (simultaneous investigation of independent modules)
+> - Subagent chaining (review -> fix in sequence)
+> - Resume (continue with previous work context preserved)
 
 ### 5.1 Security Reviewer
 
@@ -541,11 +557,15 @@ references/edge-cases.md:
 ---
 name: security-reviewer
 description: >
-  Detect security issues in Zig code. Use when reviewing new modules,
-  after implementing unsafe operations, or before phase completion.
-  Focuses on memory safety, GC interactions, and input validation.
-tools: Read, Grep, Glob
+  Read-only agent that detects security issues in Zig code.
+  Use proactively when reviewing new modules, after implementing unsafe
+  operations, or before phase completion. Focuses on memory safety,
+  GC interactions, and input validation.
+  Does not modify code — detection and reporting only.
+tools: Read, Grep, Glob, Bash
+disallowedTools: Edit, Write
 model: sonnet
+permissionMode: plan
 ---
 Detect security issues in Zig code:
 
@@ -582,13 +602,18 @@ For each issue found, provide:
 ---
 name: compat-checker
 description: >
-  Detect behavioral differences from upstream Clojure. Use when adding
-  new builtins, after bulk implementation, or to audit a namespace.
-  Compares docstrings, arglists, and runtime behavior.
+  Detect behavioral differences from upstream Clojure. Use proactively
+  when adding new builtins, after bulk implementation, or to audit a
+  namespace. Compares docstrings, arglists, and runtime behavior.
+  Do not use for general test writing (use tdd skill instead).
 tools: Read, Grep, Glob, Bash
 model: sonnet
+skills:
+  - compat-test
 ---
 Verify compatibility of specified functions against upstream Clojure.
+
+> The compat-test skill content (including edge-cases.md) is auto-injected.
 
 ## Steps
 
@@ -611,6 +636,190 @@ Verify compatibility of specified functions against upstream Clojure.
 Summary table of compatibility status per function,
 followed by proposed test cases for any ❌ items.
 ```
+
+### 5.3 Test Runner
+
+Isolates verbose test output from the main context.
+One of the most effective subagent patterns: isolate operations that produce
+large output and return only the relevant summary to the main conversation.
+
+```markdown
+# .claude/agents/test-runner.md
+---
+name: test-runner
+description: >
+  Run the test suite and return a summary of results only.
+  Use proactively when running tests, when user says "run tests",
+  "check test results". Isolates verbose test output from the main context.
+  For debugging individual test failures, use the debugger subagent instead.
+tools: Bash, Read, Grep, Glob
+disallowedTools: Edit, Write
+model: haiku
+permissionMode: dontAsk
+---
+Run the test suite and summarize results concisely.
+
+## Steps
+
+1. Run `zig build test`
+2. Parse output: extract pass/fail counts, failing test names, error messages
+3. Omit verbose stack traces and compilation output; report essentials only
+4. If there are failures, return the list of failing tests with error summary
+
+## Output Format
+
+- Test results: N pass / M fail
+- Failing tests (if any):
+  - Test name: error message (1 line)
+- Recommended action: [identify files to fix / all passing]
+```
+
+### 5.4 Codebase Explorer
+
+Read-only agent using Haiku model for fast, low-cost codebase exploration.
+Particularly effective when launching parallel research across multiple modules.
+
+```markdown
+# .claude/agents/codebase-explorer.md
+---
+name: codebase-explorer
+description: >
+  Read-only agent for investigating codebase structure and patterns.
+  Use when user says "investigate how X works", "where is X used",
+  "analyze the structure of X". Can run multiple instances in parallel.
+  Does not modify code — investigation and reporting only.
+tools: Read, Grep, Glob
+disallowedTools: Edit, Write, Bash
+model: haiku
+permissionMode: plan
+---
+Explore the codebase and investigate structure, patterns, and dependencies.
+
+## Use Cases
+
+- Understanding inter-module dependencies
+- Finding all usage sites of a specific type or function
+- Comparing structure between Beta and production
+- Analyzing file organization and directory patterns
+
+## Output Format
+
+- Summary of what was investigated
+- Findings as bullet points (with file_path:line_number)
+- List of related files
+- Recommendations (if any)
+```
+
+### 5.5 Debugger
+
+Agent that analyzes root causes of test failures and build errors, and implements fixes.
+Unlike security-reviewer (read-only), this has Edit access.
+
+```markdown
+# .claude/agents/debugger.md
+---
+name: debugger
+description: >
+  Analyze root causes of test failures and build errors, then fix them.
+  Use proactively when encountering "test failures", "build errors",
+  "fix the bug". Handles end-to-end from error analysis to code fix.
+  For security reviews, use security-reviewer instead.
+tools: Read, Edit, Bash, Grep, Glob
+model: inherit
+permissionMode: acceptEdits
+---
+Analyze root causes of test failures and build errors, and implement fixes.
+
+## Steps
+
+1. Capture error messages and stack traces
+2. Identify reproduction steps
+3. Isolate the failure location
+4. Implement minimal fix
+5. Verify fix works (`zig build test`)
+
+## Debugging Process
+
+- Analyze error messages and logs
+- Check recent code changes (`git diff`)
+- Form and test hypotheses
+- Add strategic debug logging when needed
+- Inspect variable states
+
+## Output
+
+For each issue:
+- Root cause explanation
+- Evidence supporting the diagnosis
+- Specific code fix
+- Testing approach
+- Prevention recommendations
+
+Focus on fixing the underlying issue, not the symptoms.
+```
+
+### 5.6 Subagent Usage Patterns
+
+Usage patterns based on the Anthropic Subagent Guide.
+
+#### Main Conversation vs Subagent
+
+| Situation                                          | Recommended      |
+|----------------------------------------------------|------------------|
+| Frequent interaction or iterative refinement       | Main conversation |
+| Multiple phases sharing important context          | Main conversation |
+| Quick, targeted changes                            | Main conversation |
+| Task producing verbose output (test runs, etc.)    | Subagent         |
+| Task requiring specific tool restrictions          | Subagent         |
+| Self-contained task that can return a summary      | Subagent         |
+| Multiple independent investigations in parallel    | Subagent (parallel) |
+
+#### Pattern 1: Verbose Output Isolation
+
+Delegate test execution or log processing to test-runner, keeping main context clean.
+
+```
+Run the tests and tell me just the results
+-> test-runner subagent executes zig build test
+-> Main conversation receives only "42 pass / 1 fail: test_lazy_seq_gc - assertion error"
+```
+
+#### Pattern 2: Parallel Research
+
+Run independent module investigations simultaneously. Each subagent explores
+independently, and Claude synthesizes the results.
+
+```
+Investigate the Reader, VM, and GC modules in parallel using subagents
+-> 3 codebase-explorer instances launch simultaneously
+-> Each module summary returns, Claude generates a consolidated report
+```
+
+#### Pattern 3: Subagent Chaining
+
+Sequential workflow where previous subagent results feed into the next.
+
+```
+Find security issues with security-reviewer, then fix them with debugger
+-> security-reviewer returns issue list
+-> Claude passes issue list to debugger for fixes
+```
+
+#### Pattern 4: Resume
+
+Subagents retain their context after completion and can be resumed.
+Effective for follow-up work building on previous investigation results.
+
+```
+[compat-checker verifies map, filter, reduce]
+-> Complete
+
+Resume that compatibility check and also verify take and drop
+-> Resumes with full context (map, filter, reduce results) preserved
+```
+
+> **Note**: Subagents cannot spawn other subagents.
+> For nested workflows, chain subagents from the main conversation.
 
 ---
 
@@ -840,6 +1049,9 @@ Session management based on Claude Code Best Practice.
 - Principle: 1 session = 1 task (one line in memo.md)
 - For long sessions, use /compact "retain list of implemented functions and test results"
 - Delegate investigation to subagents ("investigate Reader structure with subagent")
+- Delegate test runs to test-runner (isolate verbose output from main context)
+- Launch multiple codebase-explorer instances in parallel for multi-module research
+- Use Ctrl+B to move running tasks to background
 ```
 
 ### 9.2 Writer/Reviewer Pattern
@@ -853,6 +1065,14 @@ Session A (Writer):
 Session B (Reviewer):
   "Review src/runtime/value.zig.
    Focus on edge cases, GC interaction, and design differences from Beta"
+```
+
+Can also be done within a single session using subagent chaining:
+
+```
+"Implement Value type via TDD. When done,
+ use security-reviewer to check GC interactions"
+-> Main conversation implements -> auto-delegates to security-reviewer -> returns results
 ```
 
 ### 9.3 Error Recovery
@@ -990,6 +1210,10 @@ What changes as a result. Trade-offs.
 - Use Plan Mode to separate into 4 phases: investigate -> plan -> implement -> commit
 - Context window is the most important resource. Use /clear aggressively
 - Delegate investigation to subagents to avoid polluting main context
+  - Verbose output isolation (test runs) is the most effective pattern
+  - Use Haiku model for fast, low-cost exploration tasks
+  - `skills` field pre-injects skill content into subagent context
+  - Subagents can be resumed (previous context preserved)
 - Hooks guarantee deterministic behavior (CLAUDE.md instructions are advisory)
 - Skills load domain knowledge only when needed
 - Use Writer/Reviewer pattern with parallel sessions
