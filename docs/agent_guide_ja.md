@@ -124,7 +124,8 @@ clojurewasm/
   8. memo.md を更新
 ```
 
-**命名規則**: `plan_NNNN_簡潔なタイトル.md` / `log_NNNN_簡潔なタイトル.md`
+**命名規則**: `plan_NNNN_short_title.md` / `log_NNNN_short_title.md`
+- タイトルは英語スネークケース (言語ポリシーに従う)
 - 4桁連番 (差し込み問題を回避。Beta では S, G, P... と乱立した)
 - 番号は作成順。途中に差し込みが発生しても次の番号を使うだけ
 - active/ には常に1セット (plan + log) だけ存在する
@@ -275,11 +276,17 @@ zig build test -- "Reader 基本"
 bash bench/run_bench.sh --quick
 ```
 
-## コーディング規約
+## 言語ポリシー
 
-- 日本語コメント・日本語コミットメッセージ (正式版で英訳)
-- 識別子は英語
-- Zig 0.15.2 の作法に従う (@docs/reference/zig_guide.md)
+- **コード内は全て英語**: 識別子、コメント、docstring、コミットメッセージ、PR 説明
+- ソースコードおよびバージョン管理履歴に非英語テキストを含めない
+- Zig 0.15.2 の作法に従う (docs/reference/zig_guide.md 参照)
+- エージェントの応答言語は個人設定 — `~/.claude/CLAUDE.md` で指定する
+
+> **コントリビューター向け**: エージェントの応答を英語以外で受け取りたい場合、
+> 個人の `~/.claude/CLAUDE.md` (リポジトリにコミットされない) に指示を追加する。
+> 例: `応答は日本語でお願いします。` / `Respond in Korean.`
+> プロジェクトは言語中立に保ちつつ、個人の好みを尊重する。
 
 ## Beta との差異
 
