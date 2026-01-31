@@ -1493,25 +1493,121 @@ Beta は組み込み関数のみだったが、正式版ではユーザーが独
 
 ### 15.3 Zig プラグイン機構 (native 路線向け)
 
-動的ライブラリ (`.so` / `.dylib`) としてビルドした Zig コードを
-ランタイムにロードする仕組み。
+Zig が処理系ホスト言語であることを最大限活かし、
+ユーザーが **Zig で書いた高性能ライブラリを自然に ClojureWasm に統合** できる仕組みを提供する。
+
+#### 15.3.1 ビルド時統合 (推奨方式)
+
+Zig の `build.zig` 依存グラフを使い、ユーザーの Zig コードを
+ClojureWasm バイナリに**直接コンパイル**する。
+動的リンク不要、Value 型共有、GC 追跡も comptime で統合される。
 
 ```zig
-// プラグイン側 (my_plugin.zig)
-const Plugin = @import("clojurewasm").Plugin;
+// ユーザーの build.zig
+const std = @import("std");
 
-export fn init(api: *Plugin.Api) void {
-    api.register("my-fn", myFn);
+pub fn build(b: *std.Build) void {
+    const cljw = b.dependency("clojurewasm", .{});
+
+    const exe = b.addExecutable(.{
+        .name = "my-clojure-app",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .imports = &.{
+                .{ .name = "clojurewasm", .module = cljw.module("api") },
+            },
+        }),
+    });
+    b.installArtifact(exe);
+}
+```
+
+```zig
+// ユーザーの拡張 (src/my_extensions.zig)
+const cljw = @import("clojurewasm");
+const Value = cljw.Value;
+const BuiltinDef = cljw.BuiltinDef;
+
+/// 高速画像リサイズ — SIMD 活用
+fn fastResize(allocator: std.mem.Allocator, args: []const Value) !Value {
+    const buf = args[0].asBytes() orelse return error.TypeError;
+    const width = args[1].asInt() orelse return error.TypeError;
+    // ... SIMD を使った高速処理 ...
+    return Value.fromBytes(allocator, result);
 }
 
-fn myFn(args: []const Plugin.Value) Plugin.Value {
+/// ClojureWasm に登録する関数テーブル
+pub const builtins = [_]BuiltinDef{
+    .{
+        .name = "fast-resize",
+        .func = fastResize,
+        .doc = "High-performance image resize using SIMD",
+        .arglists = "([buf width height])",
+    },
+};
+```
+
+```zig
+// ユーザーの main.zig
+const cljw = @import("clojurewasm");
+const my_ext = @import("my_extensions.zig");
+
+pub fn main() !void {
+    var vm = try cljw.init(allocator, .{
+        .extra_builtins = &.{
+            .{ .ns = "my.image", .defs = &my_ext.builtins },
+        },
+    });
+    defer vm.deinit();
+
+    // Clojure コードからシームレスに呼べる
+    // (require '[my.image :as img])
+    // (img/fast-resize buf 1920 1080)
+    try vm.evalFile("script.clj");
+}
+```
+
+**ビルド時統合の利点**:
+
+- **ゼロコスト統合**: Value 型が共有されるため、C FFI のような変換オーバーヘッドなし
+- **comptime 検証**: 型不一致・名前重複をコンパイル時に検出 (registry.zig 方式)
+- **GC 統合**: ユーザー関数が作成した Value も自動的に GC 追跡対象になる
+- **SIMD/最適化**: Zig の `@Vector` や `@prefetch` がそのまま使える
+- **単一バイナリ**: 動的リンクなし。配布が容易
+- **IDE サポート**: ZLS の補完・型検査がユーザーの拡張コードにもそのまま効く
+
+#### 15.3.2 動的ライブラリ方式 (上級者向け)
+
+ビルド時統合ができない場合 (プラグインの後配布等) のために、
+動的ライブラリ (`.so` / `.dylib`) 方式も提供する。
+
+```zig
+// プラグイン側 (my_plugin.zig) — 動的ライブラリとしてビルド
+const Plugin = @import("clojurewasm").Plugin;
+
+export fn cljw_plugin_init(api: *Plugin.Api) void {
+    api.registerNs("my.plugin", &.{
+        .{ .name = "process", .func = processFn, .doc = "..." },
+    });
+}
+
+fn processFn(args: []const Plugin.Value) Plugin.Value {
+    // Plugin.Value は C ABI 互換のラッパー (Value とは別型)
     // ...
 }
 ```
 
-- `Plugin.Api` インターフェースを通じて ClojureWasm の値と相互変換
-- GC ルート登録 API を提供 (プラグインが作成した Value が回収されないように)
+```clojure
+;; Clojure 側からのロード
+(require '[clojurewasm.plugin :as plugin])
+(plugin/load "path/to/my_plugin.so")
+(my.plugin/process data)
+```
+
+- `Plugin.Value` は C ABI 互換のラッパー型 (内部 Value との変換コストあり)
+- GC ルート登録 API を明示的に呼ぶ必要がある
 - native 路線でのみ利用可能 (wasm_rt では Wasm モジュール拡張を使う)
+- ビルド時統合と比べて安全性・性能で劣るが、柔軟性が高い
 
 ### 15.4 C ABI 統合
 
@@ -1529,21 +1625,128 @@ Zig の `@cImport` を活用し、C ライブラリを直接利用する。
   性能が不足する場合は libpcre2 をオプショナルバックエンドとして提供可能
 - C ABI 層は unsafe であり、メモリ管理の責任はプラグイン側
 
-### 15.5 Wasm vs Native FFI の使い分け
+### 15.5 ClojureWasm をライブラリとして提供 (埋め込みモード)
 
-| 基準             | Wasm モジュール        | Zig/C プラグイン         |
-|------------------|------------------------|--------------------------|
-| ポータビリティ   | 高 (どこでも動く)      | 低 (OS/Arch 依存)        |
-| 性能             | 中 (境界コスト)        | 高 (直接呼び出し)        |
-| 安全性           | 高 (サンドボックス)    | 低 (メモリ共有)          |
-| エコシステム     | 拡大中                 | 成熟 (C ライブラリ)      |
-| 推奨ユースケース | ユーザー配布プラグイン | システム統合、高性能処理 |
+ClojureWasm を **Zig/C ライブラリとしてビルド** し、
+他のアプリケーションに Clojure ランタイムを埋め込むユースケース。
+Lua, mruby, Wren 等の組み込み言語と同じパターン。
 
-### 15.6 Beta からの段階的拡張
+#### 15.5.1 Zig ライブラリ API (構想)
+
+```zig
+// ホストアプリケーション側 (Zig)
+const cljw = @import("clojurewasm");
+
+pub fn main() !void {
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    defer _ = gpa.deinit();
+
+    // VM インスタンスを作成 (複数インスタンス共存可能)
+    var vm = try cljw.VM.init(gpa.allocator(), .{});
+    defer vm.deinit();
+
+    // Clojure コードを評価
+    const result = try vm.run("(+ 1 2 3)");
+    std.debug.print("result: {}\n", .{result.asInt().?});
+
+    // Zig から Clojure 関数を呼ぶ
+    const map_fn = try vm.resolve("clojure.core", "map");
+    const inc_fn = try vm.run("(fn [x] (+ x 1))");
+    const data = try vm.run("[1 2 3]");
+    const mapped = try vm.call(map_fn, &.{ inc_fn, data });
+
+    // 結果を Zig の値に変換
+    var iter = mapped.seqIterator();
+    while (iter.next()) |v| {
+        std.debug.print("{} ", .{v.asInt().?});
+    }
+}
+```
+
+#### 15.5.2 C ABI ライブラリ (構想)
+
+Zig の `export fn` で C 互換 API を公開する。
+
+```c
+/* ホストアプリケーション側 (C) */
+#include "clojurewasm.h"
+
+int main(void) {
+    cljw_vm_t *vm = cljw_vm_init(NULL); /* NULL = デフォルトアロケータ */
+
+    cljw_value_t result = cljw_run(vm, "(reduce + (range 100))");
+    printf("result: %ld\n", cljw_as_int(result));
+
+    /* 値のライフタイムは GC が管理。
+       ホスト側が保持したい値は pin する */
+    cljw_pin(vm, result);
+    /* ... 後で使う ... */
+    cljw_unpin(vm, result);
+
+    cljw_vm_destroy(vm);
+    return 0;
+}
+```
+
+```bash
+# ビルド (Zig がクロスコンパイラとして機能)
+zig build -Dtarget=x86_64-linux -Dlib-mode=true
+# → libclojurewasm.a (静的) + libclojurewasm.so (動的) + clojurewasm.h
+```
+
+#### 15.5.3 設計上の課題と方針
+
+| 課題                          | 方針                                                   |
+|-------------------------------|--------------------------------------------------------|
+| **GC 境界**                   | ホスト側が保持する Value を pin/unpin API で明示管理。  |
+|                               | pin された値は GC ルートセットに追加される              |
+| **複数 VM インスタンス**      | Beta のグローバル状態 (threadlocal current_env 等) を   |
+|                               | VM 構造体にカプセル化。インスタンスごとに独立した       |
+|                               | Env, GC ヒープ, バインディングスタックを持つ            |
+| **メモリオーナーシップ**      | Zig API: ホスト側の Allocator を注入可能               |
+|                               | C API: malloc/free ベースのデフォルト + カスタムフック  |
+| **スレッド安全性**            | VM インスタンスはシングルスレッド前提。                 |
+|                               | 複数スレッドからは複数 VM インスタンスを使う            |
+| **core.clj AOT バイトコード** | ライブラリモードでも `@embedFile` で内蔵。              |
+|                               | ホスト側のビルドステップは不要                          |
+| **バイナリサイズ**            | 静的リンクで ~2-5MB (Zig の LTO でデッドコード除去)    |
+
+#### 15.5.4 段階的実現
+
+**前提条件**: §15.5 は §15.3 (ビルド時統合) の延長にある。
+ビルド時統合で「ユーザーが ClojureWasm API を import して使う」パターンを
+安定させることが、ライブラリ API の設計基盤になる。
+
+- **Phase A**: ビルド時統合の安定化 (§15.3.1) — API surface の確定
+- **Phase B**: Zig ライブラリモード — `cljw.VM.init()` でインスタンス化可能に。
+  グローバル状態の除去 (threadlocal → VM フィールド) が必要
+- **Phase C**: C ヘッダ自動生成 — Zig の `@export` + `zig build -Demit-h` で
+  `clojurewasm.h` を自動出力
+- **Phase D**: パッケージマネージャ対応 — vcpkg, Conan, Nix 等で配布
+
+**率直な見通し**: Phase B の「グローバル状態の除去」が最大の設計変更。
+Beta の threadlocal 変数 (defs.zig に 8 個) を全て VM 構造体のフィールドに
+移動する必要がある。正式版の初期設計から VM をインスタンスとして
+設計しておけば、後からの対応コストは大幅に下がる。
+
+### 15.6 拡張方式の比較
+
+| 基準             | Wasm モジュール        | Zig ビルド時統合         | Zig 動的プラグイン       | C ABI               |
+|------------------|------------------------|--------------------------|--------------------------|----------------------|
+| ポータビリティ   | 高 (どこでも動く)      | 中 (Zig ツールチェーン)  | 低 (OS/Arch 依存)        | 低 (OS/Arch 依存)    |
+| 性能             | 中 (境界コスト)        | 最高 (ゼロコスト)        | 高 (直接呼び出し)        | 高 (直接呼び出し)    |
+| 安全性           | 高 (サンドボックス)    | 高 (comptime 検証)       | 中 (メモリ共有)          | 低 (メモリ共有)      |
+| GC 統合          | 不要 (分離メモリ)      | 自動 (型共有)            | 手動 (ルート登録)        | 手動 (pin/unpin)     |
+| エコシステム     | 拡大中                 | Zig パッケージ           | 限定的                   | 成熟 (C ライブラリ)  |
+| 推奨ユースケース | ユーザー配布プラグイン | 高性能カスタムビルド     | プラグインの後配布       | 既存 C 資産の活用    |
+
+### 15.7 Beta からの段階的拡張
 
 - **Phase 1** (正式版初期): Wasm モジュールロードの改善 (§1 Phase 1-3)
-- **Phase 2** (v0.3 頃): Zig プラグイン API の安定化
+- **Phase 2** (v0.3 頃): Zig ビルド時統合 API の安定化 (§15.3.1)
 - **Phase 3** (v0.5 頃): C ABI 層の公開、主要ライブラリバインディング
+- **Phase 4** (v0.7 頃): 埋め込みモード (§15.5) — グローバル状態除去完了後
+- **Phase 5** (v1.0 頃): 動的プラグイン (§15.3.2) — 安定 API 確定後
 
 ---
 
@@ -1825,6 +2028,8 @@ Accepted / Superseded by ADR-MMMM / Deprecated
 | 0008 | VarKind 依存層分類                 | §10 の設計      |
 | 0009 | 本家メタデータ採用方針             | §10 の設計      |
 | 0010 | 名前空間対応保証                   | §10 の設計      |
+| 0011 | Zig ビルド時統合 vs 動的プラグイン | §15.3 の判断    |
+| 0012 | 埋め込みモード設計                 | §15.5 の構想    |
 
 ### 18.4 互換性ステータス自動生成
 
