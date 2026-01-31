@@ -86,9 +86,15 @@ clojurewasm/
 │   ├── e2e/
 │   └── imported/                # upstream テスト (§10)
 ├── plan/
-│   ├── memo.md                  # 現在地点・実行計画
-│   ├── roadmap.md               # タスク詳細
-│   └── notes.md                 # 技術メモ
+│   ├── memo.md                  # 現在地点のみ (常に小さく保つ)
+│   ├── active/                  # 今のフェーズの計画+ログ (1セットだけ)
+│   │   ├── plan_0003_vm_bytecode.md
+│   │   └── log_0003_vm_bytecode.md
+│   └── archive/                 # 完了フェーズの計画+ログ (対で保存)
+│       ├── plan_0001_tokenizer_reader.md
+│       ├── log_0001_tokenizer_reader.md
+│       ├── plan_0002_analyzer.md
+│       └── log_0002_analyzer.md
 ├── status/
 │   ├── vars.yaml                # Var 実装状況
 │   ├── bench.yaml               # ベンチマーク
@@ -100,34 +106,100 @@ clojurewasm/
 └── examples/
 ```
 
-### 2.2 plan/memo.md の構造
+### 2.2 plan/ の運用フロー
+
+```
+フェーズ開始時:
+  1. plan/active/ に plan_NNNN_タイトル.md を作成 (ゴール・タスクリスト)
+  2. memo.md を更新 (現在のフェーズ番号・active ファイル名)
+
+実装中:
+  3. エージェントがタスク完了ごとに log_NNNN_タイトル.md に追記
+  4. 計画変更があれば plan にも反映し、変更理由を log に記録
+  5. memo.md の「次のタスク」を更新
+
+フェーズ完了時:
+  6. plan + log を archive/ に移動
+  7. 次のフェーズの plan を active/ に作成
+  8. memo.md を更新
+```
+
+**命名規則**: `plan_NNNN_簡潔なタイトル.md` / `log_NNNN_簡潔なタイトル.md`
+- 4桁連番 (差し込み問題を回避。Beta では S, G, P... と乱立した)
+- 番号は作成順。途中に差し込みが発生しても次の番号を使うだけ
+- active/ には常に1セット (plan + log) だけ存在する
+
+### 2.3 memo.md の構造
+
+memo.md は **現在地点のみ** を記録する。小さく保つこと。
+タスク詳細は active/ の plan ファイルに書く。
 
 ```markdown
 # ClojureWasm 開発メモ
 
 ## 現在地点
 
-- Phase: 1 (Reader + Analyzer)
-- 直近の完了: Tokenizer 基本型
-- 次のタスク: Reader の list/vector パース
+- 現在のフェーズ: plan/active/plan_0003_vm_bytecode.md
+- 直近の完了: Analyzer の基本ノード生成
+- 次のタスク: OpCode 定義とスタックマシン基盤
 - ブロッカー: なし
 
-## 実行計画
+## 完了フェーズ
 
-| # | タスク                          | 状態     | 備考               |
-|---|--------------------------------|----------|--------------------|
-| 1 | Tokenizer                      | 完了     |                    |
-| 2 | Reader: atom (数値, 文字列)    | 完了     |                    |
-| 3 | Reader: list, vector           | 作業中   | Beta src/reader 参照 |
-| 4 | Reader: map, set               | 未着手   |                    |
-| 5 | Reader: quote, deref 等        | 未着手   |                    |
-| ...                                                               |
+| #    | タイトル           | 期間              | テスト数 |
+|------|--------------------|-------------------|----------|
+| 0001 | tokenizer_reader   | 2026-02 〜 2026-03 | 312      |
+| 0002 | analyzer           | 2026-03 〜 2026-04 | 198      |
+```
 
-## セッションログ
+### 2.4 plan ファイルの構造
 
-### 2026-02-01
-- Tokenizer 実装完了 (178 テスト pass)
-- 数値パースは Beta の教訓を反映 (NaN/Infinity 対応)
+```markdown
+# plan_0003_vm_bytecode.md
+
+## ゴール
+BytecodeVM の基盤を構築し、定数・算術・比較の opcode が動作する状態にする。
+
+## 参照
+- Beta: src/compiler/emit.zig, src/vm/vm.zig, src/compiler/bytecode.zig
+- Beta 教訓: docs/reference/vm_design.md (スタック契約の重要性)
+- 設計: docs/future.md §9.1 (コンパイラ-VM 間契約)
+
+## タスクリスト
+
+| # | タスク                                | 状態   | 備考                     |
+|---|---------------------------------------|--------|--------------------------|
+| 1 | OpCode enum 定義                      | 完了   |                          |
+| 2 | Chunk (バイトコード列) 構造体         | 完了   |                          |
+| 3 | VM スタックマシン基盤                 | 作業中 | Beta の stack_top 方式   |
+| 4 | 定数ロード (op_const)                 | 未着手 |                          |
+| 5 | 算術 opcode (+, -, *, /)              | 未着手 | NaN boxing 前提          |
+
+## 設計メモ
+- Beta との差異: VM をインスタンス化 (threadlocal 排除)
+- NaN boxing は Phase 0003 で導入する (Beta の tagged union ではなく)
+```
+
+### 2.5 log ファイルの構造
+
+```markdown
+# log_0003_vm_bytecode.md
+
+## 2026-04-10
+- OpCode enum を定義 (24 opcodes)
+- Beta では u8 だったが、正式版では enum(u8) にした (型安全性)
+
+## 2026-04-11
+- Chunk 構造体を実装。Beta と同じ ArrayList(u8) ベース
+- ★ 計画変更: 定数テーブルを Chunk 内に持つ方式に変更
+  (Beta では外部テーブルだったが、VM インスタンス化との相性が悪い)
+  → plan のタスク4 を修正
+
+## 2026-04-12
+- VM スタックマシン基盤: 10 テスト pass
+- 発見: Beta の stack_top ポインタ方式は NaN boxing と相性が良い
+- 教訓: スタックオーバーフローチェックを最初から入れるべきだった
+  (Beta では後から追加して3箇所バグが出た)
 ```
 
 ---
@@ -164,19 +236,25 @@ IMPORTANT: t-wada (和田卓人) の推奨するテスト駆動開発の進め�
 ## セッションの進め方
 
 ### 開始時
-1. plan/memo.md を確認
-2. 「実行計画」テーブルで未完了の最初のタスクを特定
-3. 必要なら plan/roadmap.md でタスク詳細を確認
+1. plan/memo.md を確認 (現在のフェーズと次のタスクを把握)
+2. plan/active/ の plan ファイルでタスク詳細を確認
 
 ### 開発中
 1. TDD サイクルで実装 (上記)
 2. Beta のコードを参照するが、コピペではなく理解して再設計
 3. テストが通ったらこまめにコミット
+4. タスク完了・発見・計画変更は plan/active/ の log ファイルに追記
 
 ### タスク完了時
-1. plan/memo.md の該当タスクを「完了」に更新
-2. 意味のある単位で git commit (日本語メッセージ)
-3. 次の未完了タスクへ自動的に進む
+1. plan/active/ の plan ファイルの該当タスクを「完了」に更新
+2. memo.md の「次のタスク」を更新
+3. 意味のある単位で git commit (日本語メッセージ)
+4. 次の未完了タスクへ自動的に進む
+
+### フェーズ完了時
+1. plan + log を plan/archive/ に移動
+2. memo.md の「完了フェーズ」テーブルに追記
+3. 次のフェーズの plan を plan/active/ に作成 (Plan Mode で)
 
 ## ビルドとテスト
 
@@ -266,11 +344,13 @@ description: 現在の開発フェーズの進捗を確認
 ---
 現在の開発フェーズの進捗を確認する。
 
-1. plan/memo.md を読み、現在のフェーズとタスクを確認
-2. `zig build test` を実行し、テストの pass/fail 数を報告
-3. status/vars.yaml の実装状況を集計
-4. 未完了タスクの一覧を表示
-5. ブロッカーがあれば報告
+1. plan/memo.md を読み、現在のフェーズを特定
+2. plan/active/ の plan ファイルを読み、タスクリストの完了状況を確認
+3. `zig build test` を実行し、テストの pass/fail 数を報告
+4. status/vars.yaml の実装状況を集計
+5. 未完了タスクの一覧と次にやるべきことを表示
+6. ブロッカーがあれば報告
+7. plan/active/ の log ファイルの最新エントリを表示
 ```
 
 ### 4.3 互換性テストスキル
