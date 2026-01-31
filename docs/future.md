@@ -2207,3 +2207,10 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 | core.clj AOT のビルド時間増        | 中   | core.bc キャッシュ、インクリメンタルビルド |
 | core.clj ブートストラップ順序の複雑さ | 中 | defmacro を special form に残すことで回避 |
 | 個人開発のバス因子                 | 高   | ドキュメント・ADR・テストで知識を外部化   |
+
+---
+
+## 関連ドキュメント
+
+- [agent_guide_ja.md](./agent_guide_ja.md) — コーディングエージェント開発ガイド
+  (Claude Code の設定、TDD スキル、フェーズ別指示、Nix ツールチェーン)
