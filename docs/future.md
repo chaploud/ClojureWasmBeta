@@ -1050,6 +1050,111 @@ Beta の「マクロ = 特別な実装形態」という暗黙の区別がなく
 純粋 Form→Form 変換で、Zig 固有ロジックは不要。正式版では `core_macro` として
 core.clj に定義する。Zig Analyzer に残るのは `defmacro` (special form) のみ。
 
+#### 本家 Clojure メタデータの採用方針
+
+Clojure 本家の Var には豊富なメタデータが付与される。
+正式版では **本家のメタデータ体系を最初から踏襲** し、
+`(doc map)` や `(meta #'map)` が本家と同等の情報を返すようにする。
+
+**本家の主要メタデータキーと採用判断**:
+
+| キー              | 例                           | 本家での用途                 | 採用       | 備考                             |
+|-------------------|------------------------------|------------------------------|------------|----------------------------------|
+| `:doc`            | `"Returns a lazy seq..."`    | ドキュメント                 | 必須       | `(doc x)` の出力                 |
+| `:arglists`       | `'([f coll] [f c1 c2])`     | 引数リスト                   | 必須       | `(doc x)` の引数表示             |
+| `:added`          | `"1.0"`                      | 本家 Clojure での導入版      | 必須       | 本家参照点 (後述)                |
+| `:ns`             | `#<Namespace clojure.core>`  | 所属名前空間                 | 自動設定   | Var.ns_name から自動生成         |
+| `:name`           | `map`                        | シンボル名                   | 自動設定   | Var.sym から自動生成             |
+| `:file`           | `"clojure/core.clj"`         | 定義ファイル                 | 採用       | Zig 定義は `"zig:arithmetic"` 等 |
+| `:line`           | `2744`                       | 定義行番号                   | 採用       | core.clj 定義のみ有効           |
+| `:private`        | `true`                       | 非公開 Var                   | 採用済み   | Var.private フラグ               |
+| `:macro`          | `true`                       | マクロフラグ                 | 採用済み   | Var.macro フラグ                 |
+| `:dynamic`        | `true`                       | 動的バインディング           | 採用済み   | Var.dynamic フラグ               |
+| `:tag`            | `String`                     | 戻り値型ヒント               | 後回し     | 型推論導入時に検討               |
+| `:deprecated`     | `"1.2"`                      | 非推奨マーク                 | 後で採用   | 警告表示                         |
+| `:static`         | `true`                       | JVM 直呼び出し最適化         | 不採用     | JVM 固有                         |
+| `:inline`         | `(fn [x y] ...)`             | インライン展開               | 不採用     | JVM 固有 (fused reduce で代替)   |
+| `:inline-arities` | `#{2}`                       | インラインアリティ制限       | 不採用     | JVM 固有                         |
+
+**ClojureWasm 独自のメタデータキー**:
+
+| キー              | 例                | 用途                                                     |
+|-------------------|--------------------|----------------------------------------------------------|
+| `:since-cw`       | `"0.1.0"`          | ClojureWasm での追加バージョン                            |
+| `:kind`           | `:vm-intrinsic`    | VarKind 分類 (前述)。`(meta #'+ )` で層が分かる          |
+| `:defined-in`     | `"zig"` / `"clj"` | 定義元。Zig builtin か core.clj AOT かを区別             |
+
+#### 本家参照バージョンの追跡
+
+`:added` は「本家 Clojure でいつ導入されたか」を示す。
+ClojureWasm は特定バージョンの Clojure に準拠するため、
+**プロジェクトレベルで参照バージョンを管理** する:
+
+- `clojure_ref_version`: プロジェクト全体が準拠を目指す本家バージョン (例: `"1.12.0"`)
+- 個別 Var には `:added` で本家導入バージョンを記録
+- 本家が新バージョンをリリースした際、`:added` が新しい Var を機械的に抽出し未対応を特定
+
+```bash
+# 例: 1.13 で追加された関数のうち未実装のものを抽出
+yq '.vars.clojure_core | to_entries
+    | map(select(.value.added == "1.13" and .value.status != "done"))
+    | .[].key' status/vars.yaml
+```
+
+#### 名前空間対応の保証
+
+**原則: Zig で実装しても、本家と同じ名前空間に配置する。**
+
+Beta ではこの原則を守っている (clojure.core, clojure.string, wasm)。
+正式版では以下の仕組みで対応を保証する:
+
+1. **registry.zig の comptime 検証**: 登録先の名前空間名をリテラル文字列で保持。
+   本家 core.clj の `(ns clojure.core)` と対応
+
+2. **core.clj AOT**: core.clj 内の `(ns clojure.core)` 宣言により、
+   定義された関数は自動的に `clojure.core` に配置される。
+   Zig 側の BuiltinDef と重複した場合は comptime エラー
+
+3. **vars.yaml の `ns` フィールド**: 各 Var がどの名前空間に属するかを明示的に記録。
+   CI で `ns` と実際の登録先の一致を検証
+
+4. **名前空間の網羅性検証**: 本家の名前空間 (clojure.core, clojure.string,
+   clojure.set, clojure.walk 等) のうち、ClojureWasm が提供するものを
+   status/namespaces.yaml (構想) で追跡
+
+```yaml
+# status/namespaces.yaml (構想)
+clojure_ref_version: "1.12.0"
+
+namespaces:
+  clojure.core:
+    status: partial     # done | partial | stub | skip
+    var_count: 545      # 実装済み Var 数
+    upstream_count: 657 # 本家の Var 数
+    provider: [zig, core.clj]  # Zig builtin + core.clj AOT
+
+  clojure.string:
+    status: partial
+    var_count: 18
+    upstream_count: 23
+    provider: [zig]
+
+  clojure.set:
+    status: todo
+    upstream_count: 11
+    provider: [core.clj]  # 全て pure → core.clj で定義
+
+  clojure.walk:
+    status: todo
+    upstream_count: 7
+    provider: [core.clj]  # 全て pure
+
+  wasm:
+    status: done
+    var_count: 10
+    note: ClojureWasm 独自拡張 (本家にはない)
+```
+
 #### BuiltinDef の拡張 (Zig 側)
 
 Zig 側に残る関数 (`vm_intrinsic` + `runtime_fn`) のメタデータ:
@@ -1061,20 +1166,48 @@ pub const BuiltinDef = struct {
     kind: VarKind,
     doc: ?[]const u8 = null,
     arglists: ?[]const []const u8 = null,
-    added: ?[]const u8 = null,             // 本家での追加バージョン
+    added: ?[]const u8 = null,             // 本家 Clojure の :added (例: "1.0")
     since_cw: ?[]const u8 = null,          // ClojureWasm 追加バージョン
 };
 ```
+
+`registerCore()` で Var 生成時に、BuiltinDef のメタデータを Var に転記する:
+
+```zig
+for (all_builtins) |b| {
+    const v = try core_ns.intern(b.name);
+    const fn_obj = try value_allocator.create(Fn);
+    fn_obj.* = Fn.initBuiltin(b.name, b.func);
+    v.bindRoot(Value{ .fn_val = fn_obj });
+    // メタデータ転記
+    v.doc = b.doc;
+    v.arglists = b.arglists;
+    // :added, :kind 等は Var.meta (PersistentMap) に格納
+}
+```
+
+**Beta との差分**: Beta の BuiltinDef は `name` + `func` の 2 フィールドのみ。
+Var.doc, Var.arglists フィールドは存在するが未設定で `(doc map)` が空を返す。
+正式版では登録時に必ず設定する。
 
 core.clj 側の関数・マクロは通常の Clojure メタデータで管理:
 
 ```clojure
 (defn map
-  "Returns a lazy sequence..."
+  "Returns a lazy sequence consisting of the result of applying f to
+  the set of first items of each coll, followed by applying f to the
+  set of second items in each coll, until any one of the colls is
+  exhausted."
   {:added "1.0" :since-cw "0.1.0"}
-  [f coll]
-  ...)
+  ([f coll] ...)
+  ([f c1 c2] ...)
+  ([f c1 c2 c3] ...)
+  ([f c1 c2 c3 & colls] ...))
 ```
+
+core.clj のメタデータは AOT コンパイル時にバイトコードに埋め込まれ、
+起動時に Var に自動設定される。Zig 側の BuiltinDef と統一的に
+`(doc x)`, `(meta #'x)` でアクセスできる。
 
 #### スペシャルフォームの comptime テーブル化
 
@@ -1105,37 +1238,67 @@ Analyzer は `special_forms` テーブルを comptime で参照し、
 
 ```yaml
 # status/vars.yaml (拡張構想)
+clojure_ref_version: "1.12.0"  # 準拠を目指す本家バージョン
+
 vars:
   clojure_core:
     "+":
       status: done
       kind: vm_intrinsic
       defined_in: zig
+      ns: clojure.core
+      added: "1.0"              # 本家で導入されたバージョン
+      doc: "Returns the sum of nums..."
+      arglists: "([] [x] [x y] [x y & more])"
       vm_opcode: add
       compat: L1
     "map":
       status: done
       kind: core_fn
       defined_in: core.clj       # AOT でバイナリに埋め込み
+      ns: clojure.core
+      added: "1.0"
       vm_opcode: null
       compat: L2
     "if":
       status: done
       kind: special_form
       defined_in: zig
+      ns: clojure.core
+      added: "1.0"
       vm_opcode: jump_if_false
       compat: L1
     "defn":
       status: done
       kind: core_macro
       defined_in: core.clj
+      ns: clojure.core
+      added: "1.0"
       expands_to: [def, fn]
       compat: L1
     "slurp":
       status: done
       kind: runtime_fn
       defined_in: zig
+      ns: clojure.core
+      added: "1.0"
       vm_opcode: null
+      compat: L1
+    "splitv-at":
+      status: todo
+      kind: core_fn
+      defined_in: core.clj
+      ns: clojure.core
+      added: "1.12"              # 1.12 で追加された新関数
+      compat: null
+
+  clojure_string:
+    "upper-case":
+      status: done
+      kind: runtime_fn           # Zig の Unicode 処理に依存
+      defined_in: zig
+      ns: clojure.string         # 本家と同じ名前空間
+      added: "1.2"
       compat: L1
 ```
 
@@ -1145,6 +1308,9 @@ vars:
   (special_form > vm_intrinsic > runtime_fn > core_fn/core_macro)
 - VM リファクタリング時の影響範囲を `vm_opcode != null` で機械的に特定
 - 互換性ダッシュボード (§18.4) で依存層別の pass 率を可視化
+- `ns` で名前空間対応を明示。CI で登録先との一致を検証
+- `added` で本家追従を管理。新バージョン追加関数の未対応を機械的に検出
+- `clojure_ref_version` でプロジェクト全体の準拠目標を宣言
 
 ---
 
@@ -1203,6 +1369,8 @@ Beta で学んだ「静かに壊れるバグ」「GC の網羅性」「暗黙の
 
 加えて、正式版では以下の領域も設計段階から組み込む:
 
+- **Var メタデータ** (§10): 本家 Clojure メタデータ体系の採用、`:added` による
+  本家参照バージョン追跡、名前空間対応の保証
 - **セキュリティ設計** (§14): メモリ安全性、サンドボックスモデル、入力検証
 - **C/Zig ABI と FFI** (§15): 3階層の拡張機構 (Wasm / Zig プラグイン / C ABI)
 - **リポジトリ管理** (§16): GitHub Organization、CI/CD、リリース戦略
@@ -1655,6 +1823,8 @@ Accepted / Superseded by ADR-MMMM / Deprecated
 | 0006 | EPL-1.0 ライセンス選択             | §12 の判断      |
 | 0007 | core.clj ビルド時 AOT コンパイル   | §9.6 の判断     |
 | 0008 | VarKind 依存層分類                 | §10 の設計      |
+| 0009 | 本家メタデータ採用方針             | §10 の設計      |
+| 0010 | 名前空間対応保証                   | §10 の設計      |
 
 ### 18.4 互換性ステータス自動生成
 
@@ -1754,9 +1924,11 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 ### Phase 3: Builtin 関数 + core.clj AOT
 
 - vm_intrinsic + runtime_fn を Zig builtin として実装 (§10 VarKind 参照)
+- BuiltinDef にメタデータ (doc, arglists, added) を付与 (§10 メタデータ方針)
 - core.clj を作成: マクロ 43+個 + 高レベル関数を Clojure で定義 (§9.6)
 - ビルド時 AOT パイプライン構築: core.clj → bytecode → `@embedFile`
-- `status/vars.yaml` で `defined_in` (zig / core.clj) を追跡
+- `status/vars.yaml` で `defined_in`, `ns`, `added` を追跡
+- 名前空間対応検証: 全 Var が本家と同じ NS に配置されていることを CI で確認
 - テストオラクル (§10 L1) で基本動作を検証
 - 目標: Beta で実装済みの 545 関数のうち主要 200 関数をカバー
 
