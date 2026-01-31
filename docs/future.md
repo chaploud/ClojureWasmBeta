@@ -1756,16 +1756,21 @@ Beta の threadlocal 変数 (defs.zig に 8 個) を全て VM 構造体のフィ
 
 ```
 clojurewasm/
-├── clojurewasm          # メインリポジトリ (処理系本体)
-├── clojurewasm-book     # mdBook ドキュメント (§18)
-├── clojurewasm-examples # サンプル・チュートリアル
-├── homebrew-tap         # Homebrew Formula
-└── setup-clojurewasm    # GitHub Actions セットアップアクション
+├── clojurewasm          # メインリポジトリ (処理系 + docs + examples)
+├── homebrew-tap         # macOS Homebrew Formula
+└── (将来、必要になったら)
+    ├── aur-clojurewasm  # Arch Linux AUR
+    ├── nix-clojurewasm  # Nix flake overlay
+    └── scoop-clojurewasm # Windows Scoop bucket
 ```
 
-- メインリポジトリにコア機能を集約 (モノリポ)
-- ドキュメントとサンプルは別リポジトリ (更新頻度・権限が異なるため)
-- ツール系は必要に応じて追加
+- **メインリポジトリに集約**: src, book/ (mdBook), examples/, bench/ を1リポに置く
+  - ドキュメントとコードを同じコミットで更新できる
+  - examples/ をテスト対象にできる (CI で壊れを検出)
+  - `zig build test && mdbook build` が1パイプラインで完結
+- **配布チャネルのみ別リポ**: Homebrew は `homebrew-xxx` 命名規則で別リポ必須。
+  他の OS 向けパッケージマネージャも同様 (各ツールの慣習に従う)
+- 配布チャネル以外の分離は、コントリビュータが増えて必要性が生じてから検討
 
 ### 16.2 ブランチ戦略: Trunk-based Development
 
