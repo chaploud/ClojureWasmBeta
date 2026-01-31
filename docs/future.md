@@ -285,6 +285,8 @@ Beta の経験から、共有しやすい / しにくい領域:
 - 実行時分岐ゼロ
 - 不要コードはリンクされない
 
+> **Note**: 正式版の具体的なディレクトリ構造は §17 で詳述。
+
 ---
 
 ## 9. Beta から正式版へ持ち越す設計知見
@@ -573,26 +575,15 @@ Java Interop は排除するが、プログラミング上必須な機能はエ�
 
 ---
 
-## 11. 進め方
+## 11. (§19 に統合)
 
-1. **native 路線を完成させる**
-   - NaN boxing / 永続 DS / GC 改良で到達点を把握
-   - Server Function / Edge での強みを確立
-
-2. **Wasm フリーライド路線は実験的に並行**
-   - GC 二層モデル理解
-   - WIT / Component Model の接続感確認
-   - プロダクション品質は求めない
-
-3. **正式版はスクラッチで再設計**
-   - 両路線の知見を統合
-   - 英語・OSS 体裁・ライセンス整備
-   - §9 の知見を設計の前提として組み込む
-   - §10 の互換性検証パイプラインを初期から構築
+> 移行ロードマップの詳細は **§19** を参照。
 
 ---
 
 ## 12. OSS 化とネーミング
+
+> リポジトリ・プロジェクト管理の詳細は **§16** を参照。
 
 ### ライセンス
 
@@ -604,14 +595,14 @@ Clojure 本家は EPL-1.0。ClojureWasm が本家コードを直接利用して�
 
 「Clojure」を名前に含めるかは慎重に検討が必要。
 
-| プロジェクト   | 名前に「Clojure」 | 背景                                   |
-|---------------|-------------------|----------------------------------------|
-| ClojureScript | あり               | Rich Hickey 自身が設計・主導           |
-| ClojureCLR    | あり               | clojure org 配下 (公式)                |
-| ClojureDart   | あり               | コミュニティ重鎮、Conj 発表、公式紹介  |
-| Babashka      | なし               | SCI ベース、独自名                     |
-| SCI           | なし               | "Small Clojure Interpreter"            |
-| Jank          | なし               | "A Clojure dialect on LLVM"            |
+| プロジェクト  | 名前に「Clojure」 | 背景                                  |
+|---------------|-------------------|---------------------------------------|
+| ClojureScript | あり              | Rich Hickey 自身が設計・主導          |
+| ClojureCLR    | あり              | clojure org 配下 (公式)               |
+| ClojureDart   | あり              | コミュニティ重鎮、Conj 発表、公式紹介 |
+| Babashka      | なし              | SCI ベース、独自名                    |
+| SCI           | なし              | "Small Clojure Interpreter"           |
+| Jank          | なし              | "A Clojure dialect on LLVM"           |
 
 ClojureDart は Clojure 公式 Deref で紹介され Clojure/Conj で発表されているが、
 Rich Hickey から明示的な商標許諾があったかは公開情報では確認できない。
@@ -636,3 +627,625 @@ ClojureWasm は
 世界線は comptime で切替え、単一リポジトリで管理する。
 Beta で学んだ「静かに壊れるバグ」「GC の網羅性」「暗黙の契約」を
 正式版では設計レベルで防止する。
+
+加えて、正式版では以下の領域も設計段階から組み込む:
+
+- **セキュリティ設計** (§14): メモリ安全性、サンドボックスモデル、入力検証
+- **C/Zig ABI と FFI** (§15): 3階層の拡張機構 (Wasm / Zig プラグイン / C ABI)
+- **リポジトリ管理** (§16): GitHub Organization、CI/CD、リリース戦略
+- **ディレクトリ構造** (§17): 参考プロジェクト分析に基づく構成
+- **ドキュメント戦略** (§18): 4層構造、mdBook、ADR
+- **移行ロードマップ** (§19): Phase 0〜11 の具体的なステップ
+
+---
+
+## 14. セキュリティ設計
+
+ClojureWasm は Zig で書かれたネイティブバイナリであり、
+Clojure (JVM) の SecurityManager やサンドボックスとは異なるアプローチが必要。
+
+### 14.1 メモリ安全性
+
+Zig は ReleaseSafe モードで境界チェック・アラインメント検証を有効にできる。
+
+**方針**: リリースビルドも `ReleaseSafe` をデフォルトとする。
+
+- 配列境界外アクセス → panic (silent corruption より安全)
+- `@intToPtr` / `@ptrCast` の使用は最小限に制限し、コードレビューで監視
+- Beta で発見した unsafe パターン (fixup 漏れ等) は comptime 検証で防止 (§9.1)
+- `ReleaseFast` は明示的なベンチマーク用途でのみ提供
+
+### 14.2 サンドボックスモデル
+
+路線ごとに異なるサンドボックス戦略を採用する。
+
+**native 路線**: allowlist 方式
+
+- ファイルシステムアクセスは明示的に許可されたパスのみ
+- ネットワークアクセスはデフォルト無効、`--allow-net` フラグで有効化
+- 環境変数アクセスはフィルタリング可能
+- Babashka の `--allow-*` フラグ体系を参考にする
+
+```
+clj-wasm --allow-read=/data --allow-write=/tmp script.clj
+clj-wasm --allow-net=api.example.com script.clj
+```
+
+**wasm_rt 路線**: WASI capabilities
+
+- WASI の capability-based security をそのまま活用
+- ランタイム (Wasmtime 等) の `--dir`, `--env` フラグで制御
+- 追加のサンドボックスレイヤーは不要 (WASI が担保)
+
+### 14.3 Reader の入力検証
+
+Beta では Reader に対する入力制限がなく、
+悪意ある入力 (深いネスト、巨大リテラル) で OOM やスタックオーバーフローが起きうる。
+
+正式版での対策:
+
+| 制限                   | デフォルト値 | 設定方法              |
+|------------------------|--------------|-----------------------|
+| ネスト深さ上限         | 1024         | `--max-depth`         |
+| 文字列リテラルサイズ   | 1MB          | `--max-string-size`   |
+| コレクションリテラル数 | 100,000      | `--max-literal-count` |
+| ソースファイルサイズ   | 10MB         | `--max-file-size`     |
+
+- 制限超過時は明確なエラーメッセージを返す (panic ではない)
+- REPL モードではより緩い制限をデフォルトにする
+
+### 14.4 依存管理
+
+**原則**: third-party ライブラリはベンダリング (ソースコピー) で管理する。
+
+- `third-party/` ディレクトリにソースを配置 (§17 参照)
+- バージョンは `third-party/versions.txt` で明示的に記録
+- Zig の `build.zig.zon` による依存管理を活用
+- submodule は使わない (ビルドの再現性を確保)
+
+依存は最小限に:
+
+| 依存               | 用途                     | 方針                       |
+|--------------------|--------------------------|----------------------------|
+| zware              | Wasm 実行エンジン        | ベンダリング               |
+| (Wasmtime)         | 将来の Wasm バックエンド | 動的リンク or ベンダリング |
+| Zig 標準ライブラリ | 基盤                     | Zig バージョン固定         |
+
+### 14.5 SECURITY.md ポリシー
+
+OSS 公開時に `SECURITY.md` を配置する:
+
+- 脆弱性報告先 (メールアドレス、GitHub Security Advisories)
+- 対応 SLA の目安 (Critical: 48h 確認、High: 1 week)
+- サポート対象バージョン (最新 minor のみ)
+- セキュリティ関連の設計判断は ADR (§18) として記録
+
+---
+
+## 15. C/Zig ABI と FFI 戦略
+
+ClojureWasm の拡張性を3階層で設計する。
+Beta は組み込み関数のみだったが、正式版ではユーザーが独自の拡張を追加できる機構を提供する。
+
+### 15.1 拡張機構の3階層
+
+| 階層            | 対象路線         | 安全性 | 配布性 | 用途                      |
+|-----------------|------------------|--------|--------|---------------------------|
+| Wasm モジュール | native + wasm_rt | 高     | 高     | ポータブルなプラグイン    |
+| Zig プラグイン  | native のみ      | 中     | 低     | 高性能ネイティブ拡張      |
+| C ABI           | native のみ      | 低     | 中     | 既存 C ライブラリとの統合 |
+
+### 15.2 Wasm モジュール拡張
+
+§1 の Wasm 活用の発展形。ユーザーが `.wasm` ファイルを読み込んで関数を呼べる。
+
+```clojure
+;; Wasm モジュールのロードと呼び出し (構想)
+(def wasm-mod (wasm/load "image_resize.wasm"))
+(def resize (wasm/fn wasm-mod "resize" [:i32 :i32 :i32] :i32))
+(resize buf width height)
+```
+
+- 両路線で動作する唯一の拡張方式
+- WASI 対応モジュールも利用可能
+- 型安全な境界は §1 Phase 1-3 で段階的に整備
+
+### 15.3 Zig プラグイン機構 (native 路線向け)
+
+動的ライブラリ (`.so` / `.dylib`) としてビルドした Zig コードを
+ランタイムにロードする仕組み。
+
+```zig
+// プラグイン側 (my_plugin.zig)
+const Plugin = @import("clojurewasm").Plugin;
+
+export fn init(api: *Plugin.Api) void {
+    api.register("my-fn", myFn);
+}
+
+fn myFn(args: []const Plugin.Value) Plugin.Value {
+    // ...
+}
+```
+
+- `Plugin.Api` インターフェースを通じて ClojureWasm の値と相互変換
+- GC ルート登録 API を提供 (プラグインが作成した Value が回収されないように)
+- native 路線でのみ利用可能 (wasm_rt では Wasm モジュール拡張を使う)
+
+### 15.4 C ABI 統合
+
+Zig の `@cImport` を活用し、C ライブラリを直接利用する。
+
+想定される利用例:
+
+| ライブラリ | 用途                 | 統合方法                  |
+|------------|----------------------|---------------------------|
+| SQLite     | データベースアクセス | `@cImport("sqlite3.h")`   |
+| libcurl    | HTTP クライアント    | `@cImport("curl/curl.h")` |
+| libpcre2   | 高速正規表現         | `@cImport("pcre2.h")`     |
+
+- Beta の Zig フルスクラッチ regex は正しい判断だったが、
+  性能が不足する場合は libpcre2 をオプショナルバックエンドとして提供可能
+- C ABI 層は unsafe であり、メモリ管理の責任はプラグイン側
+
+### 15.5 Wasm vs Native FFI の使い分け
+
+| 基準             | Wasm モジュール        | Zig/C プラグイン         |
+|------------------|------------------------|--------------------------|
+| ポータビリティ   | 高 (どこでも動く)      | 低 (OS/Arch 依存)        |
+| 性能             | 中 (境界コスト)        | 高 (直接呼び出し)        |
+| 安全性           | 高 (サンドボックス)    | 低 (メモリ共有)          |
+| エコシステム     | 拡大中                 | 成熟 (C ライブラリ)      |
+| 推奨ユースケース | ユーザー配布プラグイン | システム統合、高性能処理 |
+
+### 15.6 Beta からの段階的拡張
+
+- **Phase 1** (正式版初期): Wasm モジュールロードの改善 (§1 Phase 1-3)
+- **Phase 2** (v0.3 頃): Zig プラグイン API の安定化
+- **Phase 3** (v0.5 頃): C ABI 層の公開、主要ライブラリバインディング
+
+---
+
+## 16. リポジトリ・プロジェクト管理
+
+### 16.1 GitHub Organization 構成
+
+```
+clojurewasm/
+├── clojurewasm          # メインリポジトリ (処理系本体)
+├── clojurewasm-book     # mdBook ドキュメント (§18)
+├── clojurewasm-examples # サンプル・チュートリアル
+├── homebrew-tap         # Homebrew Formula
+└── setup-clojurewasm    # GitHub Actions セットアップアクション
+```
+
+- メインリポジトリにコア機能を集約 (モノリポ)
+- ドキュメントとサンプルは別リポジトリ (更新頻度・権限が異なるため)
+- ツール系は必要に応じて追加
+
+### 16.2 ブランチ戦略: Trunk-based Development
+
+**Git Flow を採用しない理由**:
+
+- ClojureWasm は単一バイナリ配布で、複数バージョンの並行メンテナンスが不要
+- リリースブランチの管理コストが個人〜小規模チームに見合わない
+- feature branch のマージ衝突が増える
+
+**Trunk-based の運用**:
+
+- `main` ブランチが常にリリース可能な状態
+- 機能開発は短命な feature branch (数日以内にマージ)
+- リリースは `main` からタグを打つだけ
+- 破壊的変更は feature flag ではなく SemVer で管理
+
+### 16.3 PR ガイドライン
+
+CONTRIBUTING.md の骨子:
+
+- PR は小さく保つ (目安: 300 行以下)
+- テストを含める (新機能は必須、バグ修正は推奨)
+- `zig build test` が通ること
+- `--compare` モードで回帰がないこと
+- コミットメッセージは Conventional Commits 形式
+
+```
+feat: add persistent vector implementation
+fix: resolve GC crash on deeply nested structures
+docs: update FFI guide with C ABI examples
+perf: optimize fused reduce for large sequences
+test: import SCI core_test assertions
+```
+
+### 16.4 CI/CD パイプライン
+
+GitHub Actions で以下を自動化:
+
+```yaml
+# .github/workflows/ci.yml (構想)
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        target: [native, wasm_rt]
+    steps:
+      - uses: actions/setup-zig@v1
+      - run: zig build test
+      - run: zig build test -Dbackend=${{ matrix.target }}
+
+  compat:
+    steps:
+      - run: bash test/imported/run_all.sh
+      - run: diff compat_status.yaml expected_status.yaml
+
+  bench:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - run: bash bench/run_bench.sh --quick --record
+      - uses: actions/upload-artifact@v4
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - run: zig build -Doptimize=ReleaseSafe
+      - run: zig build -Dtarget=wasm32-wasi -Doptimize=ReleaseSafe
+      - uses: softprops/action-gh-release@v1
+```
+
+### 16.5 タグ・リリース戦略
+
+SemVer に従い、以下の段階でリリースする:
+
+| フェーズ       | バージョン     | 意味                             |
+|----------------|----------------|----------------------------------|
+| 開発初期       | v0.1.0-alpha.N | API 不安定、破壊的変更あり       |
+| 機能一通り実装 | v0.1.0-beta.N  | API 安定化中、フィードバック募集 |
+| リリース候補   | v0.1.0-rc.N    | バグ修正のみ                     |
+| 正式リリース   | v1.0.0         | API 安定、後方互換性を保証       |
+
+- CHANGELOG.md は Keep a Changelog 形式 (§18)
+- バイナリは GitHub Releases で配布 (Linux x86_64, macOS arm64/x86_64, wasm32)
+- Homebrew は `homebrew-tap` リポジトリで管理
+
+### 16.6 Issue ラベル体系
+
+| ラベル             | 色   | 意味                        |
+|--------------------|------|-----------------------------|
+| `bug`              | 赤   | バグ報告                    |
+| `enhancement`      | 青   | 機能追加リクエスト          |
+| `compatibility`    | 紫   | 本家 Clojure との互換性問題 |
+| `performance`      | 緑   | パフォーマンス改善          |
+| `wasm_rt`          | 黄   | wasm_rt 路線固有            |
+| `native`           | 橙   | native 路線固有             |
+| `good-first-issue` | 水色 | 初参加者向け                |
+| `help-wanted`      | 水色 | 協力者募集                  |
+| `breaking`         | 赤   | 破壊的変更を含む            |
+
+CODE_OF_CONDUCT.md は Contributor Covenant v2.1 を採用。
+
+---
+
+## 17. 正式版ディレクトリ構造
+
+### 17.1 参考プロジェクトからの採用判断
+
+| 参考元        | 採用するもの                | 不採用 (理由)                             |
+|---------------|-----------------------------|-------------------------------------------|
+| jank          | `third-party/` ベンダリング | `src/` + `include/` 分離 (Zig では不要)   |
+| Babashka      | `doc/adr/` (ADR)            | feature-* サブモジュール (モノリポで十分) |
+| SCI           | `api/` と `impl/` の分離    | —                                         |
+| ClojureScript | フェーズ別モジュール分離    | —                                         |
+
+### 17.2 ディレクトリツリー
+
+```
+clojurewasm/
+├── src/
+│   ├── api/                  # 公開 API (embed 用インターフェース)
+│   │   ├── eval.zig          # evaluate(), load-file()
+│   │   ├── repl.zig          # REPL エントリポイント
+│   │   └── plugin.zig        # プラグイン API (§15)
+│   │
+│   ├── common/               # 両路線で共有
+│   │   ├── reader/           # Tokenizer, Reader, Form
+│   │   ├── analyzer/         # Analyzer, Node, macro expansion
+│   │   ├── bytecode/         # OpCode 定義、定数テーブル
+│   │   ├── value/            # Value 型定義
+│   │   └── builtin/          # 組み込み関数 (意味論共通部)
+│   │
+│   ├── native/               # 超高速・単一バイナリ路線
+│   │   ├── vm/               # VM 実行エンジン (NaN boxing)
+│   │   ├── gc/               # 自前 GC
+│   │   ├── optimizer/        # 定数畳み込み、fused reduce
+│   │   └── main.zig
+│   │
+│   └── wasm_rt/              # Wasm ランタイムフリーライド路線
+│       ├── vm/               # Wasm target VM
+│       ├── gc_bridge/        # WasmGC 連携
+│       ├── wasm_backend/     # WasmBackend trait 実装
+│       └── main.zig
+│
+├── test/
+│   ├── unit/                 # ユニットテスト (モジュール単位)
+│   ├── e2e/                  # エンドツーエンドテスト
+│   └── imported/             # upstream テスト (§10)
+│       ├── sci/
+│       ├── cljs/
+│       └── clojure/
+│
+├── bench/                    # ベンチマークスイート
+├── third-party/              # ベンダリングされた依存 (§14.4)
+│   └── versions.txt
+│
+├── book/                     # mdBook ソース (§18、別リポの場合もある)
+│   └── src/
+│
+├── doc/
+│   └── adr/                  # Architecture Decision Records (§18)
+│       ├── 0001-nan-boxing.md
+│       ├── 0002-gc-strategy.md
+│       └── template.md
+│
+├── examples/                 # サンプルコード
+├── status/                   # 実装状況・ベンチマーク (Beta から継承)
+│
+├── build.zig                 # comptime で native / wasm_rt を選択
+├── build.zig.zon             # Zig 依存管理
+├── LICENSE                   # EPL-1.0
+├── README.md
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
+├── SECURITY.md               # §14.5
+└── CHANGELOG.md              # §18
+```
+
+### 17.3 Beta からの変更点
+
+| 項目         | Beta                         | 正式版                                    |
+|--------------|------------------------------|-------------------------------------------|
+| ソース構成   | `src/` フラット              | `src/api,common,native,wasm_rt/`          |
+| テスト構成   | `test/` フラット             | `test/unit,e2e,imported/`                 |
+| 依存管理     | Git submodule (zware)        | `third-party/` ベンダリング               |
+| ドキュメント | `docs/` (Markdown)           | `book/` (mdBook) + `doc/adr/`             |
+| 設計記録     | `plan/` (非公開ノート)       | `doc/adr/` (公開 ADR)                     |
+| 実装状況追跡 | `status/vars.yaml`           | `status/vars.yaml` + `compat_status.yaml` |
+| ビルド設定   | `build.zig` (単一ターゲット) | `build.zig` (comptime 切替)               |
+
+### 17.4 §8 との関係
+
+§8 のアーキテクチャ方針 (単一リポジトリ・comptime 切替) を具体化したのが本構造。
+`src/common/` の共有境界は §8 の共有可能性テーブルに従う。
+
+---
+
+## 18. ドキュメント戦略
+
+### 18.1 4層構造
+
+| 層                 | 対象読者           | 内容                            | 形式          |
+|--------------------|--------------------|---------------------------------|---------------|
+| Getting Started    | 初めてのユーザー   | インストール、Hello World、REPL | mdBook Ch.1   |
+| Language Reference | Clojure 経験者     | 互換性表、差異、独自機能        | mdBook Ch.2-5 |
+| Developer Guide    | コントリビューター | ビルド方法、テスト、PR ガイド   | mdBook Ch.6-8 |
+| Internals          | コア開発者         | VM 設計、GC、コンパイラ         | mdBook Ch.9+  |
+
+### 18.2 mdBook 採用
+
+jank が mdBook + GitHub Pages でドキュメントを公開しており、
+Rust/Zig エコシステムでは事実上の標準。
+
+メリット:
+- Markdown ベースで記述コスト低
+- `book.toml` + GitHub Actions で自動デプロイ
+- 検索機能内蔵
+- コードハイライト対応 (Clojure, Zig)
+
+デプロイ:
+- `main` push → GitHub Actions → GitHub Pages (`book.clojurewasm.org` 等)
+- PR 時はプレビュービルドで確認
+
+### 18.3 ADR (Architecture Decision Records)
+
+Babashka が `doc/dev/` にメモを残す方式を採用しているが、
+正式版ではより構造化された ADR 形式で記録する。
+
+ADR テンプレート:
+
+```markdown
+# ADR-NNNN: タイトル
+
+## Status
+Accepted / Superseded by ADR-MMMM / Deprecated
+
+## Context
+なぜこの決定が必要か
+
+## Decision
+何を決定したか
+
+## Consequences
+この決定の結果として何が起きるか
+
+## References
+関連する ADR、Issue、外部リソース
+```
+
+初期 ADR 候補 (Beta の知見から):
+
+| ADR  | タイトル                           | 根拠            |
+|------|------------------------------------|-----------------|
+| 0001 | NaN Boxing による値表現            | §3, §5 の知見   |
+| 0002 | セミスペース GC + Arena 分離       | §5, §9.4 の知見 |
+| 0003 | デュアルバックエンド (`--compare`) | §9.2 の知見     |
+| 0004 | Fused Reduce パターン              | §9.3 の知見     |
+| 0005 | Trunk-based Development            | §16.2 の判断    |
+| 0006 | EPL-1.0 ライセンス選択             | §12 の判断      |
+
+### 18.4 互換性ステータス自動生成
+
+§10 の `compat_status.yaml` から以下を自動生成する:
+
+- mdBook 内の互換性テーブル (関数ごとの pass/fail/skip 一覧)
+- README.md のバッジ (`Compatibility: 87% (412/474 pass)`)
+- GitHub Pages のダッシュボード
+
+生成は CI/CD パイプライン (§16.4) で `main` push 時に実行。
+
+### 18.5 CHANGELOG.md
+
+Keep a Changelog 形式 (https://keepachangelog.com/) を採用:
+
+```markdown
+# Changelog
+
+## [Unreleased]
+
+### Added
+- Persistent vector implementation
+
+### Fixed
+- GC crash on deeply nested let bindings
+
+## [0.1.0-alpha.1] - 2025-XX-XX
+
+### Added
+- Initial release with core.clj 500+ functions
+- Native backend with NaN boxing
+```
+
+- リリースごとにセクションを追加
+- `[Unreleased]` セクションに開発中の変更を蓄積
+- タグ打ち時に日付を確定
+
+### 18.6 README.md 構成方針
+
+README.md は簡潔に保ち、詳細は mdBook に誘導する:
+
+1. プロジェクト概要 (3-5 行)
+2. クイックスタート (インストール + 実行例)
+3. 互換性バッジ
+4. ベンチマーク結果 (簡易テーブル)
+5. ドキュメントリンク
+6. コントリビューション (CONTRIBUTING.md へのリンク)
+7. ライセンス
+
+### 18.7 Beta ドキュメントの移行
+
+| Beta                                | 正式版                                | 扱い              |
+|-------------------------------------|---------------------------------------|-------------------|
+| `docs/reference/architecture.md`    | `book/src/internals/architecture.md`  | 英訳して移行      |
+| `docs/reference/vm_design.md`       | ADR-0007 + `book/src/internals/vm.md` | 分割して移行      |
+| `docs/reference/gc_design.md`       | ADR-0002 + `book/src/internals/gc.md` | 分割して移行      |
+| `docs/reference/zig_guide.md`       | `book/src/dev/zig-guide.md`           | 英訳して移行      |
+| `docs/reference/lessons_learned.md` | 各 ADR に分散                         | 個別 ADR に展開   |
+| `plan/memo.md`                      | (移行しない)                          | Beta の開発記録   |
+| `plan/roadmap.md`                   | (移行しない)                          | Beta の開発記録   |
+| `docs/future.md`                    | ADR + book の設計章                   | 決定事項を ADR 化 |
+
+---
+
+## 19. 移行ロードマップ
+
+> §11 の「進め方」を具体的なフェーズに展開したもの。
+
+### Phase 0: 準備
+
+- GitHub Organization (`clojurewasm`) の作成
+- リポジトリ初期化 (§17 のディレクトリ構造)
+- CI/CD パイプライン構築 (§16.4)
+- `build.zig` に comptime 切替の骨格を実装
+- LICENSE, CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md 配置
+- ADR テンプレートと初期 ADR (§18.3) の記述
+
+### Phase 1: Reader + Analyzer
+
+- Beta の Reader を英語化・リファクタリングして移植
+- 入力検証 (§14.3) を最初から組み込む
+- Analyzer を移植、マクロ展開を再検証
+- `test/unit/reader/`, `test/unit/analyzer/` にテスト整備
+- §10 Tier 1 の SCI テスト取り込み開始
+
+### Phase 2: Native 路線 VM
+
+- NaN boxing による値表現の実装 (ADR-0001)
+- 新 GC の設計・実装 (ADR-0002、§5 の教訓を反映)
+  - safe point の設計を最初から組む (§5 教訓2)
+  - fixup の comptime 検証 (§5 教訓1)
+- コンパイラ-VM 間の契約を型で表現 (§9.1)
+- `--compare` モードの参照実装 (§9.2)
+- 基本的な式評価が動く状態
+
+### Phase 3: Builtin 関数
+
+- clojure.core の主要関数を段階的に移植
+- `status/vars.yaml` で進捗追跡
+- テストオラクル (§10 L1) で基本動作を検証
+- 目標: Beta で実装済みの 545 関数のうち主要 200 関数をカバー
+
+### Phase 4: 最適化
+
+- 定数畳み込み
+- Fused Reduce パターン (§9.3) の VM 組み込み
+- インラインキャッシング (頻出パスの高速化)
+- ベンチマークスイートで効果測定 (§CLAUDE.md のベンチマーク手順)
+
+### Phase 5: 標準ライブラリ
+
+- `clojure.string`, `clojure.set`, `clojure.walk` 等の名前空間を実装
+- 残りの clojure.core 関数を網羅
+- §10 Tier 1-2 のテスト取り込みを加速
+- `compat_status.yaml` の pass 率を追跡
+
+### Phase 6: Wasm 連携強化
+
+- §1 Phase 1-3 (型安全境界 → 構造データ → エコシステム) を実装
+- Wasm モジュールのロード・呼び出し API (§15.2)
+- native 路線での Wasm 実行エンジン統合 (§6)
+
+### Phase 7: nREPL + ツール統合
+
+- nREPL サーバー実装 (エディタ連携)
+- REPL の改善 (補完、ヒストリ、マルチライン)
+- `clj-wasm` CLI の成熟化
+
+### Phase 8: Alpha リリース (v0.1.0-alpha)
+
+- 全テストが pass する状態
+- mdBook ドキュメントの初版公開 (§18)
+- GitHub Releases でバイナリ配布
+- コミュニティへのアナウンス
+- フィードバック受付開始
+
+### Phase 9: フィードバック反映
+
+- Alpha ユーザーからのバグ報告・互換性問題への対応
+- §10 Tier 3 のテスト取り込み (AI 補助 + 人間レビュー)
+- パフォーマンスチューニング
+- API の安定化
+
+### Phase 10: wasm_rt 実験
+
+- `zig build -Dtarget=wasm32-wasi` で処理系をビルド
+- WasmGC 連携の実験 (§5)
+- wasm_rt 固有のテスト整備
+- native 路線が安定してから着手 (§7 の「一本化しない」方針)
+
+### Phase 11: 正式版 (v1.0.0)
+
+- API の後方互換性保証
+- 互換性テスト pass 率の目標達成 (L0-L2 で 90%+)
+- mdBook ドキュメント完成版
+- Homebrew Formula, GitHub Actions セットアップ
+- v1.0.0 タグ + GitHub Release
+
+### リスク管理
+
+| リスク                             | 影響 | 緩和策                                    |
+|------------------------------------|------|-------------------------------------------|
+| NaN boxing の実装難度が想定以上    | 高   | Beta の tagged union にフォールバック可能 |
+| GC の safe point 設計が破綻        | 高   | 式境界 GC (Beta 方式) に縮退可能          |
+| upstream テスト変換の工数超過      | 中   | Tier 1 (SCI) のみで初期リリース           |
+| Zig のバージョンアップで破壊的変更 | 中   | `flake.lock` でバージョン固定             |
+| wasm_rt 路線の WasmGC 連携が困難   | 中   | native 路線を優先、wasm_rt は実験扱い     |
+| コミュニティからのネーミング異議   | 低   | リネーム対応可能な構造にしておく (§12)    |
+| 個人開発のバス因子                 | 高   | ドキュメント・ADR・テストで知識を外部化   |
