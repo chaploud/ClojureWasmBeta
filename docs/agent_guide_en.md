@@ -24,33 +24,35 @@ Required references change by phase, so add them incrementally.
 
 ### Always Referenced (All Phases)
 
-| Directory                                | Reason                             |
-|------------------------------------------|------------------------------------|
-| `~/Documents/MyProducts/ClojureWasmBeta` | Beta implementation (primary)      |
-| `~/Documents/OSS/clojure`                | Upstream Clojure (source of truth) |
-| `/opt/homebrew/Cellar/zig/0.15.2/lib`    | Zig standard library               |
+| Directory                    | Reason                             |
+|------------------------------|------------------------------------|
+| `<ClojureWasmBeta path>`     | Beta implementation (primary)      |
+| `<clojure path>`             | Upstream Clojure (source of truth) |
+| `<zig stdlib path>`          | Zig standard library               |
+
+> Paths are environment-specific. Refer to Beta's CLAUDE.md for actual paths.
 
 ### Phase 1-2 (Reader + Analyzer)
 
-| Directory                       | Reason                         |
-|---------------------------------|--------------------------------|
-| `~/Documents/OSS/tools.reader`  | Clojure Reader reference impl  |
-| `~/Documents/OSS/clojurescript` | CLJS reader/analyzer reference |
+| Directory                    | Reason                         |
+|------------------------------|--------------------------------|
+| `<tools.reader path>`       | Clojure Reader reference impl  |
+| `<clojurescript path>`      | CLJS reader/analyzer reference |
 
 ### Phase 3+ (Builtins + Testing)
 
-| Directory                  | Reason                  |
-|----------------------------|-------------------------|
-| `~/Documents/OSS/sci`      | SCI builtin patterns    |
-| `~/Documents/OSS/babashka` | Babashka test structure |
+| Directory                    | Reason                  |
+|------------------------------|-------------------------|
+| `<sci path>`                | SCI builtin patterns    |
+| `<babashka path>`           | Babashka test structure |
 
 ### Optional (As Needed)
 
-| Directory                        | Reason                        |
-|----------------------------------|-------------------------------|
-| `~/Documents/OSS/nrepl`          | nREPL protocol implementation |
-| `~/Documents/OSS/cider-nrepl`    | CIDER nREPL middleware        |
-| `~/Documents/OSS/babashka.nrepl` | Babashka nREPL implementation |
+| Directory                    | Reason                        |
+|------------------------------|-------------------------------|
+| `<nrepl path>`              | nREPL protocol implementation |
+| `<cider-nrepl path>`       | CIDER nREPL middleware        |
+| `<babashka.nrepl path>`    | Babashka nREPL implementation |
 
 ---
 
@@ -104,6 +106,7 @@ clojurewasm/
 │   └── adr/                     # Architecture Decision Records
 ├── book/                        # mdBook documentation
 ├── bench/                       # Benchmark suite
+├── scripts/                     # CI / quality gate scripts
 └── examples/
 ```
 
@@ -217,9 +220,10 @@ Do not write things Claude can infer on its own.
 
 Full-scratch Clojure implementation in Zig. Targeting behavioral compatibility (black-box).
 
-Reference implementation: ~/Documents/MyProducts/ClojureWasmBeta (via add-dir)
+Reference implementation: <Beta path> (via add-dir)
 
 Current state: see plan/memo.md
+Design details: see docs/future.md
 
 ## Language Policy
 
@@ -291,13 +295,11 @@ bash bench/run_bench.sh --quick
 ## Differences from Beta
 
 Production version is a full redesign from Beta. Key changes:
-- Instantiated VM (no threadlocal) -> §15.5 embedding mode support
-- GcStrategy trait for GC abstraction -> §5 modular design
-- BuiltinDef with metadata (doc, arglists, added) -> §10
-- core.clj AOT compilation -> §9.6
+- Instantiated VM (no threadlocal) -> future.md §15.5
+- GcStrategy trait for GC abstraction -> future.md §5
+- BuiltinDef with metadata (doc, arglists, added) -> future.md §10
+- core.clj AOT compilation -> future.md §9.6
 - Design decisions recorded as ADRs in doc/adr/
-
-See docs/future.md for design details.
 ````
 
 ---
@@ -429,22 +431,35 @@ Pay special attention to edge cases (nil, empty, large values).
 // .claude/settings.json (excerpt)
 {
   "hooks": {
-    "postEdit": [
+    "PostToolUse": [
       {
-        "pattern": "src/**/*.zig",
-        "command": "zig build test 2>&1 | tail -5",
-        "description": "Auto-run tests after edit"
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "zig build test 2>&1 | tail -5"
+          }
+        ]
       }
     ],
-    "preCommit": [
+    "PreToolUse": [
       {
-        "command": "zig build test",
-        "description": "Block commit on test failure"
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'editing...'"
+          }
+        ]
       }
     ]
   }
 }
 ```
+
+> **Note**: Claude Code hooks are `PreToolUse`, `PostToolUse`, and `Stop`.
+> Use `matcher` to filter by tool name. `postEdit`/`preCommit` do not exist.
+> See: [Claude Code Hooks](https://code.claude.com/docs/en/hooks)
 
 ---
 

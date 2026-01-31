@@ -23,33 +23,35 @@ Claude Code の `add-dir` で追加すべきディレクトリ群。
 
 ### 常時参照 (全フェーズ)
 
-| ディレクトリ                                          | 理由                             |
-|-------------------------------------------------------|----------------------------------|
-| `~/Documents/MyProducts/ClojureWasmBeta`              | Beta 実装 (主参照)               |
-| `~/Documents/OSS/clojure`                             | 本家 Clojure (振る舞いの真実)    |
-| `/opt/homebrew/Cellar/zig/0.15.2/lib`                 | Zig 標準ライブラリ               |
+| ディレクトリ                 | 理由                          |
+|------------------------------|-------------------------------|
+| `<ClojureWasmBeta のパス>`   | Beta 実装 (主参照)            |
+| `<clojure のパス>`           | 本家 Clojure (振る舞いの真実) |
+| `<zig stdlib のパス>`        | Zig 標準ライブラリ            |
+
+> パスは環境依存。Beta の CLAUDE.md を参照して実際のパスに読み替えること。
 
 ### Phase 1-2 (Reader + Analyzer)
 
-| ディレクトリ                                          | 理由                             |
-|-------------------------------------------------------|----------------------------------|
-| `~/Documents/OSS/tools.reader`                        | Clojure Reader 参照実装          |
-| `~/Documents/OSS/clojurescript`                       | CLJS の reader/analyzer 参照     |
+| ディレクトリ                 | 理由                         |
+|------------------------------|------------------------------|
+| `<tools.reader のパス>`      | Clojure Reader 参照実装      |
+| `<clojurescript のパス>`     | CLJS の reader/analyzer 参照 |
 
 ### Phase 3+ (Builtin + テスト)
 
-| ディレクトリ                                          | 理由                             |
-|-------------------------------------------------------|----------------------------------|
-| `~/Documents/OSS/sci`                                 | SCI の builtin 実装パターン      |
-| `~/Documents/OSS/babashka`                            | Babashka のテスト体系            |
+| ディレクトリ                 | 理由                         |
+|------------------------------|------------------------------|
+| `<sci のパス>`               | SCI の builtin 実装パターン  |
+| `<babashka のパス>`          | Babashka のテスト体系        |
 
 ### 選択的参照 (必要時のみ)
 
-| ディレクトリ                                          | 理由                             |
-|-------------------------------------------------------|----------------------------------|
-| `~/Documents/OSS/nrepl`                               | nREPL プロトコル実装             |
-| `~/Documents/OSS/cider-nrepl`                         | CIDER nREPL middleware           |
-| `~/Documents/OSS/babashka.nrepl`                      | Babashka の nREPL 実装           |
+| ディレクトリ                 | 理由                        |
+|------------------------------|-----------------------------|
+| `<nrepl のパス>`             | nREPL プロトコル実装        |
+| `<cider-nrepl のパス>`       | CIDER nREPL middleware      |
+| `<babashka.nrepl のパス>`    | Babashka の nREPL 実装      |
 
 ---
 
@@ -103,6 +105,7 @@ clojurewasm/
 │   └── adr/                     # Architecture Decision Records
 ├── book/                        # mdBook ドキュメント
 ├── bench/                       # ベンチマークスイート
+├── scripts/                     # CI/品質ゲートスクリプト
 └── examples/
 ```
 
@@ -211,14 +214,27 @@ BytecodeVM の基盤を構築し、定数・算術・比較の opcode が動作�
 **Claude Code Best Practice に従い、簡潔に保つこと**。
 Claude が自力で推測できる内容は書かない。
 
-```markdown
+````markdown
 # ClojureWasm
 
 Zig で Clojure 処理系をフルスクラッチ実装。動作互換 (ブラックボックス) を目指す。
 
-参照実装: ~/Documents/MyProducts/ClojureWasmBeta (add-dir 済み)
+参照実装: <Beta のパス> (add-dir 済み)
 
 現在の状態は plan/memo.md を参照。
+設計の詳細は docs/future.md を参照。
+
+## 言語ポリシー
+
+- **コード内は全て英語**: 識別子、コメント、docstring、コミットメッセージ、PR 説明
+- ソースコードおよびバージョン管理履歴に非英語テキストを含めない
+- Zig 0.15.2 の作法に従う (docs/reference/zig_guide.md 参照)
+- エージェントの応答言語は個人設定 — `~/.claude/CLAUDE.md` で指定する
+
+> **コントリビューター向け**: エージェントの応答を英語以外で受け取りたい場合、
+> 個人の `~/.claude/CLAUDE.md` (リポジトリにコミットされない) に指示を追加する。
+> 例: `応答は日本語でお願いします。` / `Respond in Korean.`
+> プロジェクトは言語中立に保ちつつ、個人の好みを尊重する。
 
 ## 開発方式: TDD (t-wada 方式)
 
@@ -249,7 +265,7 @@ IMPORTANT: t-wada (和田卓人) の推奨するテスト駆動開発の進め�
 ### タスク完了時
 1. plan/active/ の plan ファイルの該当タスクを「完了」に更新
 2. memo.md の「次のタスク」を更新
-3. 意味のある単位で git commit (日本語メッセージ)
+3. 意味のある単位で git commit
 4. 次の未完了タスクへ自動的に進む
 
 ### フェーズ完了時
@@ -260,45 +276,31 @@ IMPORTANT: t-wada (和田卓人) の推奨するテスト駆動開発の進め�
 ## ビルドとテスト
 
 ```bash
-# 開発シェルに入る (全ツールが PATH に載る)
+# Enter dev shell (all tools on PATH)
 nix develop
 
-# ビルド
+# Build
 zig build
 
-# テスト実行
+# Run tests
 zig build test
 
-# 特定テストのみ
-zig build test -- "Reader 基本"
+# Specific test only
+zig build test -- "Reader basics"
 
-# ベンチマーク
+# Benchmark
 bash bench/run_bench.sh --quick
 ```
-
-## 言語ポリシー
-
-- **コード内は全て英語**: 識別子、コメント、docstring、コミットメッセージ、PR 説明
-- ソースコードおよびバージョン管理履歴に非英語テキストを含めない
-- Zig 0.15.2 の作法に従う (docs/reference/zig_guide.md 参照)
-- エージェントの応答言語は個人設定 — `~/.claude/CLAUDE.md` で指定する
-
-> **コントリビューター向け**: エージェントの応答を英語以外で受け取りたい場合、
-> 個人の `~/.claude/CLAUDE.md` (リポジトリにコミットされない) に指示を追加する。
-> 例: `応答は日本語でお願いします。` / `Respond in Korean.`
-> プロジェクトは言語中立に保ちつつ、個人の好みを尊重する。
 
 ## Beta との差異
 
 正式版は Beta のフルスクラッチ再設計。以下を変更:
-- VM をインスタンス化 (threadlocal 排除) → §15.5 埋め込みモード対応
-- GcStrategy trait でGC抽象化 → §5 モジュラー設計
-- BuiltinDef にメタデータ (doc, arglists, added) → §10
-- core.clj AOT コンパイル → §9.6
+- VM をインスタンス化 (threadlocal 排除) → future.md §15.5
+- GcStrategy trait でGC抽象化 → future.md §5
+- BuiltinDef にメタデータ (doc, arglists, added) → future.md §10
+- core.clj AOT コンパイル → future.md §9.6
 - 設計判断は doc/adr/ に ADR として記録
-
-設計の詳細は docs/future.md を参照。
-```
+````
 
 ---
 
@@ -429,22 +431,35 @@ model: sonnet
 // .claude/settings.json (抜粋)
 {
   "hooks": {
-    "postEdit": [
+    "PostToolUse": [
       {
-        "pattern": "src/**/*.zig",
-        "command": "zig build test 2>&1 | tail -5",
-        "description": "編集後に自動テスト実行"
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "zig build test 2>&1 | tail -5"
+          }
+        ]
       }
     ],
-    "preCommit": [
+    "PreToolUse": [
       {
-        "command": "zig build test",
-        "description": "テスト失敗時はコミットをブロック"
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'editing...'"
+          }
+        ]
       }
     ]
   }
 }
 ```
+
+> **注意**: Claude Code のフックは `PreToolUse`, `PostToolUse`, `Stop` の3種類。
+> `matcher` でツール名をフィルタする。`postEdit`/`preCommit` は存在しない。
+> 詳細: [Claude Code Hooks](https://code.claude.com/docs/en/hooks)
 
 ---
 
@@ -688,15 +703,15 @@ set -e
 echo "=== zig build test ==="
 zig build test
 
-echo "=== vars.yaml 整合性チェック ==="
-# kind フィールドが正しい enum 値か
+echo "=== vars.yaml consistency check ==="
+# Verify kind field contains valid enum values
 yq '.vars.clojure_core | to_entries | map(select(.value.kind != null))
     | map(select(.value.kind |
       test("^(special_form|vm_intrinsic|runtime_fn|core_fn|core_macro)$") | not))
     | length' status/vars.yaml | grep -q '^0$'
 
-echo "=== 名前空間対応チェック ==="
-# ns フィールドが設定されているか
+echo "=== namespace correspondence check ==="
+# Verify ns field is set for all done vars
 yq '.vars.clojure_core | to_entries
     | map(select(.value.status == "done" and .value.ns == null))
     | length' status/vars.yaml | grep -q '^0$'
