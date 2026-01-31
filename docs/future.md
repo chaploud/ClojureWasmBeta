@@ -174,6 +174,167 @@ Young -> Old の参照パターンが稀で、write barrier の投資対効果�
 - write barrier フック
 - メモリ境界の明確化
 
+### GC・最適化のモジュラー設計
+
+Beta の反省: GC と最適化 (fused reduce 等) が場当たり的に追加され、
+builtin 関数のあちこちに `safePointCollectNoStack()` や `forceCollect()` が
+散在する結果になった。正式版では **最初からモジュラーな抽象層** を設計する。
+
+#### Beta の問題の具体例
+
+```zig
+// Beta: builtin 関数内に GC 呼び出しが直接埋まっている
+pub fn reduceFn(allocator: Allocator, args: []const Value) !Value {
+    // ... reduce ロジック ...
+    // GC を呼ぶかどうかの判断が関数ごとにバラバラ
+}
+```
+
+```zig
+// Beta: VM の safe point も vm.zig に直接記述
+// recur opcode でのみ GC チェック → 長い builtin ループでは GC が走らない
+if (defs.current_allocators) |allocs| {
+    allocs.safePointCollect(self.env, core.getGcGlobals(), self.stack[0..self.sp]);
+}
+```
+
+#### 正式版の設計: 3層分離
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Layer 3: 最適化層 (OptimizationPass)                │
+│   fused reduce, 定数畳み込み, inline caching        │
+│   → GC層・実行層に依存しない純粋な変換              │
+├─────────────────────────────────────────────────────┤
+│ Layer 2: 実行層 (ExecutionEngine)                   │
+│   native VM / wasm_rt VM                            │
+│   → safe point を GC 層に委譲                       │
+├─────────────────────────────────────────────────────┤
+│ Layer 1: メモリ層 (MemoryManager)                   │
+│   GcAllocator / WasmGC bridge                       │
+│   → アロケータインターフェースで抽象化              │
+└─────────────────────────────────────────────────────┘
+```
+
+#### Layer 1: メモリ層の抽象化
+
+```zig
+// 正式版: GC 戦略を trait で抽象化
+const GcStrategy = struct {
+    // vtable パターン (Zig の interface idiom)
+    allocFn: *const fn (self: *anyopaque, size: usize) ?[*]u8,
+    collectFn: *const fn (self: *anyopaque, roots: RootSet) void,
+    shouldCollectFn: *const fn (self: *anyopaque) bool,
+
+    pub fn alloc(self: GcStrategy, size: usize) ?[*]u8 {
+        return self.allocFn(self.ptr, size);
+    }
+    pub fn shouldCollect(self: GcStrategy) bool {
+        return self.shouldCollectFn(self.ptr);
+    }
+};
+
+// native 路線: セミスペース GC
+const NativeGc = struct {
+    arena: ArenaAllocator,
+    registry: AllocMap,
+    threshold: usize,
+    // ...
+    pub fn strategy(self: *NativeGc) GcStrategy { ... }
+};
+
+// wasm_rt 路線: WasmAllocator ベース (GC は Wasm ランタイムに委譲)
+const WasmRtGc = struct {
+    // std.heap.WasmAllocator を使用
+    // memory.grow ベースの割り当て
+    // sweep は不要 (ランタイムが管理)
+    pub fn strategy(self: *WasmRtGc) GcStrategy { ... }
+};
+```
+
+**comptime 切替**: `build.zig` で `-Dbackend=native` or `-Dbackend=wasm_rt` を指定すると、
+対応する GcStrategy 実装だけがリンクされる。
+
+#### Layer 2: 実行層の safe point 設計
+
+Beta では recur opcode でのみ GC チェックを行う妥協をした。
+正式版では safe point を **yield point** として明示的に設計する。
+
+```zig
+// 正式版: VM の yield point を明示化
+const YieldPoint = enum {
+    recur,          // ループ末尾
+    call_return,    // 関数呼び出し後
+    alloc_check,    // N 回の alloc 後
+};
+
+// VM ループ内
+fn executeOp(self: *VM, op: OpCode) !void {
+    switch (op) {
+        .recur => {
+            // ... recur 処理 ...
+            self.checkYieldPoint(.recur);
+        },
+        .call, .call_0, .call_1 => {
+            const result = try self.callFunction(fn_val, args);
+            self.checkYieldPoint(.call_return);
+            // ...
+        },
+        // ...
+    }
+}
+
+fn checkYieldPoint(self: *VM, point: YieldPoint) void {
+    _ = point; // 将来: point 別の統計取得に活用
+    if (self.gc.shouldCollect()) {
+        self.gc.collect(.{ .vm_stack = self.stack[0..self.sp] });
+    }
+}
+```
+
+#### Layer 3: 最適化層の GC 非依存化
+
+Beta の fused reduce は builtin 関数内に直接実装されており、
+GC 呼び出しが混在していた。正式版では最適化パスを **pure な変換** として分離する。
+
+```zig
+// 正式版: fused reduce は OpCode レベルで表現
+// コンパイラが (reduce + (take (map f (range N)))) を検出し、
+// 専用の fused_reduce opcode を emit する
+
+const OpCode = enum {
+    // ... 既存 opcodes ...
+    fused_reduce_range,     // (reduce f init (range N))
+    fused_reduce_map,       // (reduce f init (map g coll))
+    fused_reduce_filter,    // (reduce f init (filter pred coll))
+    fused_reduce_chain,     // 汎用チェーン (transform stack 付き)
+};
+```
+
+これにより:
+- **コンパイラ** が最適化判断を行い (Analyzer or emit 段階)
+- **VM** が専用 opcode を実行 (safe point は VM が管理)
+- **builtin 関数** は非最適化パスのフォールバックのみ担当
+- native/wasm_rt 両方で同じ opcode を使えるが、VM 実装は路線別
+
+#### 路線別の違い
+
+| 層           | native 路線                         | wasm_rt 路線                          |
+|--------------|-------------------------------------|---------------------------------------|
+| メモリ層     | セミスペース GC + Arena              | std.heap.WasmAllocator + ランタイム GC |
+| safe point   | VM 内 yield point で自前 GC 呼び出し | alloc 閾値で memory.grow、GC はランタイム任せ |
+| fused reduce | 専用 opcode → VM 直接実行            | 同じ opcode → wasm_rt VM で実行        |
+| 定数畳み込み | コンパイラで完結 (GC 無関係)         | 同じ                                   |
+| NaN boxing   | 自前実装 (f64 ビット操作)            | 不使用 (Wasm の i64/f64 を活用)        |
+
+#### 段階的導入計画
+
+1. **Phase 2** (§19): GcStrategy trait と NativeGc 実装。wasm_rt は stub
+2. **Phase 4** (§19): fused_reduce opcode 追加。コンパイラの最適化パス
+3. **Phase 10** (§19): WasmRtGc 実装。std.heap.WasmAllocator 統合
+
+各 Phase で既存コードを壊さずに拡張できるのがこの3層分離のメリット。
+
 ---
 
 ## 6. Wasm 実行エンジン選択
@@ -230,6 +391,110 @@ Wasm のデータ型・構造に寄せた内部表現を採用することで、
 **重要な決断**
 - 一本化しない
 - 実行時分岐は入れない
+
+### Zig 0.15.2 の Wasm サポート調査結果
+
+wasm_rt 路線で `zig build -Dtarget=wasm32-wasi` する際に活用できる
+Zig 標準ライブラリの機能を調査した (Zig 0.15.2、本 PC 上で確認)。
+
+#### std.heap.WasmAllocator
+
+パス: `std/heap/WasmAllocator.zig`
+
+Wasm ターゲット専用のアロケータ。`@wasmMemoryGrow` を直接使用する。
+
+```zig
+// Wasm ターゲットでは std.heap.page_allocator が自動的に WasmAllocator を使う
+// 明示的に使う場合:
+const wasm_alloc = std.heap.wasm_allocator;
+```
+
+**特徴**:
+- **power-of-two サイズクラス**: 小さいアロケーションはサイズクラス別のフリーリスト管理
+- **bigpage (64KB)**: 大きなアロケーションは 64KB 単位の倍数で確保
+- **`@wasmMemoryGrow(0, n)`**: ページ単位 (64KB) でリニアメモリを伸長
+- **制約**: `single_threaded` モードのみ対応 (comptime エラーで保護)
+- **メモリ縮小不可**: Wasm の制約で memory.grow のみ、shrink なし
+
+**vtable**: `alloc`, `resize`, `remap`, `free` の4メソッド。
+`std.mem.Allocator` インターフェースに準拠しており、
+Beta の GcAllocator と同じ `Allocator` 型として統一的に扱える。
+
+#### wasm.zig (バイナリ形式定義)
+
+パス: `std/wasm.zig`
+
+- `page_size = 64 * 1024` (64 KiB)
+- `Valtype`: `i32, i64, f32, f64, v128`
+- `RefType`: `funcref (0x70), externref (0x6F)`
+- `Opcode`: MVP 全命令 (memory_size, memory_grow 含む)
+- `SimdOpcode`: v128 SIMD 命令 (~200+)
+- `AtomicsOpcode`: スレッド関連 atomic 命令
+
+#### Wasm ターゲット CPU features
+
+パス: `std/Target/wasm.zig`
+
+`zig build -Dtarget=wasm32-wasi` のデフォルト (generic モデル) で有効になるもの:
+
+| feature               | 有効 (generic) | ClojureWasm での活用          |
+|-----------------------|----------------|-------------------------------|
+| bulk_memory           | Yes            | メモリコピー・充填の高速化    |
+| multivalue            | Yes            | 関数の複数戻り値              |
+| mutable_globals       | Yes            | グローバル変数の書き換え      |
+| nontrapping_fptoint   | Yes            | float→int 変換の安全化        |
+| reference_types       | Yes            | externref で外部オブジェクト  |
+| sign_ext              | Yes            | 符号拡張命令                  |
+| tail_call             | No (opt-in)    | **TCO に必要** → 有効化検討   |
+| simd128               | No (opt-in)    | 文字列処理・コレクション高速化 |
+| atomics               | No (opt-in)    | 将来のマルチスレッド          |
+
+**tail_call feature**: `zig build -Dcpu=bleeding_edge` で有効化可能。
+wasm_rt 路線で recur の TCO をランタイムに任せるなら必須。
+
+#### WASI API
+
+パス: `std/os/wasi.zig`
+
+`wasi_snapshot_preview1` の extern 関数群:
+
+- **ファイル I/O**: `fd_read`, `fd_write`, `fd_seek`, `path_open` 等
+- **時刻**: `clock_time_get` (MONOTONIC, REALTIME 対応)
+- **環境**: `environ_get`, `args_get`
+- **乱数**: `random_get`
+
+ClojureWasm の `slurp`, `spit`, `__nano-time` 等は WASI 経由で実装可能。
+
+#### wasm_rt 路線での GcAllocator 設計への影響
+
+1. **backing allocator の差し替え**:
+   - Beta: `ArenaAllocator.init(std.heap.page_allocator)`
+   - native: 同じ (page_allocator はOS の mmap)
+   - wasm_rt: page_allocator が自動的に `WasmAllocator` になる
+   - → **コード変更なしで動く** (Zig の抽象化が効いている)
+
+2. **セミスペース GC の制約**:
+   - sweep 時の新 Arena 確保は memory.grow で OK
+   - ただし旧 Arena の解放が **実質不可能** (Wasm は shrink できない)
+   - → wasm_rt ではセミスペースではなく **mark-compact** or
+     **mark-sweep (free-list)** が適切
+   - WasmAllocator の free-list がそのまま使える
+
+3. **メモリ上限**:
+   - wasm32 は 4GiB アドレス空間 (実質 2-3GiB 程度)
+   - page_size = 64KiB → 最大 ~65,536 ページ
+   - GC 閾値の設計を native とは変える必要あり
+
+4. **NaN boxing の可否**:
+   - wasm32 では pointer が 32-bit → NaN boxing の空間は十分
+   - ただし Wasm ランタイムの JIT が NaN boxing を理解できない
+   - wasm_rt では NaN boxing を使わず、tagged union + ランタイム最適化が有利
+
+**結論**: Zig の Allocator 抽象のおかげで、
+wasm_rt 路線でもコードの大部分は共有可能。
+ただし GC 戦略 (セミスペース → mark-sweep) と Value 表現 (NaN boxing → tagged union) は
+路線別に comptime 切替する必要がある。§5 の「GC・最適化のモジュラー設計」で述べた
+GcStrategy trait が、この差異を吸収する鍵となる。
 
 ---
 
@@ -572,6 +837,176 @@ Java Interop は排除するが、プログラミング上必須な機能はエ�
 - 場当たり的なテスト追加では抜け漏れが避けられない
 - SCI 移植ルールの文書化は有効だった → 自動化すればさらに効果的
 - vars.yaml の `done/skip` 二値では「動くが微妙に違う」を表現できなかった
+
+### Var メタデータとシンボル分類の設計
+
+#### 課題: Clojure のシンボル種別は外から見えにくい
+
+Clojure では `map` が関数、`defn` がマクロ、`if` がスペシャルフォームだが、
+ユーザーがコードを読むだけでは区別がつかない。
+本家では `(doc map)`, `(meta #'map)` で確認できる。
+
+正式版では **Var のメタデータを初期設計から充実させ**、
+さらにZig 実装との結合度を明示的に分類する。
+
+#### Beta の現状
+
+Beta の `Var` 構造体 (src/runtime/var.zig):
+
+```zig
+pub const Var = struct {
+    sym: Symbol,
+    ns_name: []const u8,
+    root: Value,
+    dynamic: bool,      // ^:dynamic
+    macro: bool,        // ^:macro
+    private: bool,      // ^:private
+    is_const: bool,     // ^:const
+    meta: ?*const Value,
+    doc: ?[]const u8,
+    arglists: ?[]const u8,
+};
+```
+
+スペシャルフォーム (if, do, let, fn, def, quote, loop, recur, throw, try,
+defmacro, defmulti, defmethod, defprotocol, extend-type, lazy-seq, var, instance?)
+は Analyzer 内のハードコード文字列比較で識別 (src/analyzer/analyze.zig:227-266)。
+Var には記録されない。
+
+**問題点**:
+- `(doc if)` で「special form」と表示できない
+- builtin 関数が「Zig 密結合」か「ほぼ pure」かの区別がない
+- `meta` フィールドが `?*const Value` で構造化されていない
+- `arglists` が文字列で、プログラム的にアクセスしにくい
+
+#### 正式版の設計: 構造化メタデータ
+
+```zig
+// 正式版: シンボルの種別を明示的に分類
+pub const VarKind = enum(u8) {
+    /// スペシャルフォーム (if, do, let, fn, def, ...)
+    /// Analyzer がハードコードで処理。bytecodeにコンパイルされる
+    special_form,
+
+    /// マクロ (defn, when, cond, ->, ...)
+    /// 展開後は他の種別の呼び出しに変換される
+    macro,
+
+    /// Zig builtin 関数 (compiler-coupled)
+    /// VM の専用 opcode に最適化される可能性があるもの
+    /// 例: +, -, *, /, =, <, >, first, rest, cons, conj, assoc, get
+    builtin_intrinsic,
+
+    /// Zig builtin 関数 (standard)
+    /// Zig で実装されているが、VM 最適化は行わない汎用 builtin
+    /// 例: map, filter, reduce, str, subs, re-find
+    builtin_standard,
+
+    /// Pure Clojure 関数
+    /// .clj ファイルから読み込まれた、完全にユーザーランドの関数
+    /// 例: clojure.core の一部を .clj で再実装した場合
+    clojure_fn,
+
+    /// ユーザー定義関数
+    user_fn,
+};
+```
+
+#### 結合度の分類基準
+
+| 結合度              | VarKind              | 特徴                                          | 例                              |
+|---------------------|----------------------|-----------------------------------------------|---------------------------------|
+| **compiler-coupled** | `special_form`       | Analyzer/Compiler が直接ハンドル              | if, do, let, fn, def            |
+| **vm-optimized**    | `builtin_intrinsic`  | 専用 opcode で高速実行。VM 変更時に影響あり   | +, -, first, rest, conj, assoc  |
+| **zig-implemented** | `builtin_standard`   | Zig 関数として実装。VM とは疎結合             | map, filter, reduce, str, subs  |
+| **pure-clojure**    | `clojure_fn`         | .clj で記述。Zig 実装への依存ゼロ             | (将来) complement, juxt の一部  |
+
+#### BuiltinDef の拡張
+
+```zig
+// Beta: 名前と関数ポインタのみ
+pub const BuiltinDef = struct {
+    name: []const u8,
+    func: BuiltinFn,
+};
+
+// 正式版: メタデータを comptime で付与
+pub const BuiltinDef = struct {
+    name: []const u8,
+    func: BuiltinFn,
+    kind: VarKind = .builtin_standard,
+    doc: ?[]const u8 = null,
+    arglists: ?[]const []const u8 = null,  // 複数の arity
+    added: ?[]const u8 = null,             // "1.0", "1.2" 等
+    since_cw: ?[]const u8 = null,          // ClojureWasm 追加バージョン
+};
+```
+
+comptime テーブルに含めることで、
+`registerCore()` 時に Var に自動的にメタデータが付与される。
+ランタイムのオーバーヘッドはゼロ (comptime で解決)。
+
+#### vars.yaml / compat_status.yaml との統合
+
+vars.yaml の既存スキーマを拡張し、結合度を記録する:
+
+```yaml
+# status/vars.yaml (拡張構想)
+vars:
+  clojure_core:
+    "+":
+      status: done
+      kind: builtin_intrinsic    # ← NEW
+      vm_opcode: add             # ← NEW: 対応する専用 opcode
+      compat: L1                 # ← NEW: 互換性レベル (§10)
+    "map":
+      status: done
+      kind: builtin_standard
+      vm_opcode: null            # 専用 opcode なし
+      compat: L2
+    "if":
+      status: done
+      kind: special_form
+      vm_opcode: jump_if_false
+      compat: L1
+    "defn":
+      status: done
+      kind: macro
+      expands_to: [def, fn]      # マクロ展開先
+      compat: L1
+```
+
+これにより:
+- `kind` 別に互換性テストの優先度を決められる
+  (special_form > builtin_intrinsic > builtin_standard の順に重要)
+- VM 最適化のリファクタリング時に影響を受ける関数を `vm_opcode != null` で特定
+- ドキュメント自動生成で `(doc map)` に適切な情報を表示
+- 互換性ダッシュボード (§18.4) で結合度別の pass 率を可視化
+
+#### スペシャルフォームの登録
+
+Beta では Analyzer にハードコードされていたスペシャルフォームを、
+正式版では comptime テーブルとして明示化する:
+
+```zig
+const special_forms = [_]BuiltinDef{
+    .{ .name = "if",     .kind = .special_form, .doc = "..." },
+    .{ .name = "do",     .kind = .special_form, .doc = "..." },
+    .{ .name = "let",    .kind = .special_form, .doc = "..." },
+    .{ .name = "fn",     .kind = .special_form, .doc = "..." },
+    .{ .name = "def",    .kind = .special_form, .doc = "..." },
+    .{ .name = "quote",  .kind = .special_form, .doc = "..." },
+    .{ .name = "loop",   .kind = .special_form, .doc = "..." },
+    .{ .name = "recur",  .kind = .special_form, .doc = "..." },
+    .{ .name = "throw",  .kind = .special_form, .doc = "..." },
+    .{ .name = "try",    .kind = .special_form, .doc = "..." },
+    // ...
+};
+```
+
+Analyzer は `special_forms` テーブルを comptime で参照し、
+文字列比較の if-else チェーンを `comptime` ルックアップに置き換える。
+新しいスペシャルフォームの追加はテーブルに1行足すだけになる。
 
 ---
 
