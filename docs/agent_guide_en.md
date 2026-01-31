@@ -66,10 +66,15 @@ clojurewasm/
 ├── CLAUDE.local.md              # Local-only settings (.gitignore)
 ├── .claude/
 │   ├── settings.json            # Permissions & hook settings
-│   ├── skills/                  # Custom skills
-│   │   ├── tdd/SKILL.md
-│   │   ├── phase-check/SKILL.md
-│   │   └── compat-test/SKILL.md
+│   ├── skills/                  # Custom skills (Anthropic Skills format)
+│   │   ├── tdd/
+│   │   │   ├── SKILL.md
+│   │   │   └── references/tdd-patterns.md
+│   │   ├── phase-check/
+│   │   │   └── SKILL.md
+│   │   └── compat-test/
+│   │       ├── SKILL.md
+│   │       └── references/edge-cases.md
 │   └── agents/                  # Custom subagents
 │       ├── security-reviewer.md
 │       └── compat-checker.md
@@ -306,31 +311,56 @@ Production version is a full redesign from Beta. Key changes:
 
 ## 4. Skill Definitions
 
+> Structure based on the Anthropic Skills Guide:
+> - **YAML frontmatter**: `name` + `description` (with trigger conditions) + `metadata`
+> - **Progressive Disclosure**: keep SKILL.md concise, move details to `references/`
+> - **Folder structure**: `skills/<name>/SKILL.md` + `scripts/` + `references/`
+
 ### 4.1 TDD Skill
 
+Folder structure:
+
+```
+.claude/skills/tdd/
+├── SKILL.md
+└── references/
+    └── tdd-patterns.md    # Detailed explanation of Fake It / Triangulate / Obvious
+```
+
+SKILL.md:
+
 ```markdown
-# .claude/skills/tdd/SKILL.md
 ---
 name: tdd
-description: Execute t-wada style TDD cycle
+description: >
+  t-wada style TDD cycle (Red-Green-Refactor) for implementing functions
+  and modules. Use when user says "TDD で実装", "テスト駆動で", "write tests
+  first", "Red-Green-Refactor", or asks to implement a function with tests.
+  Do NOT use for adding tests to existing code without the full TDD cycle.
+compatibility: Claude Code only. Requires zig build test.
+metadata:
+  author: clojurewasm
+  version: 1.0.0
 ---
-Strictly follow the TDD cycle recommended by t-wada (Takuto Wada)
-to implement $ARGUMENTS.
+# TDD Skill
+
+Implement $ARGUMENTS using the strict TDD cycle by t-wada (Takuto Wada).
 
 ## Steps
 
-1. **Create test list**: enumerate behaviors to implement as a test list
-2. **Pick the simplest case**: choose one from the test list
+1. **Test list**: enumerate behaviors to implement as a test list
+2. **Pick simplest**: choose the simplest one from the test list
 3. **Red**: write a failing test. Confirm failure with `zig build test`
 4. **Green**: write minimal code to pass. Fake implementation (return constant) is fine
-5. **Confirm success with `zig build test`**
-6. **Refactor**: remove duplication, clean up. Do not break tests
-7. **Confirm success with `zig build test`**
+5. **Confirm pass**: `zig build test`
+6. **Refactor**: remove duplication, clean up code. Do not break tests
+7. **Confirm pass**: `zig build test`
 8. **Commit**: `git commit` (only when tests pass)
-9. **Return to test list, pick next case** (go to 2)
+9. **Next**: return to test list, pick next case (go to 2)
 
-## Fake It -> Triangulate -> Obvious Implementation
+## Key Patterns
 
+See `references/tdd-patterns.md` for details:
 - Fake It: pass first test with hardcoded constant
 - Triangulate: second test forces generalization
 - Obvious Implementation: implement directly when pattern is clear
@@ -343,48 +373,166 @@ to implement $ARGUMENTS.
 - Reference Beta code but never bring code in without tests
 ```
 
-### 4.2 Phase Check Skill
+references/tdd-patterns.md:
 
 ```markdown
-# .claude/skills/phase-check/SKILL.md
+# TDD Patterns (t-wada)
+
+## Fake It -> Triangulate -> Obvious Implementation
+
+### Fake It
+Return a hardcoded constant to make the first test pass.
+This verifies the test infrastructure works and forces you
+to write the assertion first.
+
+Example:
+- Test: `expect(add(1, 2) == 3)`
+- Fake: `fn add(a, b) { return 3; }`
+
+### Triangulate
+Add a second test case that cannot pass with the fake.
+This forces generalization.
+
+Example:
+- Test 2: `expect(add(3, 4) == 7)`
+- Now you must implement: `fn add(a, b) { return a + b; }`
+
+### Obvious Implementation
+When the pattern is clear from the start, skip Fake It
+and implement directly. Use when the logic is trivial.
+
+## Anti-patterns
+- Writing multiple tests before any Green
+- Refactoring while a test is Red
+- Importing Beta code without writing tests first
+```
+
+### 4.2 Phase Check Skill
+
+Folder structure:
+
+```
+.claude/skills/phase-check/
+└── SKILL.md
+```
+
+SKILL.md:
+
+```markdown
 ---
 name: phase-check
-description: Check current development phase progress
+description: >
+  Check current development phase progress, pending tasks, and blockers.
+  Use when user says "progress", "status", "what's next", "phase check",
+  or at the start of a session to orient.
+  Do NOT use for running tests only (use zig build test directly).
+compatibility: Claude Code only. Requires plan/ directory structure.
+metadata:
+  author: clojurewasm
+  version: 1.0.0
 ---
+# Phase Check
+
 Check progress of the current development phase.
 
-1. Read plan/memo.md to identify current phase
-2. Read plan/active/ plan file and check task completion status
-3. Run `zig build test` and report pass/fail counts
-4. Aggregate implementation status from status/vars.yaml
-5. List pending tasks and identify what to do next
+## Steps
+
+1. Read `plan/memo.md` — identify current phase and position
+2. Read active plan file in `plan/active/` — check task completion
+3. Run `zig build test` — report pass/fail counts
+4. Aggregate `status/vars.yaml` — implementation coverage
+5. List pending tasks and recommend next action
 6. Report blockers if any
-7. Show latest entry from plan/active/ log file
+7. Show latest entry from the active log file in `plan/active/`
+
+## Output Format
+
+Summarize as:
+- Current phase: Phase N — [name]
+- Tasks: X/Y completed
+- Tests: N passed, M failed
+- Next: [recommended task]
+- Blockers: [if any]
 ```
 
 ### 4.3 Compatibility Test Skill
 
+Folder structure:
+
+```
+.claude/skills/compat-test/
+├── SKILL.md
+└── references/
+    └── edge-cases.md      # Edge case checklist
+```
+
+SKILL.md:
+
 ```markdown
-# .claude/skills/compat-test/SKILL.md
 ---
 name: compat-test
-description: Test compatibility with upstream Clojure
+description: >
+  Test compatibility of a specific function/macro against upstream Clojure.
+  Use when user says "compatibility check", "compare with Clojure",
+  "test against upstream", or names a specific clojure.core function to verify.
+  Do NOT use for general test writing (use tdd skill instead).
+compatibility: Claude Code only. Requires nREPL connection to upstream Clojure.
+metadata:
+  author: clojurewasm
+  version: 1.0.0
 ---
-Test compatibility of $ARGUMENTS function/macro against upstream Clojure.
+# Compatibility Test
 
-1. Check upstream source:
-   find definition in `~/Documents/OSS/clojure/src/clj/clojure/core.clj`
-2. Verify upstream behavior via nREPL:
-   `clj-nrepl-eval -p <port> "(fn args)"` to get actual output
-3. Evaluate same expression in ClojureWasm:
-   `clj-wasm -e "(fn args)"` and compare output
-4. Report differences and add test cases
-5. Check edge cases (nil, empty collections, negative numbers, etc.)
+Test $ARGUMENTS against upstream Clojure.
+
+## Steps
+
+1. **Find upstream definition**: search in upstream Clojure source
+   (path configured in CLAUDE.md)
+2. **Verify upstream behavior**: `clj-nrepl-eval -p <port> "(fn args)"`
+3. **Compare with ClojureWasm**: `clj-wasm -e "(fn args)"`
+4. **Report differences** and add test cases
+5. **Check edge cases**: see `references/edge-cases.md`
+   - nil, empty collections, negative numbers, large values
+   - type coercion boundaries, arity variations
+
+## Output Format
+
+| Expression       | Upstream  | ClojureWasm | Match |
+|------------------|-----------|-------------|-------|
+| (fn arg1)        | result    | result      | ✅/❌  |
+```
+
+references/edge-cases.md:
+
+```markdown
+# Edge Cases Checklist
+
+## Universal Edge Cases
+- nil as argument
+- Empty collection: (), [], {}, #{}
+- Single-element collection
+- Negative numbers, zero, MAX_INT
+- Empty string, very long string
+- Nested structures (depth 3+)
+
+## Type Coercion
+- int vs float: (fn 1) vs (fn 1.0)
+- char vs string: (fn \a) vs (fn "a")
+- keyword vs symbol: (fn :a) vs (fn 'a)
+
+## Arity
+- Minimum arity
+- Maximum arity (if variadic)
+- Wrong arity (should throw ArityException)
 ```
 
 ---
 
 ## 5. Subagent Definitions
+
+> Subagents are a Claude Code specific feature (separate from Skills).
+> Use `tools` to restrict accessible tools, `model` to tune cost/speed.
 
 ### 5.1 Security Reviewer
 
@@ -392,17 +540,39 @@ Test compatibility of $ARGUMENTS function/macro against upstream Clojure.
 # .claude/agents/security-reviewer.md
 ---
 name: security-reviewer
-description: Detect security issues in Zig code
+description: >
+  Detect security issues in Zig code. Use when reviewing new modules,
+  after implementing unsafe operations, or before phase completion.
+  Focuses on memory safety, GC interactions, and input validation.
 tools: Read, Grep, Glob
 model: sonnet
 ---
 Detect security issues in Zig code:
-- Buffer overflow (missing bounds checks)
-- Use-after-free (GC interaction)
-- Unvalidated external input (Reader input)
-- Integer overflow
-- Unsafe @ptrCast / @intToPtr usage
-Provide specific line numbers and fix suggestions.
+
+## Check Categories
+
+1. **Memory safety**
+   - Buffer overflow (missing bounds checks)
+   - Use-after-free (GC interaction — values moved during collection)
+   - Double-free
+2. **Input validation**
+   - Unvalidated external input (Reader input, file I/O)
+   - Unbounded recursion (deeply nested forms)
+3. **Unsafe operations**
+   - @ptrCast / @intToPtr misuse
+   - Integer overflow in arithmetic
+   - NaN boxing bit manipulation errors
+4. **GC correctness**
+   - Roots not registered before allocation
+   - Pointers held across GC safe points
+
+## Output
+
+For each issue found, provide:
+- File path and line number
+- Severity: Critical / High / Medium / Low
+- Description of the vulnerability
+- Suggested fix
 ```
 
 ### 5.2 Compatibility Checker
@@ -411,16 +581,35 @@ Provide specific line numbers and fix suggestions.
 # .claude/agents/compat-checker.md
 ---
 name: compat-checker
-description: Detect behavioral differences from upstream Clojure
+description: >
+  Detect behavioral differences from upstream Clojure. Use when adding
+  new builtins, after bulk implementation, or to audit a namespace.
+  Compares docstrings, arglists, and runtime behavior.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
 Verify compatibility of specified functions against upstream Clojure.
-1. Check definition in upstream core.clj
-2. Extract upstream docstring, arglists, :added
+
+## Steps
+
+1. Find definition in upstream `core.clj` (path from CLAUDE.md)
+2. Extract: docstring, arglists, :added metadata
 3. Compare with ClojureWasm implementation
-4. Propose test cases
-Pay special attention to edge cases (nil, empty, large values).
+4. Run upstream via nREPL, ClojureWasm via CLI
+5. Propose test cases for any differences
+
+## Focus Areas
+
+- Arity handling (especially variadic)
+- Return type consistency
+- Error messages and exception types
+- nil propagation behavior
+- Lazy vs eager evaluation differences
+
+## Output
+
+Summary table of compatibility status per function,
+followed by proposed test cases for any ❌ items.
 ```
 
 ---

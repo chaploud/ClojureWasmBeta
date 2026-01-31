@@ -65,10 +65,15 @@ clojurewasm/
 ├── CLAUDE.local.md              # ローカル固有設定 (.gitignore)
 ├── .claude/
 │   ├── settings.json            # 権限・フック設定
-│   ├── skills/                  # カスタムスキル
-│   │   ├── tdd/SKILL.md
-│   │   ├── phase-check/SKILL.md
-│   │   └── compat-test/SKILL.md
+│   ├── skills/                  # カスタムスキル (Anthropic Skills 形式)
+│   │   ├── tdd/
+│   │   │   ├── SKILL.md
+│   │   │   └── references/tdd-patterns.md
+│   │   ├── phase-check/
+│   │   │   └── SKILL.md
+│   │   └── compat-test/
+│   │       ├── SKILL.md
+│   │       └── references/edge-cases.md
 │   └── agents/                  # カスタムサブエージェント
 │       ├── security-reviewer.md
 │       └── compat-checker.md
@@ -306,36 +311,61 @@ bash bench/run_bench.sh --quick
 
 ## 4. スキル定義
 
+> Skills ガイド (Anthropic) に基づく構成:
+> - **YAML frontmatter**: `name` + `description` (トリガー条件を含む) + `metadata`
+> - **Progressive Disclosure**: SKILL.md は簡潔に、詳細は `references/` に分離
+> - **フォルダ構造**: `skills/<name>/SKILL.md` + `scripts/` + `references/`
+
 ### 4.1 TDD スキル
 
+ファイル構成:
+
+```
+.claude/skills/tdd/
+├── SKILL.md
+└── references/
+    └── tdd-patterns.md    # 仮実装・三角測量・明白な実装の詳細解説
+```
+
+SKILL.md の内容 (実際のデプロイ版は英語、ここでは日本語で説明):
+
 ```markdown
-# .claude/skills/tdd/SKILL.md
 ---
 name: tdd
-description: t-wada 方式の TDD サイクルを実行
+description: >
+  t-wada 方式の TDD サイクル (Red-Green-Refactor) で関数やモジュールを実装する。
+  「TDD で実装」「テスト駆動で」「write tests first」「Red-Green-Refactor」
+  またはテスト付きで関数を実装する依頼の際に使用。
+  既存コードにテストを追加するだけの場合は使用しない (完全な TDD サイクル以外は対象外)。
+compatibility: Claude Code 専用。zig build test が必要。
+metadata:
+  author: clojurewasm
+  version: 1.0.0
 ---
-t-wada (和田卓人) の推奨するテスト駆動開発のサイクルに厳密に従い、
-以下のステップで $ARGUMENTS を実装する。
+# TDD スキル
+
+t-wada (和田卓人) の厳密な TDD サイクルに従い $ARGUMENTS を実装する。
 
 ## 手順
 
-1. **テストリスト作成**: 実装すべき振る舞いをテストリストとして列挙する
-2. **最も単純なケースを選ぶ**: テストリストから最も単純なものを1つ選ぶ
-3. **Red**: 失敗するテストを書く。`zig build test` で失敗を確認する
+1. **テストリスト作成**: 実装すべき振る舞いをテストリストとして列挙
+2. **最も単純なケースを選択**: テストリストから最も単純なものを1つ選ぶ
+3. **Red**: 失敗するテストを書く。`zig build test` で失敗を確認
 4. **Green**: テストを通す最小限のコードを書く。仮実装 (定数を返す等) でよい
-5. **`zig build test` で成功を確認する**
+5. **成功確認**: `zig build test`
 6. **Refactor**: 重複を除去し、コードを整理する。テストは壊さない
-7. **`zig build test` で成功を確認する**
-8. **コミット**: `git commit` する (テストが通っている状態のみ)
-9. **テストリストに戻り、次のケースを選ぶ** (2へ)
+7. **成功確認**: `zig build test`
+8. **コミット**: `git commit` (テストが通っている状態のみ)
+9. **次へ**: テストリストに戻り、次のケースを選ぶ (2へ)
 
-## 仮実装 → 三角測量 → 明白な実装
+## 主要パターン
 
+詳細は `references/tdd-patterns.md` を参照:
 - 仮実装: 最初のテストはハードコード定数で通す
 - 三角測量: 2つ目のテストで一般化を強制する
 - 明白な実装: パターンが明確になったら直接実装する
 
-## 注意
+## ルール
 
 - 一度に2つ以上のテストを追加しない
 - テストが Red であることを確認せずに Green のコードを書かない
@@ -343,48 +373,165 @@ t-wada (和田卓人) の推奨するテスト駆動開発のサイクルに厳�
 - Beta のコードは参照するが、テストなしにコードを持ち込まない
 ```
 
-### 4.2 Phase チェックスキル
+references/tdd-patterns.md の内容:
 
 ```markdown
-# .claude/skills/phase-check/SKILL.md
+# TDD パターン (t-wada)
+
+## 仮実装 → 三角測量 → 明白な実装
+
+### 仮実装 (Fake It)
+最初のテストをハードコード定数で通す。
+テストインフラが動くことを確認し、アサーションを先に書くことを強制する。
+
+例:
+- テスト: `expect(add(1, 2) == 3)`
+- 仮実装: `fn add(a, b) { return 3; }`
+
+### 三角測量 (Triangulate)
+仮実装では通らない2つ目のテストケースを追加する。
+これにより一般化が強制される。
+
+例:
+- テスト2: `expect(add(3, 4) == 7)`
+- 一般化: `fn add(a, b) { return a + b; }`
+
+### 明白な実装 (Obvious Implementation)
+パターンが最初から明確な場合は仮実装をスキップして直接実装する。
+ロジックが自明な場合に使用。
+
+## アンチパターン
+- Green の前に複数のテストを書く
+- テストが Red の状態でリファクタリングする
+- Beta のコードをテストなしに持ち込む
+```
+
+### 4.2 Phase チェックスキル
+
+ファイル構成:
+
+```
+.claude/skills/phase-check/
+└── SKILL.md
+```
+
+SKILL.md の内容:
+
+```markdown
 ---
 name: phase-check
-description: 現在の開発フェーズの進捗を確認
+description: >
+  現在の開発フェーズの進捗、未完了タスク、ブロッカーを確認する。
+  「進捗」「ステータス」「次は何」「phase check」と言われた場合、
+  またはセッション開始時の現状把握に使用。
+  テスト実行だけの場合は使用しない (zig build test を直接使う)。
+compatibility: Claude Code 専用。plan/ ディレクトリ構造が必要。
+metadata:
+  author: clojurewasm
+  version: 1.0.0
 ---
+# Phase チェック
+
 現在の開発フェーズの進捗を確認する。
 
-1. plan/memo.md を読み、現在のフェーズを特定
-2. plan/active/ の plan ファイルを読み、タスクリストの完了状況を確認
-3. `zig build test` を実行し、テストの pass/fail 数を報告
-4. status/vars.yaml の実装状況を集計
-5. 未完了タスクの一覧と次にやるべきことを表示
+## 手順
+
+1. `plan/memo.md` を読む — 現在のフェーズと位置を特定
+2. `plan/active/` の plan ファイルを読む — タスク完了状況を確認
+3. `zig build test` を実行 — pass/fail 数を報告
+4. `status/vars.yaml` を集計 — 実装カバレッジ
+5. 未完了タスクの一覧と次のアクションを推奨
 6. ブロッカーがあれば報告
-7. plan/active/ の log ファイルの最新エントリを表示
+7. `plan/active/` の log ファイルの最新エントリを表示
+
+## 出力フォーマット
+
+以下の形式で要約:
+- 現在のフェーズ: Phase N — [名前]
+- タスク: X/Y 完了
+- テスト: N 成功、M 失敗
+- 次: [推奨タスク]
+- ブロッカー: [あれば]
 ```
 
 ### 4.3 互換性テストスキル
 
+ファイル構成:
+
+```
+.claude/skills/compat-test/
+├── SKILL.md
+└── references/
+    └── edge-cases.md      # 辺境値のチェックリスト
+```
+
+SKILL.md の内容:
+
 ```markdown
-# .claude/skills/compat-test/SKILL.md
 ---
 name: compat-test
-description: 本家 Clojure との互換性をテスト
+description: >
+  特定の関数/マクロの本家 Clojure との互換性をテストする。
+  「互換性チェック」「Clojure と比較」「upstream と比較」
+  または特定の clojure.core 関数名を指定して確認する際に使用。
+  一般的なテスト記述には使用しない (代わりに tdd スキルを使う)。
+compatibility: Claude Code 専用。本家 Clojure への nREPL 接続が必要。
+metadata:
+  author: clojurewasm
+  version: 1.0.0
 ---
-$ARGUMENTS の関数/マクロについて、本家 Clojure との互換性をテストする。
+# 互換性テスト
 
-1. 本家のソースを確認:
-   `~/Documents/OSS/clojure/src/clj/clojure/core.clj` で定義を探す
-2. 本家の振る舞いを nREPL で確認:
-   `clj-nrepl-eval -p <port> "(関数 引数)"` で実際の出力を得る
-3. ClojureWasm で同じ式を評価:
-   `clj-wasm -e "(関数 引数)"` で出力を比較
-4. 差異があれば報告し、テストケースを追加
-5. 辺境値 (nil, 空コレクション, 負数等) も確認
+$ARGUMENTS を本家 Clojure と比較テストする。
+
+## 手順
+
+1. **本家の定義を検索**: 本家 Clojure ソースから探す
+   (パスは CLAUDE.md に設定)
+2. **本家の振る舞いを確認**: `clj-nrepl-eval -p <port> "(関数 引数)"`
+3. **ClojureWasm と比較**: `clj-wasm -e "(関数 引数)"`
+4. **差異を報告**し、テストケースを追加
+5. **辺境値を確認**: `references/edge-cases.md` 参照
+   - nil、空コレクション、負数、大きな値
+   - 型変換の境界、アリティのバリエーション
+
+## 出力フォーマット
+
+| 式               | 本家      | ClojureWasm | 一致  |
+|------------------|-----------|-------------|-------|
+| (関数 引数1)     | 結果      | 結果        | ✅/❌  |
+```
+
+references/edge-cases.md の内容:
+
+```markdown
+# 辺境値チェックリスト
+
+## 共通辺境値
+- nil を引数に渡す
+- 空コレクション: (), [], {}, #{}
+- 要素1つのコレクション
+- 負数、ゼロ、MAX_INT
+- 空文字列、非常に長い文字列
+- ネストした構造 (深さ3以上)
+
+## 型変換
+- int vs float: (fn 1) vs (fn 1.0)
+- char vs string: (fn \a) vs (fn "a")
+- keyword vs symbol: (fn :a) vs (fn 'a)
+
+## アリティ
+- 最小アリティ
+- 最大アリティ (可変長引数の場合)
+- 不正なアリティ (ArityException がスローされるべき)
 ```
 
 ---
 
 ## 5. サブエージェント定義
+
+> サブエージェントは Claude Code 固有の機能 (Skills とは別)。
+> `tools` でアクセスできるツールを制限し、`model` でコスト/速度を調整できる。
 
 ### 5.1 セキュリティレビュアー
 
@@ -392,17 +539,39 @@ $ARGUMENTS の関数/マクロについて、本家 Clojure との互換性を�
 # .claude/agents/security-reviewer.md
 ---
 name: security-reviewer
-description: コードのセキュリティ問題を検出
+description: >
+  Zig コードのセキュリティ問題を検出する。新モジュールのレビュー時、
+  unsafe 操作の実装後、フェーズ完了前に使用。
+  メモリ安全性、GC 相互作用、入力バリデーションに焦点。
 tools: Read, Grep, Glob
 model: sonnet
 ---
 Zig コードのセキュリティ問題を検出する:
-- バッファオーバーフロー (境界チェック漏れ)
-- use-after-free (GC との相互作用)
-- 未検証の外部入力 (Reader への入力)
-- 整数オーバーフロー
-- @ptrCast / @intToPtr の不正使用
-具体的な行番号と修正案を提示すること。
+
+## チェックカテゴリ
+
+1. **メモリ安全性**
+   - バッファオーバーフロー (境界チェック漏れ)
+   - use-after-free (GC 相互作用 — コレクション中に値が移動)
+   - 二重解放
+2. **入力バリデーション**
+   - 未検証の外部入力 (Reader 入力、ファイル I/O)
+   - 無制限の再帰 (深くネストされたフォーム)
+3. **unsafe 操作**
+   - @ptrCast / @intToPtr の誤用
+   - 算術演算での整数オーバーフロー
+   - NaN boxing のビット操作エラー
+4. **GC 正確性**
+   - アロケーション前にルートが登録されていない
+   - GC セーフポイントをまたいでポインタを保持
+
+## 出力
+
+検出された各問題について以下を提示:
+- ファイルパスと行番号
+- 重大度: Critical / High / Medium / Low
+- 脆弱性の説明
+- 修正案
 ```
 
 ### 5.2 互換性チェッカー
@@ -411,16 +580,35 @@ Zig コードのセキュリティ問題を検出する:
 # .claude/agents/compat-checker.md
 ---
 name: compat-checker
-description: 本家 Clojure との振る舞い差異を検出
+description: >
+  本家 Clojure との振る舞い差異を検出する。新しい builtin の追加時、
+  一括実装の後、名前空間の監査時に使用。
+  docstring、arglists、ランタイム動作を比較する。
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
 指定された関数について本家 Clojure との互換性を検証する。
-1. 本家 core.clj で定義を確認
-2. 本家の docstring, arglists, :added を抽出
+
+## 手順
+
+1. 本家 `core.clj` で定義を検索 (パスは CLAUDE.md から)
+2. 抽出: docstring、arglists、:added メタデータ
 3. ClojureWasm の実装と比較
-4. テストケースを提案
-辺境値 (nil, 空, 大きな値) に特に注意すること。
+4. 本家は nREPL 経由、ClojureWasm は CLI 経由で実行
+5. 差異があればテストケースを提案
+
+## 重点チェック領域
+
+- アリティ処理 (特に可変長引数)
+- 返り値の型の一貫性
+- エラーメッセージと例外型
+- nil 伝播の振る舞い
+- 遅延評価 vs 先行評価の差異
+
+## 出力
+
+関数ごとの互換性ステータスのサマリーテーブル、
+続いて ❌ 項目に対するテストケース案。
 ```
 
 ---
