@@ -2219,6 +2219,99 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 
 ---
 
+## 20. 初回セッション: キックオフプロンプト
+
+新規リポジトリ `clojurewasm` を作成し、CLAUDE.md と Nix Flake を配置した直後に、
+最初の Claude Code セッションで投入するプロンプト。
+
+### 前提
+
+- 空リポジトリに CLAUDE.md (agent_guide に基づくテンプレート) が設置済み
+- `flake.nix` / `flake.lock` で Zig 0.15.x + ツールチェーンを固定済み
+- `nix develop` でシェルに入れる状態
+
+### プロンプト本文
+
+````text
+# ClojureWasm 実装計画の策定
+
+## コンテキスト
+
+このリポジトリは ClojureWasm — Zig で Clojure を再実装するプロジェクトの
+正式版です。プロトタイプ (ClojureWasmBeta) で得た知見をもとにフルスクラッチで
+再設計します。
+
+以下の2つのドキュメントを読んで内容を把握してください:
+
+1. **Beta リポジトリの設計構想**:
+   <BETA_REPO>/docs/future.md
+   — 正式版の全体設計方針 (§0-§19) を記述。アーキテクチャ、GC 戦略、
+   NaN boxing、互換性テスト戦略、ディレクトリ構造、移行ロードマップ等。
+
+2. **Beta リポジトリのソースコード構造**:
+   <BETA_REPO>/docs/reference/architecture.md
+   — Beta の実際のディレクトリ構成と各モジュールの役割。
+   必要に応じて <BETA_REPO>/src/ の実装も参照してよい。
+
+## タスク
+
+上記を踏まえて、以下を plan/ に作成してください:
+
+### A. 実装計画書 (plan/plan_0001_bootstrap.md)
+
+future.md §19 の Phase 1-3 を具体化した実装計画。各フェーズについて:
+
+- 作成するファイル一覧 (future.md §17 のディレクトリ構造に準拠)
+- Beta から移植する要素 vs 再設計する要素の判断
+- 各ステップの完了条件 (テストで検証可能な形)
+- フェーズ間の依存関係
+
+特に Phase 1 (Reader + Analyzer) については、最初のコミットで
+何を含めるかまで具体化すること。
+
+### B. 設計判断メモ (plan/notes.md)
+
+Beta との差分を明記。少なくとも以下の判断を含む:
+
+- NaN boxing: いつどのフェーズで導入するか
+- GC: 初期は Arena のみか、最初から Semi-space を入れるか
+- TreeWalk を残すか VM only にするか
+- Value 型の設計 (Beta の tagged union vs NaN boxing)
+- テストフレームワークの選択
+
+### C. 最初の作業用メモ (plan/memo.md)
+
+CLAUDE.md テンプレートの「実行計画テーブル」形式で、
+Phase 1 の具体的タスクを列挙。
+
+## 制約
+
+- コードはまだ書かない (計画フェーズ)
+- 英語コメント・英語ドキュメント方針に従う
+- future.md の設計方針に矛盾する判断がある場合は、理由を明記して提案
+````
+
+### プロンプトのカスタマイズ
+
+| 変数              | 説明                                         |
+|-------------------|----------------------------------------------|
+| `<BETA_REPO>`     | ClojureWasmBeta の絶対パス (CLAUDE.md に記載) |
+| Phase の範囲      | 最初は 1-3 に絞る (欲張らない)               |
+| TreeWalk の判断   | Beta 経験次第で事前に方針を決めてもよい       |
+
+### 期待される成果物
+
+```
+plan/
+├── plan_0001_bootstrap.md   # Phase 1-3 の詳細実装計画
+├── notes.md                 # 設計判断・Beta との差分
+└── memo.md                  # 実行計画テーブル (Phase 1)
+```
+
+この成果物をレビューした後、Phase 1 の最初のタスクから実装を開始する。
+
+---
+
 ## 関連ドキュメント
 
 - [agent_guide_ja.md](./agent_guide_ja.md) — コーディングエージェント開発ガイド
