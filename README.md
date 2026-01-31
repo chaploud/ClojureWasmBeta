@@ -1,5 +1,8 @@
 # ClojureWasmBeta
 
+This repository is intended for experimental and research use.
+A more formal project with complete English documentation will be published separately in the future.
+
 **Zig で Clojure 処理系をフルスクラッチ実装。**
 
 JVM を一切使わず、Tokenizer から GC まで全てを Zig で書き上げた Clojure 処理系です。
