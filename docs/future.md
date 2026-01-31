@@ -612,6 +612,124 @@ Zig の comptime、Arena allocator、値型セマンティクスを活かした
 参照するため、fixup が木構造を辿る必要がある。Beta の「fixup 漏れ = 即死」教訓が
 さらに厳しくなる。comptime での検証がより重要になる。
 
+### 9.6 コアライブラリのビルド時 AOT コンパイル
+
+#### 課題: Beta は全てを Zig で実装した
+
+Beta では clojure.core の 545 関数・マクロを全て Zig builtin として実装した。
+これには理由があった (起動速度、ブートストラップ回避) が、以下の問題を生んだ:
+
+- Analyzer に 54 個のマクロ展開が Zig でハードコードされた
+- 本家 core.clj と実装が乖離し、互換性テストが困難
+- マクロの追加・修正に Zig の再コンパイルが必要
+
+#### 他の実装の戦略
+
+| 実装           | core の定義方法                    | 起動時ロード | AOT         |
+|----------------|------------------------------------|-------------|-------------|
+| Clojure 本家   | core.clj (276KB) を毎回パース      | Yes         | No          |
+| ClojureScript  | core.cljc → JS にコンパイル        | No          | Yes (→JS)   |
+| SCI/Babashka   | copy-var でホスト関数をラップ      | macro展開時  | GraalVM のみ |
+| jank           | core.jank (7.6K行) + C++ native    | Yes         | →C++ 変換   |
+| ClojureWasm Beta | 全て Zig builtin                 | No          | —           |
+
+#### 正式版の方針: ビルド時 AOT (ClojureScript 方式)
+
+**core.clj をビルド時にバイトコードへプリコンパイルし、`@embedFile` でバイナリに埋め込む。**
+
+```
+ビルド時:
+  core.clj → Reader → Analyzer → Compiler → bytecode blob
+                                                 ↓
+                                         @embedFile("core.bc")
+                                                 ↓
+起動時:                                    単一バイナリに含まれる
+  VM が bytecode blob を即実行 (パース不要)
+  → Var が Env に登録される
+  → ユーザーコードが利用可能に
+```
+
+**利点**:
+
+- **単一バイナリ**: .clj ファイルを同梱する必要なし
+- **高速起動**: パース・解析をスキップ、バイトコード実行のみ
+- **本家互換**: マクロ定義を本家 core.clj に近い形で記述可能
+- **分離**: Zig コードと Clojure コードの責務が明確に分かれる
+
+**ビルドパイプライン**:
+
+```
+build.zig:
+  1. zig build → ClojureWasm コンパイラ自体をビルド (ホストツール)
+  2. ホストツールで core.clj → core.bc にコンパイル
+  3. @embedFile("core.bc") で core.bc をバイナリに埋め込み
+  4. 最終バイナリをビルド
+```
+
+Zig の `build.zig` は任意のビルドステップを追加でき、
+ステップ 2 で「自分自身のコンパイラを使って .clj をコンパイル」できる。
+
+#### Zig に残すもの vs core.clj に移すもの
+
+**判断基準**: 「VM opcode 最適化が必要か」「OS/ランタイム依存か」
+
+| 移行先    | 対象                                                   | 理由                              |
+|-----------|-------------------------------------------------------|-----------------------------------|
+| core.clj  | マクロ 43+個 (defn, when, cond, ->, and, or 等)       | 純粋 Form→Form 変換              |
+| core.clj  | 高レベル関数 (map, filter, take, drop, partition 等)   | 本家と同じ定義で互換性向上        |
+| core.clj  | ユーティリティ (complement, constantly, juxt, memoize) | Zig 依存ゼロ                      |
+| Zig 維持  | VM intrinsic (+, -, first, rest, conj, assoc, get)    | 専用 opcode で最適化              |
+| Zig 維持  | reduce (fused reduce のエントリポイント)              | §5 最適化パスと密結合             |
+| Zig 維持  | I/O・OS (slurp, spit, re-find, __nano-time)           | Zig/OS API 依存                   |
+| Zig 維持  | 状態管理 (atom, swap!, deref, reset!)                  | ランタイム内部構造に依存          |
+
+Beta の Analyzer に実装された 54 マクロのうち、**約 79% (43個)** は
+純粋な Form→Form 変換であり、.clj にそのまま移行可能。
+
+#### ブートストラップ順序
+
+本家 core.clj は段階的な自己定義を行う:
+
+```clojure
+;; Phase 1: fn*, def のみ使える (destructuring なし)
+(def list (fn* list [& items] items))
+(def cons (fn* cons [x seq] ...))
+
+;; Phase 2: defn を定義 (fn* + def で)
+(def defn (fn* defn [name & decl] ...))
+(.setMacro (var defn))  ;; ← Java Interop
+
+;; Phase 3: defn が使えるようになる
+(defn map [f coll] ...)
+```
+
+ClojureWasm では `.setMacro` の Java Interop を排除するため:
+
+```clojure
+;; ClojureWasm の core.clj
+;; Phase 1: special form のみ
+(def list (fn* list [& items] items))
+
+;; Phase 2: defmacro (special form) で defn を定義
+(defmacro defn [name & decl]
+  `(def ~name (fn ~name ~@decl)))
+
+;; Phase 3: 通常の定義
+(defn map [f coll] ...)
+```
+
+`defmacro` は special form として Zig Analyzer に残るため、
+ブートストラップの「鶏と卵」問題は発生しない。
+
+#### リスクと緩和策
+
+| リスク                                    | 緩和策                                     |
+|-------------------------------------------|--------------------------------------------|
+| core.clj のパースがビルド時間を増やす     | インクリメンタルビルド (core.bc をキャッシュ) |
+| 起動時の bytecode 実行コスト              | ベンチマーク計測、必要なら遅延ロード       |
+| core.clj のデバッグが困難                 | `--dump-core-bytecode` フラグで検査        |
+| Zig builtin と core.clj の二重定義リスク  | comptime で重複検出 (registry.zig 方式)    |
+
 ---
 
 ## 10. 互換性検証戦略
@@ -847,9 +965,9 @@ Clojure では `map` が関数、`defn` がマクロ、`if` がスペシャル�
 本家では `(doc map)`, `(meta #'map)` で確認できる。
 
 正式版では **Var のメタデータを初期設計から充実させ**、
-さらにZig 実装との結合度を明示的に分類する。
+「どの層に依存しているか」を明示的に分類する。
 
-#### Beta の現状
+#### Beta の現状と問題点
 
 Beta の `Var` 構造体 (src/runtime/var.zig):
 
@@ -868,122 +986,97 @@ pub const Var = struct {
 };
 ```
 
-スペシャルフォーム (if, do, let, fn, def, quote, loop, recur, throw, try,
-defmacro, defmulti, defmethod, defprotocol, extend-type, lazy-seq, var, instance?)
-は Analyzer 内のハードコード文字列比較で識別 (src/analyzer/analyze.zig:227-266)。
-Var には記録されない。
-
-**問題点**:
+- スペシャルフォーム (if, do, let 等 17 個) は Analyzer のハードコード文字列比較で識別。Var に記録されない
+- マクロ 54 個が Zig Analyzer にハードコード。うち 79% は純粋な Form→Form 変換で .clj に書ける
 - `(doc if)` で「special form」と表示できない
-- builtin 関数が「Zig 密結合」か「ほぼ pure」かの区別がない
-- `meta` フィールドが `?*const Value` で構造化されていない
-- `arglists` が文字列で、プログラム的にアクセスしにくい
+- builtin 関数の結合度 (VM 最適化対象 vs 汎用) の区別がない
 
-#### 正式版の設計: 構造化メタデータ
+#### 正式版の設計: 依存層ベースの VarKind
+
+§9.6 の AOT 戦略を前提に、**「何語で実装したか」ではなく「どの層に依存しているか」** で分類する。
 
 ```zig
-// 正式版: シンボルの種別を明示的に分類
 pub const VarKind = enum(u8) {
-    /// スペシャルフォーム (if, do, let, fn, def, ...)
-    /// Analyzer がハードコードで処理。bytecodeにコンパイルされる
+    /// スペシャルフォーム — Compiler 層に依存
+    /// Analyzer が専用 AST ノードを生成。VM opcode に直接対応
+    /// 例: if, do, let, fn, def, quote, loop, recur, throw, try,
+    ///     defmacro, defmulti, defmethod, defprotocol, extend-type, lazy-seq
     special_form,
 
-    /// マクロ (defn, when, cond, ->, ...)
-    /// 展開後は他の種別の呼び出しに変換される
-    macro,
+    /// VM intrinsic — VM 層に依存
+    /// 専用 opcode で高速実行。VM 変更時に影響あり
+    /// Zig builtin として実装、core.clj には移行しない
+    /// 例: +, -, *, /, =, <, first, rest, cons, conj, assoc, get, nth
+    vm_intrinsic,
 
-    /// Zig builtin 関数 (compiler-coupled)
-    /// VM の専用 opcode に最適化される可能性があるもの
-    /// 例: +, -, *, /, =, <, >, first, rest, cons, conj, assoc, get
-    builtin_intrinsic,
+    /// ランタイム関数 — Runtime 層 (Zig/OS) に依存
+    /// Zig で実装、VM opcode 最適化なし。OS/Zig API への依存がある
+    /// 例: slurp, spit, re-find, re-matches, __nano-time, atom, swap!, deref
+    runtime_fn,
 
-    /// Zig builtin 関数 (standard)
-    /// Zig で実装されているが、VM 最適化は行わない汎用 builtin
-    /// 例: map, filter, reduce, str, subs, re-find
-    builtin_standard,
+    /// コア関数 — 依存なし (pure)
+    /// core.clj に定義し、ビルド時 AOT でバイトコードに埋め込む
+    /// 例: map, filter, take, drop, partition, str, subs, comp, partial
+    core_fn,
 
-    /// Pure Clojure 関数
-    /// .clj ファイルから読み込まれた、完全にユーザーランドの関数
-    /// 例: clojure.core の一部を .clj で再実装した場合
-    clojure_fn,
+    /// コアマクロ — 依存なし (pure)
+    /// core.clj に定義。Form→Form 変換のみ
+    /// 例: defn, when, cond, ->, ->>, if-let, and, or, complement, constantly
+    core_macro,
 
     /// ユーザー定義関数
     user_fn,
+
+    /// ユーザー定義マクロ
+    user_macro,
 };
 ```
 
-#### 結合度の分類基準
+#### 依存層による分類
 
-| 結合度              | VarKind              | 特徴                                          | 例                              |
-|---------------------|----------------------|-----------------------------------------------|---------------------------------|
-| **compiler-coupled** | `special_form`       | Analyzer/Compiler が直接ハンドル              | if, do, let, fn, def            |
-| **vm-optimized**    | `builtin_intrinsic`  | 専用 opcode で高速実行。VM 変更時に影響あり   | +, -, first, rest, conj, assoc  |
-| **zig-implemented** | `builtin_standard`   | Zig 関数として実装。VM とは疎結合             | map, filter, reduce, str, subs  |
-| **pure-clojure**    | `clojure_fn`         | .clj で記述。Zig 実装への依存ゼロ             | (将来) complement, juxt の一部  |
+| 依存層               | VarKind          | 定義場所    | 変更時の影響              | 例                              |
+|----------------------|------------------|-------------|---------------------------|---------------------------------|
+| **Compiler** (AST)   | `special_form`   | Zig Analyzer | Analyzer/Compiler 再実装  | if, do, let, fn, def, try       |
+| **VM** (opcode)      | `vm_intrinsic`   | Zig builtin  | VM opcode 変更で影響      | +, -, first, rest, conj, assoc  |
+| **Runtime** (Zig/OS) | `runtime_fn`     | Zig builtin  | OS API 変更で影響         | slurp, re-find, __nano-time     |
+| **なし** (pure)      | `core_fn`        | core.clj AOT | Zig 変更の影響なし        | map, filter, take, drop, str    |
+| **なし** (pure)      | `core_macro`     | core.clj AOT | Zig 変更の影響なし        | defn, when, cond, ->, and, or   |
+| **なし**             | `user_fn/macro`  | ユーザー    | —                         | ユーザー定義                    |
 
-#### BuiltinDef の拡張
+**fn と macro の対称性**: `core_fn` / `core_macro`、`user_fn` / `user_macro` で対称。
+Beta の「マクロ = 特別な実装形態」という暗黙の区別がなくなる。
+
+**マクロは原則として密結合しない**: Beta の 54 マクロのうち 43 個は
+純粋 Form→Form 変換で、Zig 固有ロジックは不要。正式版では `core_macro` として
+core.clj に定義する。Zig Analyzer に残るのは `defmacro` (special form) のみ。
+
+#### BuiltinDef の拡張 (Zig 側)
+
+Zig 側に残る関数 (`vm_intrinsic` + `runtime_fn`) のメタデータ:
 
 ```zig
-// Beta: 名前と関数ポインタのみ
 pub const BuiltinDef = struct {
     name: []const u8,
     func: BuiltinFn,
-};
-
-// 正式版: メタデータを comptime で付与
-pub const BuiltinDef = struct {
-    name: []const u8,
-    func: BuiltinFn,
-    kind: VarKind = .builtin_standard,
+    kind: VarKind,
     doc: ?[]const u8 = null,
-    arglists: ?[]const []const u8 = null,  // 複数の arity
-    added: ?[]const u8 = null,             // "1.0", "1.2" 等
+    arglists: ?[]const []const u8 = null,
+    added: ?[]const u8 = null,             // 本家での追加バージョン
     since_cw: ?[]const u8 = null,          // ClojureWasm 追加バージョン
 };
 ```
 
-comptime テーブルに含めることで、
-`registerCore()` 時に Var に自動的にメタデータが付与される。
-ランタイムのオーバーヘッドはゼロ (comptime で解決)。
+core.clj 側の関数・マクロは通常の Clojure メタデータで管理:
 
-#### vars.yaml / compat_status.yaml との統合
-
-vars.yaml の既存スキーマを拡張し、結合度を記録する:
-
-```yaml
-# status/vars.yaml (拡張構想)
-vars:
-  clojure_core:
-    "+":
-      status: done
-      kind: builtin_intrinsic    # ← NEW
-      vm_opcode: add             # ← NEW: 対応する専用 opcode
-      compat: L1                 # ← NEW: 互換性レベル (§10)
-    "map":
-      status: done
-      kind: builtin_standard
-      vm_opcode: null            # 専用 opcode なし
-      compat: L2
-    "if":
-      status: done
-      kind: special_form
-      vm_opcode: jump_if_false
-      compat: L1
-    "defn":
-      status: done
-      kind: macro
-      expands_to: [def, fn]      # マクロ展開先
-      compat: L1
+```clojure
+(defn map
+  "Returns a lazy sequence..."
+  {:added "1.0" :since-cw "0.1.0"}
+  [f coll]
+  ...)
 ```
 
-これにより:
-- `kind` 別に互換性テストの優先度を決められる
-  (special_form > builtin_intrinsic > builtin_standard の順に重要)
-- VM 最適化のリファクタリング時に影響を受ける関数を `vm_opcode != null` で特定
-- ドキュメント自動生成で `(doc map)` に適切な情報を表示
-- 互換性ダッシュボード (§18.4) で結合度別の pass 率を可視化
-
-#### スペシャルフォームの登録
+#### スペシャルフォームの comptime テーブル化
 
 Beta では Analyzer にハードコードされていたスペシャルフォームを、
 正式版では comptime テーブルとして明示化する:
@@ -1000,13 +1093,58 @@ const special_forms = [_]BuiltinDef{
     .{ .name = "recur",  .kind = .special_form, .doc = "..." },
     .{ .name = "throw",  .kind = .special_form, .doc = "..." },
     .{ .name = "try",    .kind = .special_form, .doc = "..." },
+    .{ .name = "defmacro", .kind = .special_form, .doc = "..." },
     // ...
 };
 ```
 
 Analyzer は `special_forms` テーブルを comptime で参照し、
 文字列比較の if-else チェーンを `comptime` ルックアップに置き換える。
-新しいスペシャルフォームの追加はテーブルに1行足すだけになる。
+
+#### vars.yaml / compat_status.yaml との統合
+
+```yaml
+# status/vars.yaml (拡張構想)
+vars:
+  clojure_core:
+    "+":
+      status: done
+      kind: vm_intrinsic
+      defined_in: zig
+      vm_opcode: add
+      compat: L1
+    "map":
+      status: done
+      kind: core_fn
+      defined_in: core.clj       # AOT でバイナリに埋め込み
+      vm_opcode: null
+      compat: L2
+    "if":
+      status: done
+      kind: special_form
+      defined_in: zig
+      vm_opcode: jump_if_false
+      compat: L1
+    "defn":
+      status: done
+      kind: core_macro
+      defined_in: core.clj
+      expands_to: [def, fn]
+      compat: L1
+    "slurp":
+      status: done
+      kind: runtime_fn
+      defined_in: zig
+      vm_opcode: null
+      compat: L1
+```
+
+これにより:
+- `defined_in` で .clj 移行の進捗を追跡
+- `kind` 別に互換性テストの優先度を決定
+  (special_form > vm_intrinsic > runtime_fn > core_fn/core_macro)
+- VM リファクタリング時の影響範囲を `vm_opcode != null` で機械的に特定
+- 互換性ダッシュボード (§18.4) で依存層別の pass 率を可視化
 
 ---
 
@@ -1515,6 +1653,8 @@ Accepted / Superseded by ADR-MMMM / Deprecated
 | 0004 | Fused Reduce パターン              | §9.3 の知見     |
 | 0005 | Trunk-based Development            | §16.2 の判断    |
 | 0006 | EPL-1.0 ライセンス選択             | §12 の判断      |
+| 0007 | core.clj ビルド時 AOT コンパイル   | §9.6 の判断     |
+| 0008 | VarKind 依存層分類                 | §10 の設計      |
 
 ### 18.4 互換性ステータス自動生成
 
@@ -1596,7 +1736,8 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 
 - Beta の Reader を英語化・リファクタリングして移植
 - 入力検証 (§14.3) を最初から組み込む
-- Analyzer を移植、マクロ展開を再検証
+- Analyzer を移植。スペシャルフォームは comptime テーブル化 (§10)
+- Beta のハードコードマクロ 54 個のうち、special form のみ Analyzer に残す
 - `test/unit/reader/`, `test/unit/analyzer/` にテスト整備
 - §10 Tier 1 の SCI テスト取り込み開始
 
@@ -1610,10 +1751,12 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 - `--compare` モードの参照実装 (§9.2)
 - 基本的な式評価が動く状態
 
-### Phase 3: Builtin 関数
+### Phase 3: Builtin 関数 + core.clj AOT
 
-- clojure.core の主要関数を段階的に移植
-- `status/vars.yaml` で進捗追跡
+- vm_intrinsic + runtime_fn を Zig builtin として実装 (§10 VarKind 参照)
+- core.clj を作成: マクロ 43+個 + 高レベル関数を Clojure で定義 (§9.6)
+- ビルド時 AOT パイプライン構築: core.clj → bytecode → `@embedFile`
+- `status/vars.yaml` で `defined_in` (zig / core.clj) を追跡
 - テストオラクル (§10 L1) で基本動作を検証
 - 目標: Beta で実装済みの 545 関数のうち主要 200 関数をカバー
 
@@ -1627,7 +1770,8 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 ### Phase 5: 標準ライブラリ
 
 - `clojure.string`, `clojure.set`, `clojure.walk` 等の名前空間を実装
-- 残りの clojure.core 関数を網羅
+- 残りの clojure.core 関数を網羅 (core.clj への移行を優先)
+- Beta の Zig builtin を core.clj に段階的に移行 (`defined_in` で追跡)
 - §10 Tier 1-2 のテスト取り込みを加速
 - `compat_status.yaml` の pass 率を追跡
 
@@ -1683,4 +1827,6 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 | Zig のバージョンアップで破壊的変更 | 中   | `flake.lock` でバージョン固定             |
 | wasm_rt 路線の WasmGC 連携が困難   | 中   | native 路線を優先、wasm_rt は実験扱い     |
 | コミュニティからのネーミング異議   | 低   | リネーム対応可能な構造にしておく (§12)    |
+| core.clj AOT のビルド時間増        | 中   | core.bc キャッシュ、インクリメンタルビルド |
+| core.clj ブートストラップ順序の複雑さ | 中 | defmacro を special form に残すことで回避 |
 | 個人開発のバス因子                 | 高   | ドキュメント・ADR・テストで知識を外部化   |
