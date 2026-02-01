@@ -90,17 +90,23 @@ const node = try allocator.create(AstNode);
 
 ---
 
-### A-3. 分岐ヒント（@branchHint / @branch）
+### A-3. 分岐ヒント（@branchHint）
 
 Zigは分岐確率を明示できる。
 
 例:
 
-if (@branch(.likely, token.kind == .identifier)) {
+```zig
+if (token.kind == .identifier) {
+    @branchHint(.likely);
     // 通常パス
-} else if (@branch(.unlikely, token.kind == .invalid)) {
+} else if (token.kind == .invalid) {
+    @branchHint(.unlikely);
     return error.InvalidToken;
 }
+```
+
+注意: `@branchHint` は分岐の**中**に配置する（条件式には含めない）。
 
 使いどころ:
 - 正常系: .likely
