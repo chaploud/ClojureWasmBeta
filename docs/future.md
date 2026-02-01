@@ -21,16 +21,20 @@
 ### 検討した選択肢
 
 #### A. Wasm を Clojure ライブラリとして利用
+
 - JVM / FFI 経由で Wasm を呼ぶ
 
 **採用しなかった理由**
+
 - JVM/FFI のオーバーヘッドで Wasm の高速性が失われる
 - GC 境界が重く、性能面で意味が薄い
 
 #### B. Clojure を全面的に Wasm に寄せる
+
 - 値表現・GC を WasmGC に統合
 
 **採用しなかった理由**
+
 - Clojure の値モデル (NaN boxing / 永続 DS) と WasmGC が根本的に合わない
 - 勝手に解放される危険
 - 研究レベルで現実的でない
@@ -139,11 +143,13 @@ require と同じ感覚で Wasm モジュールを ns に統合する。
 #### Phase 間の進化まとめ
 
 | Phase | ボイラープレート | 型安全性   | WIT 必要 |
-|-------|------------------|------------|----------|
+| ----- | ---------------- | ---------- | -------- |
 | 1     | シグネチャ手動   | 呼び出し時 | 不要     |
 | 2a    | ロードのみ       | ロード時   | 必要     |
 | 2b    | ns 宣言のみ      | ロード時   | 必要     |
 | 3     | 合成宣言のみ     | 合成時     | 必要     |
+
+ファイル構成は §17.2 の `src/wasm/` を参照。
 
 ---
 
@@ -170,6 +176,7 @@ Clojure 関数を Wasm ホスト関数として登録する際にも同じパタ
 - Clojure の柔軟性と Wasm の厳密な型のギャップが課題
 
 **方針**
+
 - 言語仕様は変えない
 - マクロで境界コードを生成
   - 型検証
@@ -184,6 +191,7 @@ Beta では Value 型が 28+ variant の tagged union に膨張した。
 5箇所を同時更新する必要があり、漏れが GC クラッシュに直結した。
 
 正式版では:
+
 - Value variant 数を抑制する設計 (NaN boxing による inline 化)
 - 型追加時の更新箇所を comptime で検証する仕組み
 
@@ -192,11 +200,13 @@ Beta では Value 型が 28+ variant の tagged union に膨張した。
 ## 4. WIT / Component Model
 
 ### 認識
+
 - WIT は単なる仕様書ではなく、実運用されている IDL
 - Clojure 界隈では未開拓
 - Wasm ライブラリのエコシステムとしてはまだ発展途上
 
 ### 方針
+
 - WIT を **Clojure データとして表現**
 - hiccup / honeysql / malli 系譜の DSL
 - ベクタ + キーワードで順序を保持
@@ -217,42 +227,45 @@ WIT/Component Model は正式版でも最初から取り組むべき領域では
 WIT パーサーは **Zig で自前実装** する。
 
 **理由**:
+
 - WIT の文法は比較的単純 (interface/world/type/function 定義のみ)
 - 外部依存 (wit-parser C ライブラリ) を入れるとビルド複雑性が跳ね上がる
 - Zig の comptime を活かしてパース結果をコンパイル時テーブルに変換できる
 
 **出力形式**:
+
 - パース結果は Clojure データ (map/vector) として Value に変換
 - モジュールオブジェクトは ILookup プロトコルを実装し、キーワードアクセスを提供
 
 **フォールバック**:
+
 - 実装工数が想定を超えた場合、wit-parser の C FFI にフォールバック可能
 - C FFI は native 路線のみ対応 (wasm_rt 路線では使えない)
 
 ### WIT 型マッピングテーブル
 
-| WIT 型          | Clojure 表現           | 備考                          |
-|-----------------|------------------------|-------------------------------|
-| u32/i32         | int                    | NaN boxing 直接               |
-| f32/f64         | float                  | NaN boxing 直接               |
-| string          | string                 | UTF-8 マーシャリング          |
-| list\<T\>       | vector                 | 永続ベクタ変換                |
-| record { ... }  | map (keyword keys)     | {:field-name value}           |
-| enum { ... }    | keyword                | :variant-name (kebab-case)    |
-| variant { ... } | tagged map             | {:tag :some, :value 42}       |
-| option\<T\>     | nil or value           | Clojure 慣用                  |
-| result\<T, E\>  | {:ok v} / {:err e}     | または例外 (設定可能)         |
-| flags { ... }   | set of keywords        | #{:flag-a :flag-b}            |
+| WIT 型          | Clojure 表現       | 備考                       |
+| --------------- | ------------------ | -------------------------- |
+| u32/i32         | int                | NaN boxing 直接            |
+| f32/f64         | float              | NaN boxing 直接            |
+| string          | string             | UTF-8 マーシャリング       |
+| list\<T\>       | vector             | 永続ベクタ変換             |
+| record { ... }  | map (keyword keys) | {:field-name value}        |
+| enum { ... }    | keyword            | :variant-name (kebab-case) |
+| variant { ... } | tagged map         | {:tag :some, :value 42}    |
+| option\<T\>     | nil or value       | Clojure 慣用               |
+| result\<T, E\>  | {:ok v} / {:err e} | または例外 (設定可能)      |
+| flags { ... }   | set of keywords    | #{:flag-a :flag-b}         |
 
 ### 提案A vs 提案B 比較
 
-| 観点           | 提案A (require-wasm)          | 提案B (モジュールオブジェクト)    |
-|----------------|-------------------------------|-----------------------------------|
-| Clojure らしさ | ◎ require と同じ感覚          | ○ オブジェクト指向的              |
-| 名前空間管理   | ◎ ns システムに統合           | △ モジュール変数が名前空間を占有  |
-| 実装の複雑さ   | △ require マクロの拡張が必要  | ◎ 既存 Value 型拡張のみ           |
-| エディタ補完   | ◎ REPL で ns 探索可能         | △ モジュールオブジェクト経由      |
-| Beta 互換      | ○ 段階的移行可能              | ◎ 完全互換                        |
+| 観点           | 提案A (require-wasm)         | 提案B (モジュールオブジェクト)   |
+| -------------- | ---------------------------- | -------------------------------- |
+| Clojure らしさ | ◎ require と同じ感覚         | ○ オブジェクト指向的             |
+| 名前空間管理   | ◎ ns システムに統合          | △ モジュール変数が名前空間を占有 |
+| 実装の複雑さ   | △ require マクロの拡張が必要 | ◎ 既存 Value 型拡張のみ          |
+| エディタ補完   | ◎ REPL で ns 探索可能        | △ モジュールオブジェクト経由     |
+| Beta 互換      | ○ 段階的移行可能             | ◎ 完全互換                       |
 
 **判断ポイント**: Phase 2a (提案B) を先に実装し、UX 評価後に Phase 2b (提案A) の Go/No-Go を決定
 
@@ -261,14 +274,17 @@ WIT パーサーは **Zig で自前実装** する。
 ## 5. GC・バイトコード・最適化
 
 ### WasmGC の整理
+
 - WasmGC は Wasm 世界内部の GC
 - Clojure の GC を置き換えるものではない
 
 ### 採用した考え方
+
 - GC を差し替え可能にしようとしない
 - 責務を分離する
 
 **構成**
+
 - Clojure 値・永続 DS -> 自前 GC
 - Wasm オブジェクト -> WasmGC
 - 境界はハンドル / コピー / pin
@@ -282,6 +298,7 @@ Beta の GC 実装 (セミスペース Arena Mark-Sweep) から得た重要な�
 Arena 一括解放は高速 (GPA 比 40x) だが、ポインタ fixup を1箇所漏らすだけで
 use-after-free が発生する。しかも「即座にクラッシュしない」のが最も危険。
 正式版では:
+
 - `else => {}` を禁止し、新タグ追加時にコンパイルエラーで検出
 - comptime でタグと fixup 関数の対応を検証
 
@@ -292,6 +309,7 @@ Zig builtin 関数のローカル変数は GC ルートとして追跡されな�
 旧アドレスを指したまま SIGSEGV になる。
 Beta では recur opcode でのみ GC チェックを行う妥協をした。
 正式版では:
+
 - builtin 関数の中間値を VM スタックか専用ルート配列に退避する設計を最初から組む
 - または NaN boxing で GC 移動対象を減らす
 
@@ -308,6 +326,7 @@ Young -> Old の参照パターンが稀で、write barrier の投資対効果�
 正式版で世代別を採用するなら、式境界ではなく関数境界 or allocation 閾値ベースに。
 
 ### 将来の設計余地
+
 - ルート列挙形式 (stack map)
 - write barrier フック
 - メモリ境界の明確化
@@ -450,6 +469,7 @@ const OpCode = enum {
 ```
 
 これにより:
+
 - **コンパイラ** が最適化判断を行い (Analyzer or emit 段階)
 - **VM** が専用 opcode を実行 (safe point は VM が管理)
 - **builtin 関数** は非最適化パスのフォールバックのみ担当
@@ -458,7 +478,7 @@ const OpCode = enum {
 #### 路線別の違い
 
 | 層           | native 路線                          | wasm_rt 路線                                  |
-|--------------|--------------------------------------|-----------------------------------------------|
+| ------------ | ------------------------------------ | --------------------------------------------- |
 | メモリ層     | セミスペース GC + Arena              | std.heap.WasmAllocator + ランタイム GC        |
 | safe point   | VM 内 yield point で自前 GC 呼び出し | alloc 閾値で memory.grow、GC はランタイム任せ |
 | fused reduce | 専用 opcode → VM 直接実行            | 同じ opcode → wasm_rt VM で実行               |
@@ -478,11 +498,13 @@ const OpCode = enum {
 ## 6. Wasm 実行エンジン選択
 
 ### 検討
+
 - zware (Beta で利用)
 - Wasmtime
 - 完全自作
 
 ### 判断
+
 - zware を当面利用 (Zig 完結・軽量)
 - Wasmtime は将来の backend として視野に入れる
 - WasmBackend interface を Zig 側に用意し差し替え可能に
@@ -491,6 +513,7 @@ const OpCode = enum {
 
 zware は Zig 完結で組み込みやすく、学習目的には最適だった。
 ただし以下の制約がある:
+
 - multi-value return 未対応の可能性
 - WASI は手動登録が必要 (自動解決なし)
 - `@ptrCast` によるシグネチャ適合がフラジャイル
@@ -505,6 +528,7 @@ zware / Wasmtime / 自作エンジンを差し替え可能にする。
 二路線は完全には両立しない。GC / バイトコード実装は分岐する。
 
 ### native 路線 (超高速単一バイナリ)
+
 - GC: 自前 (セミスペース or 世代別)
 - 最適化: 自前 (NaN boxing, inline caching, fused reduce 等)
 - 配布: 単一バイナリ、起動即実行
@@ -527,6 +551,7 @@ Wasm のデータ型・構造に寄せた内部表現を採用することで、
 ランタイムが最適化しやすいコードを生成できる可能性がある。
 
 **重要な決断**
+
 - 一本化しない
 - 実行時分岐は入れない
 
@@ -548,6 +573,7 @@ const wasm_alloc = std.heap.wasm_allocator;
 ```
 
 **特徴**:
+
 - **power-of-two サイズクラス**: 小さいアロケーションはサイズクラス別のフリーリスト管理
 - **bigpage (64KB)**: 大きなアロケーションは 64KB 単位の倍数で確保
 - **`@wasmMemoryGrow(0, n)`**: ページ単位 (64KB) でリニアメモリを伸長
@@ -576,7 +602,7 @@ Beta の GcAllocator と同じ `Allocator` 型として統一的に扱える。
 `zig build -Dtarget=wasm32-wasi` のデフォルト (generic モデル) で有効になるもの:
 
 | feature             | 有効 (generic) | ClojureWasm での活用           |
-|---------------------|----------------|--------------------------------|
+| ------------------- | -------------- | ------------------------------ |
 | bulk_memory         | Yes            | メモリコピー・充填の高速化     |
 | multivalue          | Yes            | 関数の複数戻り値               |
 | mutable_globals     | Yes            | グローバル変数の書き換え       |
@@ -674,7 +700,7 @@ src/
 Beta の経験から、共有しやすい / しにくい領域:
 
 | 層           | 共有可能性 | 理由                                                   |
-|--------------|------------|--------------------------------------------------------|
+| ------------ | ---------- | ------------------------------------------------------ |
 | Reader       | 高         | 純粋なパーサ、バックエンド非依存                       |
 | Analyzer     | 中〜高     | マクロ展開は共通だが、最適化パスが分岐する可能性       |
 | OpCode 定義  | 中         | 意味論は共通、native 固有の高速 opcode が入る可能性    |
@@ -684,6 +710,7 @@ Beta の経験から、共有しやすい / しにくい領域:
 | builtin 関数 | 中〜高     | 意味論は共通、GC/アロケータ依存コードは路線別          |
 
 ### Zig の活用
+
 - comptime で世界線をビルド時に切替
 - 実行時分岐ゼロ
 - 不要コードはリンクされない
@@ -737,11 +764,13 @@ Zig の comptime、Arena allocator、値型セマンティクスを活かした
 高速実装が可能であれば、それを採用すべき。
 
 **段階的アプローチ**:
+
 1. 初期は Beta と同じ配列ベースで開始 (動作の正確性を優先)
 2. プロファイル結果を見てボトルネックのコレクションから最適化
 3. Vector が最も使用頻度が高いため、最初の最適化候補
 
 **インターフェース要件** (本家互換):
+
 - persistent (既存コレクションは変更されない)
 - structural sharing (大きなコレクションのコピーコストを抑える)
 - O(log32 N) の lookup/update (Map, Vector)
@@ -764,7 +793,7 @@ Beta では clojure.core の 545 関数・マクロを全て Zig builtin とし�
 #### 他の実装の戦略
 
 | 実装             | core の定義方法                 | 起動時ロード | AOT          |
-|------------------|---------------------------------|--------------|--------------|
+| ---------------- | ------------------------------- | ------------ | ------------ |
 | Clojure 本家     | core.clj (276KB) を毎回パース   | Yes          | No           |
 | ClojureScript    | core.cljc → JS にコンパイル     | No           | Yes (→JS)    |
 | SCI/Babashka     | copy-var でホスト関数をラップ   | macro展開時  | GraalVM のみ |
@@ -812,13 +841,13 @@ Zig の `build.zig` は任意のビルドステップを追加でき、
 **判断基準**: 「VM opcode 最適化が必要か」「OS/ランタイム依存か」
 
 | 移行先   | 対象                                                   | 理由                       |
-|----------|--------------------------------------------------------|----------------------------|
+| -------- | ------------------------------------------------------ | -------------------------- |
 | core.clj | マクロ 43+個 (defn, when, cond, ->, and, or 等)        | 純粋 Form→Form 変換        |
 | core.clj | 高レベル関数 (map, filter, take, drop, partition 等)   | 本家と同じ定義で互換性向上 |
 | core.clj | ユーティリティ (complement, constantly, juxt, memoize) | Zig 依存ゼロ               |
 | Zig 維持 | VM intrinsic (+, -, first, rest, conj, assoc, get)     | 専用 opcode で最適化       |
 | Zig 維持 | reduce (fused reduce のエントリポイント)               | §5 最適化パスと密結合      |
-| Zig 維持 | I/O・OS (slurp, spit, re-find, __nano-time)            | Zig/OS API 依存            |
+| Zig 維持 | I/O・OS (slurp, spit, re-find, \_\_nano-time)          | Zig/OS API 依存            |
 | Zig 維持 | 状態管理 (atom, swap!, deref, reset!)                  | ランタイム内部構造に依存   |
 
 Beta の Analyzer に実装された 54 マクロのうち、**約 79% (43個)** は
@@ -862,7 +891,7 @@ ClojureWasm では `.setMacro` の Java Interop を排除するため:
 #### リスクと緩和策
 
 | リスク                                   | 緩和策                                        |
-|------------------------------------------|-----------------------------------------------|
+| ---------------------------------------- | --------------------------------------------- |
 | core.clj のパースがビルド時間を増やす    | インクリメンタルビルド (core.bc をキャッシュ) |
 | 起動時の bytecode 実行コスト             | ベンチマーク計測、必要なら遅延ロード          |
 | core.clj のデバッグが困難                | `--dump-core-bytecode` フラグで検査           |
@@ -884,7 +913,7 @@ vars.yaml で関数の実装状況 (done/skip) を追跡しているが、
 ### 互換性のレベル定義
 
 | レベル | 検証内容                                 | 重要度 | 検証方法            |
-|--------|------------------------------------------|--------|---------------------|
+| ------ | ---------------------------------------- | ------ | ------------------- |
 | L0     | 関数/マクロが存在する                    | 必須   | vars.yaml で追跡    |
 | L1     | 基本的な入出力が一致する                 | 必須   | テストオラクル      |
 | L2     | 辺境値・エラーケースが一致する           | 高     | upstream テスト移植 |
@@ -934,7 +963,7 @@ imported/ テストファイル群
 #### ソース別の特性
 
 | ソース        | 規模       | Java 汚染    | 変換コスト | テスト行数の期待値   |
-|---------------|------------|--------------|------------|----------------------|
+| ------------- | ---------- | ------------ | ---------- | -------------------- |
 | SCI           | ~4,650 行  | 低 (.cljc)   | 低         | ~4,000 行 (大半取込) |
 | ClojureScript | ~21,400 行 | なし (.cljs) | 中         | ~15,000 行 (JS 除去) |
 | Clojure 本家  | ~14,300 行 | 高 (.clj)    | 高         | ~5,000 行 (Tier 2/3) |
@@ -948,12 +977,14 @@ imported/ テストファイル群
 変換が機械的で、結果が一意に定まるもの。最優先で取り組む。
 
 SCI (.cljc):
+
 - `eval*` → 直接実行
 - `tu/native?` 分岐 → `true` 側を採用
 - マップリテラル `{}` → `(hash-map ...)` (deftest body 内)
 - Beta で 5 ファイル移植済み → 残り ~15 ファイルを同ルールで処理
 
 ClojureScript (.cljs):
+
 - `cljs.test` → `clojure.test` (ClojureWasm の互換層)
 - `js/Error` → ClojureWasm のエラー型
 - `js/Object`, `js/Array` → skip
@@ -966,6 +997,7 @@ Java Interop 呼び出しを ClojureWasm のネイティブ代替に変換する
 テスト関数単位で処理し、変換できたもののみ取り込む。
 
 決定論的に変換可能なパターン:
+
 - `System/nanoTime` → `(__nano-time)`
 - `System/currentTimeMillis` → `(__current-time-millis)`
 - `Thread/sleep` → `(__sleep ms)`
@@ -976,6 +1008,7 @@ Java Interop 呼び出しを ClojureWasm のネイティブ代替に変換する
 - `(import ...)` → 除去 (エイリアスでカバーされていれば)
 
 変換不能なパターン → Tier 3 または skip:
+
 - `proxy`, `reify`, `gen-class`
 - `java.util.concurrent.*`
 - reflection (`(.getMethod ...)`)
@@ -984,6 +1017,7 @@ Java Interop 呼び出しを ClojureWasm のネイティブ代替に変換する
 **Tier 3: AI 補助 + 人間レビュー** (残り)
 
 Tier 2 で変換できなかったテストのうち、テストの意図が Java 非依存なもの:
+
 - AI にテストの意図を解析させ、等価な Java-free テストを生成
 - 人間がレビューし、正しければコミット
 - コミット後は決定論的なテストとして扱う
@@ -1009,7 +1043,7 @@ ClojureScript テスト (~21,400 行) をそのまま実行するため、
 ClojureScript テストの JS 固有部分の扱い:
 
 | CLJS パターン             | ClojureWasm での扱い              |
-|---------------------------|-----------------------------------|
+| ------------------------- | --------------------------------- |
 | `js/Error`                | ClojureWasm の例外型にマッピング  |
 | `js/Object`               | skip (JS 固有)                    |
 | `js/Array`                | skip (JS 固有)                    |
@@ -1035,7 +1069,7 @@ vars.yaml (関数存在) に加え、テスト単位のステータスを管理�
 tests:
   sci/core_test:
     test-eval:
-      status: pass          # pass | fail | skip | pending
+      status: pass # pass | fail | skip | pending
       source: sci
       upstream_ref: "abc123"
     test-map-indexed:
@@ -1059,7 +1093,7 @@ tests:
 #### ステータスの意味
 
 | ステータス | 意味                                                   |
-|------------|--------------------------------------------------------|
+| ---------- | ------------------------------------------------------ |
 | pass       | テストが通る                                           |
 | fail       | テストが落ちる (実装が必要、またはバグ)                |
 | skip       | 意図的に見送り (Java 依存、未実装型等)。理由を必ず記録 |
@@ -1071,7 +1105,7 @@ tests:
 Java Interop は排除するが、プログラミング上必須な機能はエイリアスで提供する:
 
 | 本家 (Java)                     | ClojureWasm              | 方針               |
-|---------------------------------|--------------------------|--------------------|
+| ------------------------------- | ------------------------ | ------------------ |
 | `System/nanoTime`               | `__nano-time` (Zig 実装) | Beta で対応済み    |
 | `System/currentTimeMillis`      | `__current-time-millis`  | Beta で対応済み    |
 | `slurp` / `spit`                | Zig ファイル I/O で実装  | 正式版で対応       |
@@ -1173,10 +1207,10 @@ pub const VarKind = enum(u8) {
 #### 依存層による分類
 
 | 依存層               | VarKind         | 定義場所     | 変更時の影響             | 例                             |
-|----------------------|-----------------|--------------|--------------------------|--------------------------------|
+| -------------------- | --------------- | ------------ | ------------------------ | ------------------------------ |
 | **Compiler** (AST)   | `special_form`  | Zig Analyzer | Analyzer/Compiler 再実装 | if, do, let, fn, def, try      |
 | **VM** (opcode)      | `vm_intrinsic`  | Zig builtin  | VM opcode 変更で影響     | +, -, first, rest, conj, assoc |
-| **Runtime** (Zig/OS) | `runtime_fn`    | Zig builtin  | OS API 変更で影響        | slurp, re-find, __nano-time    |
+| **Runtime** (Zig/OS) | `runtime_fn`    | Zig builtin  | OS API 変更で影響        | slurp, re-find, \_\_nano-time  |
 | **なし** (pure)      | `core_fn`       | core.clj AOT | Zig 変更の影響なし       | map, filter, take, drop, str   |
 | **なし** (pure)      | `core_macro`    | core.clj AOT | Zig 変更の影響なし       | defn, when, cond, ->, and, or  |
 | **なし**             | `user_fn/macro` | ユーザー     | —                        | ユーザー定義                   |
@@ -1197,7 +1231,7 @@ Clojure 本家の Var には豊富なメタデータが付与される。
 **本家の主要メタデータキーと採用判断**:
 
 | キー              | 例                          | 本家での用途            | 採用     | 備考                             |
-|-------------------|-----------------------------|-------------------------|----------|----------------------------------|
+| ----------------- | --------------------------- | ----------------------- | -------- | -------------------------------- |
 | `:doc`            | `"Returns a lazy seq..."`   | ドキュメント            | 必須     | `(doc x)` の出力                 |
 | `:arglists`       | `'([f coll] [f c1 c2])`     | 引数リスト              | 必須     | `(doc x)` の引数表示             |
 | `:added`          | `"1.0"`                     | 本家 Clojure での導入版 | 必須     | 本家参照点 (後述)                |
@@ -1217,7 +1251,7 @@ Clojure 本家の Var には豊富なメタデータが付与される。
 **ClojureWasm 独自のメタデータキー**:
 
 | キー          | 例                | 用途                                            |
-|---------------|-------------------|-------------------------------------------------|
+| ------------- | ----------------- | ----------------------------------------------- |
 | `:since-cw`   | `"0.1.0"`         | ClojureWasm での追加バージョン                  |
 | `:kind`       | `:vm-intrinsic`   | VarKind 分類 (前述)。`(meta #'+ )` で層が分かる |
 | `:defined-in` | `"zig"` / `"clj"` | 定義元。Zig builtin か core.clj AOT かを区別    |
@@ -1266,10 +1300,10 @@ clojure_ref_version: "1.12.0"
 
 namespaces:
   clojure.core:
-    status: partial     # done | partial | stub | skip
-    var_count: 545      # 実装済み Var 数
+    status: partial # done | partial | stub | skip
+    var_count: 545 # 実装済み Var 数
     upstream_count: 657 # 本家の Var 数
-    provider: [zig, core.clj]  # Zig builtin + core.clj AOT
+    provider: [zig, core.clj] # Zig builtin + core.clj AOT
 
   clojure.string:
     status: partial
@@ -1280,12 +1314,12 @@ namespaces:
   clojure.set:
     status: todo
     upstream_count: 11
-    provider: [core.clj]  # 全て pure → core.clj で定義
+    provider: [core.clj] # 全て pure → core.clj で定義
 
   clojure.walk:
     status: todo
     upstream_count: 7
-    provider: [core.clj]  # 全て pure
+    provider: [core.clj] # 全て pure
 
   wasm:
     status: done
@@ -1376,7 +1410,7 @@ Analyzer は `special_forms` テーブルを comptime で参照し、
 
 ```yaml
 # .dev/status/vars.yaml (拡張構想)
-clojure_ref_version: "1.12.0"  # 準拠を目指す本家バージョン
+clojure_ref_version: "1.12.0" # 準拠を目指す本家バージョン
 
 vars:
   clojure_core:
@@ -1385,7 +1419,7 @@ vars:
       kind: vm_intrinsic
       defined_in: zig
       ns: clojure.core
-      added: "1.0"              # 本家で導入されたバージョン
+      added: "1.0" # 本家で導入されたバージョン
       doc: "Returns the sum of nums..."
       arglists: "([] [x] [x y] [x y & more])"
       vm_opcode: add
@@ -1393,7 +1427,7 @@ vars:
     "map":
       status: done
       kind: core_fn
-      defined_in: core.clj       # AOT でバイナリに埋め込み
+      defined_in: core.clj # AOT でバイナリに埋め込み
       ns: clojure.core
       added: "1.0"
       vm_opcode: null
@@ -1427,20 +1461,21 @@ vars:
       kind: core_fn
       defined_in: core.clj
       ns: clojure.core
-      added: "1.12"              # 1.12 で追加された新関数
+      added: "1.12" # 1.12 で追加された新関数
       compat: null
 
   clojure_string:
     "upper-case":
       status: done
-      kind: runtime_fn           # Zig の Unicode 処理に依存
+      kind: runtime_fn # Zig の Unicode 処理に依存
       defined_in: zig
-      ns: clojure.string         # 本家と同じ名前空間
+      ns: clojure.string # 本家と同じ名前空間
       added: "1.2"
       compat: L1
 ```
 
 これにより:
+
 - `defined_in` で .clj 移行の進捗を追跡
 - `kind` 別に互換性テストの優先度を決定
   (special_form > vm_intrinsic > runtime_fn > core_fn/core_macro)
@@ -1473,7 +1508,7 @@ Clojure 本家は EPL-1.0。ClojureWasm が本家コードを直接利用して�
 「Clojure」を名前に含めるかは慎重に検討が必要。
 
 | プロジェクト  | 名前に「Clojure」 | 背景                                  |
-|---------------|-------------------|---------------------------------------|
+| ------------- | ----------------- | ------------------------------------- |
 | ClojureScript | あり              | Rich Hickey 自身が設計・主導          |
 | ClojureCLR    | あり              | clojure org 配下 (公式)               |
 | ClojureDart   | あり              | コミュニティ重鎮、Conj 発表、公式紹介 |
@@ -1564,7 +1599,7 @@ Beta では Reader に対する入力制限がなく、
 正式版での対策:
 
 | 制限                   | デフォルト値 | 設定方法              |
-|------------------------|--------------|-----------------------|
+| ---------------------- | ------------ | --------------------- |
 | ネスト深さ上限         | 1024         | `--max-depth`         |
 | 文字列リテラルサイズ   | 1MB          | `--max-string-size`   |
 | コレクションリテラル数 | 100,000      | `--max-literal-count` |
@@ -1585,7 +1620,7 @@ Beta では Reader に対する入力制限がなく、
 依存は最小限に:
 
 | 依存               | 用途                     | 方針                       |
-|--------------------|--------------------------|----------------------------|
+| ------------------ | ------------------------ | -------------------------- |
 | zware              | Wasm 実行エンジン        | ベンダリング               |
 | (Wasmtime)         | 将来の Wasm バックエンド | 動的リンク or ベンダリング |
 | Zig 標準ライブラリ | 基盤                     | Zig バージョン固定         |
@@ -1609,7 +1644,7 @@ Beta は組み込み関数のみだったが、正式版ではユーザーが独
 ### 15.1 拡張機構の3階層
 
 | 階層            | 対象路線         | 安全性 | 配布性 | 用途                      |
-|-----------------|------------------|--------|--------|---------------------------|
+| --------------- | ---------------- | ------ | ------ | ------------------------- |
 | Wasm モジュール | native + wasm_rt | 高     | 高     | ポータブルなプラグイン    |
 | Zig プラグイン  | native のみ      | 中     | 低     | 高性能ネイティブ拡張      |
 | C ABI           | native のみ      | 低     | 中     | 既存 C ライブラリとの統合 |
@@ -1781,7 +1816,7 @@ Zig の `@cImport` を活用し、C ライブラリを直接利用する。
 想定される利用例:
 
 | ライブラリ | 用途                 | 統合方法                  |
-|------------|----------------------|---------------------------|
+| ---------- | -------------------- | ------------------------- |
 | SQLite     | データベースアクセス | `@cImport("sqlite3.h")`   |
 | libcurl    | HTTP クライアント    | `@cImport("curl/curl.h")` |
 | libpcre2   | 高速正規表現         | `@cImport("pcre2.h")`     |
@@ -1862,7 +1897,7 @@ zig build -Dtarget=x86_64-linux -Dlib-mode=true
 #### 15.5.3 設計上の課題と方針
 
 | 課題                          | 方針                                                   |
-|-------------------------------|--------------------------------------------------------|
+| ----------------------------- | ------------------------------------------------------ |
 | **GC 境界**                   | ホスト側が保持する Value を pin/unpin API で明示管理。 |
 |                               | pin された値は GC ルートセットに追加される             |
 | **複数 VM インスタンス**      | Beta のグローバル状態 (threadlocal current_env 等) を  |
@@ -1897,7 +1932,7 @@ Beta の threadlocal 変数 (defs.zig に 8 個) を全て VM 構造体のフィ
 ### 15.6 拡張方式の比較
 
 | 基準             | Wasm モジュール        | Zig ビルド時統合        | Zig 動的プラグイン | C ABI               |
-|------------------|------------------------|-------------------------|--------------------|---------------------|
+| ---------------- | ---------------------- | ----------------------- | ------------------ | ------------------- |
 | ポータビリティ   | 高 (どこでも動く)      | 中 (Zig ツールチェーン) | 低 (OS/Arch 依存)  | 低 (OS/Arch 依存)   |
 | 性能             | 中 (境界コスト)        | 最高 (ゼロコスト)       | 高 (直接呼び出し)  | 高 (直接呼び出し)   |
 | 安全性           | 高 (サンドボックス)    | 高 (comptime 検証)      | 中 (メモリ共有)    | 低 (メモリ共有)     |
@@ -2011,7 +2046,7 @@ jobs:
 SemVer に従い、以下の段階でリリースする:
 
 | フェーズ       | バージョン     | 意味                             |
-|----------------|----------------|----------------------------------|
+| -------------- | -------------- | -------------------------------- |
 | 開発初期       | v0.1.0-alpha.N | API 不安定、破壊的変更あり       |
 | 機能一通り実装 | v0.1.0-beta.N  | API 安定化中、フィードバック募集 |
 | リリース候補   | v0.1.0-rc.N    | バグ修正のみ                     |
@@ -2024,7 +2059,7 @@ SemVer に従い、以下の段階でリリースする:
 ### 16.6 Issue ラベル体系
 
 | ラベル             | 色   | 意味                        |
-|--------------------|------|-----------------------------|
+| ------------------ | ---- | --------------------------- |
 | `bug`              | 赤   | バグ報告                    |
 | `enhancement`      | 青   | 機能追加リクエスト          |
 | `compatibility`    | 紫   | 本家 Clojure との互換性問題 |
@@ -2043,12 +2078,12 @@ CODE_OF_CONDUCT.md は Contributor Covenant v2.1 を採用。
 
 ### 17.1 参考プロジェクトからの採用判断
 
-| 参考元        | 採用するもの                | 不採用 (理由)                             |
-|---------------|-----------------------------|-------------------------------------------|
-| jank          | `third-party/` ベンダリング | `src/` + `include/` 分離 (Zig では不要)   |
-| Babashka      | `docs/adr/` (ADR)           | feature-* サブモジュール (モノリポで十分) |
-| SCI           | `api/` と `impl/` の分離    | —                                         |
-| ClojureScript | フェーズ別モジュール分離    | —                                         |
+| 参考元        | 採用するもの                | 不採用 (理由)                              |
+| ------------- | --------------------------- | ------------------------------------------ |
+| jank          | `third-party/` ベンダリング | `src/` + `include/` 分離 (Zig では不要)    |
+| Babashka      | `docs/adr/` (ADR)           | feature-\* サブモジュール (モノリポで十分) |
+| SCI           | `api/` と `impl/` の分離    | —                                          |
+| ClojureScript | フェーズ別モジュール分離    | —                                          |
 
 ### 17.2 ディレクトリツリー
 
@@ -2099,6 +2134,11 @@ clojurewasm/
 │   │   └── main.zig
 │   │
 │   └── wasm/                      # Wasm InterOp (両路線共通)
+│       ├── loader.zig             # .wasm ロード
+│       ├── runtime.zig            # 関数呼び出し
+│       ├── interop.zig            # メモリ操作・マーシャリング
+│       ├── wit_parser.zig         # WIT パーサー (Phase 2)
+│       └── wit_types.zig          # WIT 型定義 (Phase 2)
 │
 ├── clj/                           # Clojure ソース (AOT → @embedFile)
 │   └── core.clj                   # Phase 5 で string.clj, set.clj 等追加
@@ -2145,17 +2185,17 @@ CONTRIBUTING.md, CHANGELOG.md, CODE_OF_CONDUCT.md, SECURITY.md
 
 ### 17.3 Beta からの変更点
 
-| 項目           | Beta                         | 正式版                                       |
-|----------------|------------------------------|----------------------------------------------|
-| ソース構成     | `src/` フラット              | `src/api,common,native,wasm_rt/`             |
-| Clojure ソース | なし (全て Zig)              | `clj/core.clj` (AOT コンパイル、§9.6)       |
-| テスト構成     | `test/` フラット             | `test/unit,e2e,upstream/`                    |
-| 依存管理       | Git submodule (zware)        | `third-party/` ベンダリング (リリース時)     |
-| ドキュメント   | `docs/` (Markdown)           | `docs/` (Markdown) + `docs/adr/` (リリース時) |
-| 設計記録       | `plan/` (非公開ノート)       | `docs/adr/` (公開 ADR) + `.dev/plan/`       |
+| 項目           | Beta                         | 正式版                                         |
+| -------------- | ---------------------------- | ---------------------------------------------- |
+| ソース構成     | `src/` フラット              | `src/api,common,native,wasm_rt/`               |
+| Clojure ソース | なし (全て Zig)              | `clj/core.clj` (AOT コンパイル、§9.6)          |
+| テスト構成     | `test/` フラット             | `test/unit,e2e,upstream/`                      |
+| 依存管理       | Git submodule (zware)        | `third-party/` ベンダリング (リリース時)       |
+| ドキュメント   | `docs/` (Markdown)           | `docs/` (Markdown) + `docs/adr/` (リリース時)  |
+| 設計記録       | `plan/` (非公開ノート)       | `docs/adr/` (公開 ADR) + `.dev/plan/`          |
 | 実装状況追跡   | `status/vars.yaml`           | `.dev/status/vars.yaml` + `compat_status.yaml` |
-| 開発者ガイド   | `docs/reference/` (内部)     | `docs/developer/` (外向き)                   |
-| ビルド設定     | `build.zig` (単一ターゲット) | `build.zig` (comptime 切替)                  |
+| 開発者ガイド   | `docs/reference/` (内部)     | `docs/developer/` (外向き)                     |
+| ビルド設定     | `build.zig` (単一ターゲット) | `build.zig` (comptime 切替)                    |
 
 ### 17.4 §8 との関係
 
@@ -2169,7 +2209,7 @@ CONTRIBUTING.md, CHANGELOG.md, CODE_OF_CONDUCT.md, SECURITY.md
 ### 18.1 4層構造
 
 | 層                 | 対象読者           | 内容                            | 形式                  |
-|--------------------|--------------------|---------------------------------|-----------------------|
+| ------------------ | ------------------ | ------------------------------- | --------------------- |
 | Getting Started    | 初めてのユーザー   | インストール、Hello World、REPL | `README.md` + `docs/` |
 | Language Reference | Clojure 経験者     | 互換性表、差異、独自機能        | `docs/` (Markdown)    |
 | Developer Guide    | コントリビューター | ビルド方法、テスト、PR ガイド   | `docs/developer/`     |
@@ -2181,11 +2221,13 @@ CONTRIBUTING.md, CHANGELOG.md, CODE_OF_CONDUCT.md, SECURITY.md
 mdBook は開発初期のオーバーヘッドに見合わないため不採用とした。
 
 メリット:
+
 - ビルドステップ不要、Markdown ファイルをそのまま GitHub で閲覧可能
 - ドキュメントツールの依存が増えない
 - 必要に応じて将来 mdBook や他のツールへ移行可能 (Markdown のため移行コスト低)
 
 デプロイ:
+
 - GitHub リポジトリ上で直接閲覧 (追加のデプロイ不要)
 - 将来的に GitHub Pages で静的サイト化する場合は別途検討
 
@@ -2200,25 +2242,30 @@ ADR テンプレート:
 # ADR-NNNN: タイトル
 
 ## Status
+
 Accepted / Superseded by ADR-MMMM / Deprecated
 
 ## Context
+
 なぜこの決定が必要か
 
 ## Decision
+
 何を決定したか
 
 ## Consequences
+
 この決定の結果として何が起きるか
 
 ## References
+
 関連する ADR、Issue、外部リソース
 ```
 
 初期 ADR 候補 (Beta の知見から):
 
 | ADR  | タイトル                           | 根拠            |
-|------|------------------------------------|-----------------|
+| ---- | ---------------------------------- | --------------- |
 | 0001 | NaN Boxing による値表現            | §3, §5 の知見   |
 | 0002 | セミスペース GC + Arena 分離       | §5, §9.4 の知見 |
 | 0003 | デュアルバックエンド (`--compare`) | §9.2 の知見     |
@@ -2252,14 +2299,17 @@ Keep a Changelog 形式 (https://keepachangelog.com/) を採用:
 ## [Unreleased]
 
 ### Added
+
 - Persistent vector implementation
 
 ### Fixed
+
 - GC crash on deeply nested let bindings
 
 ## [0.1.0-alpha.1] - 2025-XX-XX
 
 ### Added
+
 - Initial release with core.clj 500+ functions
 - Native backend with NaN boxing
 ```
@@ -2283,7 +2333,7 @@ README.md は簡潔に保ち、詳細は `docs/` に誘導する:
 ### 18.7 Beta ドキュメントの移行
 
 | Beta                                | 正式版                                         | 扱い              |
-|-------------------------------------|------------------------------------------------|-------------------|
+| ----------------------------------- | ---------------------------------------------- | ----------------- |
 | `docs/reference/architecture.md`    | `docs/developer/architecture.md`               | 英訳して移行      |
 | `docs/reference/vm_design.md`       | ADR-0007 + `docs/developer/vm.md`              | 分割して移行      |
 | `docs/reference/gc_design.md`       | ADR-0002 + `docs/developer/gc.md`              | 分割して移行      |
@@ -2419,7 +2469,7 @@ README.md は簡潔に保ち、詳細は `docs/` に誘導する:
 ### リスク管理
 
 | リスク                                | 影響 | 緩和策                                     |
-|---------------------------------------|------|--------------------------------------------|
+| ------------------------------------- | ---- | ------------------------------------------ |
 | NaN boxing の実装難度が想定以上       | 高   | Beta の tagged union にフォールバック可能  |
 | GC の safe point 設計が破綻           | 高   | 式境界 GC (Beta 方式) に縮退可能           |
 | upstream テスト変換の工数超過         | 中   | Tier 1 (SCI) のみで初期リリース            |
@@ -2447,7 +2497,7 @@ README.md は簡潔に保ち、詳細は `docs/` に誘導する:
 
 ### プロンプト本文
 
-````text
+```text
 # ClojureWasm 実装計画の策定
 
 ## コンテキスト
@@ -2504,15 +2554,15 @@ Phase 1 の具体的タスクを列挙。
 - コードはまだ書かない (計画フェーズ)
 - 英語コメント・英語ドキュメント方針に従う
 - future.md の設計方針に矛盾する判断がある場合は、理由を明記して提案
-````
+```
 
 ### プロンプトのカスタマイズ
 
-| 変数              | 説明                                         |
-|-------------------|----------------------------------------------|
-| `<BETA_REPO>`     | ClojureWasmBeta の絶対パス (CLAUDE.md に記載) |
-| Phase の範囲      | 最初は 1-3 に絞る (欲張らない)               |
-| TreeWalk の判断   | Beta 経験次第で事前に方針を決めてもよい       |
+| 変数            | 説明                                          |
+| --------------- | --------------------------------------------- |
+| `<BETA_REPO>`   | ClojureWasmBeta の絶対パス (CLAUDE.md に記載) |
+| Phase の範囲    | 最初は 1-3 に絞る (欲張らない)                |
+| TreeWalk の判断 | Beta 経験次第で事前に方針を決めてもよい       |
 
 ### 期待される成果物
 
