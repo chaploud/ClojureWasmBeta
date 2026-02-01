@@ -89,7 +89,13 @@ clojurewasm/
 │   ├── api/                     # Public API (§17)
 │   ├── common/                  # Shared code
 │   ├── native/                  # Native route specific
-│   └── wasm_rt/                 # wasm_rt route specific
+│   ├── wasm_rt/                 # wasm_rt route specific
+│   └── wasm/                    # Wasm InterOp (both routes)
+│       ├── loader.zig           # .wasm loading
+│       ├── runtime.zig          # Function invocation
+│       ├── interop.zig          # Memory ops & marshalling
+│       ├── wit_parser.zig       # WIT parser (Phase 2)
+│       └── wit_types.zig        # WIT type definitions (Phase 2)
 ├── core/
 │   └── core.clj                 # AOT compilation target (§9.6)
 ├── test/

@@ -48,9 +48,102 @@ Beta の Wasm 層は 10 API の薄いラッパー (623 行) にとどまった�
 「Wasm は高速プリミティブ層」という構想自体は正しいが、
 正式版では以下の段階を踏む必要がある:
 
-1. **Phase 1**: 型安全な境界 — Wasm 関数シグネチャに基づく自動変換、multi-value return
-2. **Phase 2**: 構造データ受け渡し — メモリ上の構造体マーシャリングヘルパー
-3. **Phase 3**: エコシステム連携 — Wasm で配布されたライブラリを Clojure から自然に使う
+1. **Phase 1: 型安全境界** — `wasm/fn` + シグネチャ検証 + multi-value return
+2. **Phase 2a: WIT パース + モジュールオブジェクト** — WIT 定義からモジュールオブジェクトを生成、ILookup でフィールドアクセス
+3. **Phase 2b: require-wasm マクロ** — ns システムへの統合 (Go/No-Go 判断付き)
+4. **Phase 3: Component Model 対応** — 複数モジュールの型安全な合成
+
+#### Phase 1: 型安全境界
+
+Beta では文字列ベースの `invoke` で型情報がなく、実行時エラーが遅延していた。
+Phase 1 ではシグネチャを明示し、呼び出し時に型検証を行う。
+
+```clojure
+;; モジュールをロード
+(def mod (wasm/load "math.wasm"))
+
+;; シグネチャを明示して関数を取得 — 型が合わなければロード時にエラー
+(def add (wasm/fn mod "add" {:params [:i32 :i32] :results [:i32]}))
+(add 1 2)  ;=> 3
+
+;; multi-value return はベクタで返る
+(def divmod (wasm/fn mod "divmod" {:params [:i32 :i32] :results [:i32 :i32]}))
+(divmod 10 3)  ;=> [3 1]
+
+;; 型不一致は呼び出し前に検出
+(add "hello" 2)
+;>> ExceptionInfo Wasm type mismatch: param 0 expected :i32, got string
+```
+
+#### Phase 2a: WIT パース + モジュールオブジェクト
+
+WIT 定義があれば、シグネチャの手動指定が不要になる。
+パース結果はモジュールオブジェクト (ILookup) として返り、キーワードで関数にアクセスできる。
+
+```clojure
+;; WIT 付き .wasm をロード → 関数名・型が自動解決
+(def img (wasm/load-wit "resize.wasm"))
+
+;; キーワードアクセスで呼び出し (シグネチャ指定不要)
+(img/resize-image buf 800 600)
+
+;; WIT record → Clojure map に自動変換 (§4 型マッピング参照)
+(img/get-metadata "photo.png")
+;=> {:width 1920, :height 1080, :format :png}
+
+;; WIT option<T> → nil or value (Clojure 慣用)
+(img/find-exif "photo.png")
+;=> nil  または  {:camera "X-T5", :iso 400}
+
+;; WIT result<T, E> → {:ok v} / {:err e}
+(img/decode "broken.webp")
+;=> {:err "invalid header"}
+
+;; モジュールの関数一覧を取得 (REPL 探索)
+(wasm/exports img)
+;=> [:resize-image :get-metadata :find-exif :decode]
+```
+
+#### Phase 2b: require-wasm マクロ (optional)
+
+Phase 2a の UX 評価後に Go/No-Go を判断。
+require と同じ感覚で Wasm モジュールを ns に統合する。
+
+```clojure
+;; ns 宣言に自然に組み込める
+(ns my-app.core
+  (:require [clojure.string :as str])
+  (:require-wasm [my:image-lib/resize :as img]
+                 [my:math-lib/linalg :as la]))
+
+(img/resize-image buf 800 600)
+(la/dot-product v1 v2)
+```
+
+#### Phase 3: Component Model
+
+複数の Wasm コンポーネントを型安全に合成。WASI 1.0 の安定を待って着手。
+
+```clojure
+;; 複数コンポーネントを合成 — WIT インターフェースで型整合を検証
+(def pipeline
+  (wasm/compose
+    (wasm/load-wit "decoder.wasm")
+    (wasm/load-wit "resize.wasm")
+    (wasm/load-wit "encoder.wasm")))
+
+;; 合成結果も通常のモジュールとして使える
+(pipeline/process "input.png" "output.jpg" {:width 800})
+```
+
+#### Phase 間の進化まとめ
+
+| Phase | ボイラープレート | 型安全性   | WIT 必要 |
+|-------|------------------|------------|----------|
+| 1     | シグネチャ手動   | 呼び出し時 | 不要     |
+| 2a    | ロードのみ       | ロード時   | 必要     |
+| 2b    | ns 宣言のみ      | ロード時   | 必要     |
+| 3     | 合成宣言のみ     | 合成時     | 必要     |
 
 ---
 
@@ -109,14 +202,59 @@ Beta では Value 型が 28+ variant の tagged union に膨張した。
 - ベクタ + キーワードで順序を保持
 - WIT <-> Clojure DSL の相互変換
 
-### 現実的な段階
+### 実装戦略 (§1 Phase 対応)
 
 WIT/Component Model は正式版でも最初から取り組むべき領域ではない。
-Wasm ライブラリのエコシステムが成熟してから着手しても遅くない。
+§1 の Phase に対応させて段階的に着手する。
 
-1. **初期**: Wasm モジュールの手動ロード・呼び出し (Beta 相当の機能強化版)
-2. **中期**: WIT 定義からの Clojure ラッパー自動生成
-3. **長期**: Component Model 対応 (複数モジュールの型安全な合成)
+1. **Phase 1** (初期リリース): `wasm/fn` による手動バインディング。WIT 不要
+2. **Phase 2a** (Alpha 後): WIT パーサーで `.wasm` からモジュールオブジェクトを自動生成
+3. **Phase 2b** (optional): `require-wasm` マクロで ns 統合。Phase 2a の UX 評価後に Go/No-Go 判断
+4. **Phase 3** (v1.0 以降): Component Model 対応。WASI 1.0 安定を待って着手
+
+### WIT パーサー実装方針
+
+WIT パーサーは **Zig で自前実装** する。
+
+**理由**:
+- WIT の文法は比較的単純 (interface/world/type/function 定義のみ)
+- 外部依存 (wit-parser C ライブラリ) を入れるとビルド複雑性が跳ね上がる
+- Zig の comptime を活かしてパース結果をコンパイル時テーブルに変換できる
+
+**出力形式**:
+- パース結果は Clojure データ (map/vector) として Value に変換
+- モジュールオブジェクトは ILookup プロトコルを実装し、キーワードアクセスを提供
+
+**フォールバック**:
+- 実装工数が想定を超えた場合、wit-parser の C FFI にフォールバック可能
+- C FFI は native 路線のみ対応 (wasm_rt 路線では使えない)
+
+### WIT 型マッピングテーブル
+
+| WIT 型          | Clojure 表現           | 備考                          |
+|-----------------|------------------------|-------------------------------|
+| u32/i32         | int                    | NaN boxing 直接               |
+| f32/f64         | float                  | NaN boxing 直接               |
+| string          | string                 | UTF-8 マーシャリング          |
+| list\<T\>       | vector                 | 永続ベクタ変換                |
+| record { ... }  | map (keyword keys)     | {:field-name value}           |
+| enum { ... }    | keyword                | :variant-name (kebab-case)    |
+| variant { ... } | tagged map             | {:tag :some, :value 42}       |
+| option\<T\>     | nil or value           | Clojure 慣用                  |
+| result\<T, E\>  | {:ok v} / {:err e}     | または例外 (設定可能)         |
+| flags { ... }   | set of keywords        | #{:flag-a :flag-b}            |
+
+### 提案A vs 提案B 比較
+
+| 観点           | 提案A (require-wasm)          | 提案B (モジュールオブジェクト)    |
+|----------------|-------------------------------|-----------------------------------|
+| Clojure らしさ | ◎ require と同じ感覚          | ○ オブジェクト指向的              |
+| 名前空間管理   | ◎ ns システムに統合           | △ モジュール変数が名前空間を占有  |
+| 実装の複雑さ   | △ require マクロの拡張が必要  | ◎ 既存 Value 型拡張のみ           |
+| エディタ補完   | ◎ REPL で ns 探索可能         | △ モジュールオブジェクト経由      |
+| Beta 互換      | ○ 段階的移行可能              | ◎ 完全互換                        |
+
+**判断ポイント**: Phase 2a (提案B) を先に実装し、UX 評価後に Phase 2b (提案A) の Go/No-Go を決定
 
 ---
 
@@ -1479,17 +1617,44 @@ Beta は組み込み関数のみだったが、正式版ではユーザーが独
 ### 15.2 Wasm モジュール拡張
 
 §1 の Wasm 活用の発展形。ユーザーが `.wasm` ファイルを読み込んで関数を呼べる。
+§1 Phase 1〜2b に対応する API を段階的に提供する。
+
+#### Phase 1: 型安全境界
 
 ```clojure
-;; Wasm モジュールのロードと呼び出し (構想)
-(def wasm-mod (wasm/load "image_resize.wasm"))
-(def resize (wasm/fn wasm-mod "resize" [:i32 :i32 :i32] :i32))
+;; シグネチャ指定による型安全な呼び出し
+(def mod (wasm/load "image_resize.wasm"))
+(def resize (wasm/fn mod "resize"
+              {:params [:i32 :i32 :i32] :results [:i32]}))
 (resize buf width height)
+```
+
+#### Phase 2a: WIT パース + モジュールオブジェクト
+
+```clojure
+;; WIT 定義から自動でモジュールオブジェクトを生成
+(def img (wasm/load-wit "image_resize.wasm"))
+
+;; キーワードアクセスで WIT export 関数を呼び出し
+(img/resize-image buf 800 600)
+
+;; WIT record 型は Clojure map に自動変換
+(img/get-metadata path)
+;=> {:width 1920, :height 1080, :format :png}
+```
+
+#### Phase 2b: require-wasm マクロ (optional)
+
+```clojure
+;; ns システムに統合 — require と同じ感覚
+(require-wasm '[my:image-lib/resize :as img])
+(img/resize-image buf 800 600)
 ```
 
 - 両路線で動作する唯一の拡張方式
 - WASI 対応モジュールも利用可能
-- 型安全な境界は §1 Phase 1-3 で段階的に整備
+- 型安全な境界は §1 Phase 1〜3 で段階的に整備
+- WIT 型マッピングは §4 参照
 
 ### 15.3 Zig プラグイン機構 (native 路線向け)
 
@@ -2163,9 +2328,30 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 
 ### Phase 6: Wasm 連携強化
 
-- §1 Phase 1-3 (型安全境界 → 構造データ → エコシステム) を実装
+§1 の Phase 構成に対応。Phase 6.3 は Go/No-Go 判断付き。
+
+#### Phase 6.1: 型安全境界 (初期リリース)
+
+- `wasm/fn` + シグネチャ検証 + multi-value return (§1 Phase 1)
 - Wasm モジュールのロード・呼び出し API (§15.2)
 - native 路線での Wasm 実行エンジン統合 (§6)
+
+#### Phase 6.2: WIT パース + モジュールオブジェクト (Alpha 後)
+
+- WIT パーサーの Zig 実装 (§4)
+- `wasm/load-wit` によるモジュールオブジェクト生成
+- WIT 型マッピング (§4 テーブル参照) の実装
+
+#### Phase 6.3: require-wasm マクロ (optional, Go/No-Go 判断)
+
+- Phase 6.2 の UX 評価を踏まえて着手判断
+- `require-wasm` マクロで ns システムに統合
+- エディタ補完・REPL 探索の実現
+
+#### Phase 6.4: Component Model (v1.0 以降, WASI 1.0 待ち)
+
+- 複数モジュールの型安全な合成 (`wasm/compose`)
+- WASI 1.0 の安定を待ってから着手
 
 ### Phase 7: nREPL + ツール統合
 
@@ -2216,6 +2402,8 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 | core.clj AOT のビルド時間増           | 中   | core.bc キャッシュ、インクリメンタルビルド |
 | core.clj ブートストラップ順序の複雑さ | 中   | defmacro を special form に残すことで回避  |
 | 個人開発のバス因子                    | 高   | ドキュメント・ADR・テストで知識を外部化    |
+| WIT パーサー実装の工数超過            | 中   | wit-parser C FFI でフォールバック (§4)     |
+| require-wasm の ns 衝突問題           | 低   | Phase 2b を optional に (Go/No-Go 判断)    |
 
 ---
 
