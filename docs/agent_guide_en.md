@@ -62,11 +62,10 @@ Required references change by phase, so add them incrementally.
 
 ```
 clojurewasm/
-├── CLAUDE.md                    # Agent instructions (main)
-├── CLAUDE.local.md              # Local-only settings (.gitignore)
-├── .claude/
-│   ├── settings.json            # Permissions & hook settings
-│   ├── skills/                  # Custom skills (Anthropic Skills format)
+├── .claude/                       # Claude Code
+│   ├── CLAUDE.md                  # Agent instructions (main)
+│   ├── settings.json              # Permissions & hook settings
+│   ├── skills/                    # Custom skills (Anthropic Skills format)
 │   │   ├── tdd/
 │   │   │   ├── SKILL.md
 │   │   │   └── references/tdd-patterns.md
@@ -75,60 +74,65 @@ clojurewasm/
 │   │   └── compat-test/
 │   │       ├── SKILL.md
 │   │       └── references/edge-cases.md
-│   └── agents/                  # Custom subagents
+│   └── agents/                    # Custom subagents
 │       ├── security-reviewer.md
 │       ├── compat-checker.md
 │       ├── test-runner.md
 │       ├── codebase-explorer.md
 │       └── debugger.md
-├── flake.nix                    # Toolchain definition
+├── .dev/                          # Internal development (git-tracked)
+│   ├── plan/                      # Session plans & logs
+│   │   ├── memo.md                # Current state only (keep small)
+│   │   ├── active/                # Current phase plan+log (1 pair only)
+│   │   │   ├── plan_0003_vm_bytecode.md
+│   │   │   └── log_0003_vm_bytecode.md
+│   │   └── archive/              # Completed phase plans+logs (paired)
+│   │       ├── plan_0001_tokenizer_reader.md
+│   │       ├── log_0001_tokenizer_reader.md
+│   │       ├── plan_0002_analyzer.md
+│   │       └── log_0002_analyzer.md
+│   ├── status/                    # Internal progress tracking
+│   │   ├── vars.yaml              # Var implementation status
+│   │   ├── bench.yaml             # Benchmarks
+│   │   └── namespaces.yaml        # Namespace correspondence status
+│   └── notes/                     # Technical memos & thinking notes
+├── flake.nix                      # Toolchain definition
 ├── flake.lock
 ├── build.zig
 ├── build.zig.zon
 ├── src/
-│   ├── api/                     # Public API (§17)
-│   ├── common/                  # Shared code
-│   ├── native/                  # Native route specific
-│   ├── wasm_rt/                 # wasm_rt route specific
-│   └── wasm/                    # Wasm InterOp (both routes)
-│       ├── loader.zig           # .wasm loading
-│       ├── runtime.zig          # Function invocation
-│       ├── interop.zig          # Memory ops & marshalling
-│       ├── wit_parser.zig       # WIT parser (Phase 2)
-│       └── wit_types.zig        # WIT type definitions (Phase 2)
-├── core/
-│   └── core.clj                 # AOT compilation target (§9.6)
+│   ├── api/                       # Public API (§17)
+│   ├── common/                    # Shared code
+│   ├── native/                    # Native route specific
+│   ├── wasm_rt/                   # wasm_rt route specific
+│   └── wasm/                      # Wasm InterOp (both routes)
+│       ├── loader.zig             # .wasm loading
+│       ├── runtime.zig            # Function invocation
+│       ├── interop.zig            # Memory ops & marshalling
+│       ├── wit_parser.zig         # WIT parser (Phase 2)
+│       └── wit_types.zig          # WIT type definitions (Phase 2)
+├── clj/                           # Clojure source (AOT → @embedFile)
+│   └── core.clj                   # AOT compilation target (§9.6)
 ├── test/
 │   ├── unit/
 │   ├── e2e/
-│   └── imported/                # Upstream tests (§10)
-├── plan/
-│   ├── memo.md                  # Current state only (keep small)
-│   ├── active/                  # Current phase plan+log (1 pair only)
-│   │   ├── plan_0003_vm_bytecode.md
-│   │   └── log_0003_vm_bytecode.md
-│   └── archive/                 # Completed phase plans+logs (paired)
-│       ├── plan_0001_tokenizer_reader.md
-│       ├── log_0001_tokenizer_reader.md
-│       ├── plan_0002_analyzer.md
-│       └── log_0002_analyzer.md
-├── status/
-│   ├── vars.yaml                # Var implementation status
-│   ├── bench.yaml               # Benchmarks
-│   └── namespaces.yaml          # Namespace correspondence status
-├── doc/
-│   └── adr/                     # Architecture Decision Records
-├── book/                        # mdBook documentation
-├── bench/                       # Benchmark suite
-├── scripts/                     # CI / quality gate scripts
-└── examples/
+│   └── upstream/                  # Upstream test conversions (§10)
+├── docs/                          # External documentation
+│   ├── developer/                 # Developer practical guides
+│   ├── compatibility.md           # Compatibility status (auto-generated)
+│   ├── differences.md             # Differences from upstream Clojure
+│   └── examples/                  # Sample code
+├── bench/                         # Benchmark suite
+├── scripts/                       # CI / quality gate scripts
+├── LICENSE
+└── README.md
 ```
 
-### 2.2 plan/ Operation Flow
+### 2.2 .dev/plan/ Operation Flow
 
 ```
 Phase start:
-  1. Create plan_NNNN_title.md in plan/active/ (goals & task list)
+  1. Create plan_NNNN_title.md in .dev/plan/active/ (goals & task list)
   2. Update memo.md (current phase number & active file name)
 
 During implementation:
@@ -137,8 +141,8 @@ During implementation:
   5. Update "Next task" in memo.md
 
 Phase completion:
-  6. Move plan + log to archive/
-  7. Create next phase plan in active/
+  6. Move plan + log to .dev/plan/archive/
+  7. Create next phase plan in .dev/plan/active/
   8. Update memo.md
 ```
 
@@ -151,14 +155,14 @@ Phase completion:
 ### 2.3 memo.md Structure
 
 memo.md records **current state only**. Keep it small.
-Task details go in the active/ plan file.
+Task details go in the .dev/plan/active/ plan file.
 
 ```markdown
 # ClojureWasm Development Memo
 
 ## Current State
 
-- Current phase: plan/active/plan_0003_vm_bytecode.md
+- Current phase: .dev/plan/active/plan_0003_vm_bytecode.md
 - Last completed: Basic node generation in Analyzer
 - Next task: OpCode definition and stack machine foundation
 - Blockers: none
@@ -236,7 +240,7 @@ Full-scratch Clojure implementation in Zig. Targeting behavioral compatibility (
 
 Reference implementation: <Beta path> (via add-dir)
 
-Current state: see plan/memo.md
+Current state: see .dev/plan/memo.md
 Design details: see docs/future.md
 
 ## Language Policy
@@ -267,25 +271,25 @@ IMPORTANT: Strictly follow the TDD approach recommended by t-wada (Takuto Wada).
 ## Session Workflow
 
 ### On Start
-1. Read plan/memo.md (identify current phase and next task)
-2. Check plan/active/ plan file for task details
+1. Read .dev/plan/memo.md (identify current phase and next task)
+2. Check .dev/plan/active/ plan file for task details
 
 ### During Development
 1. Implement via TDD cycle (above)
 2. Reference Beta code, but redesign from understanding — no copy-paste
 3. Commit frequently when tests pass
-4. Append discoveries, completions, and plan changes to plan/active/ log file
+4. Append discoveries, completions, and plan changes to .dev/plan/active/ log file
 
 ### On Task Completion
-1. Update the task status to "done" in plan/active/ plan file
+1. Update the task status to "done" in .dev/plan/active/ plan file
 2. Update "Next task" in memo.md
 3. Git commit at meaningful boundaries
 4. Automatically proceed to next pending task
 
 ### On Phase Completion
-1. Move plan + log to plan/archive/
+1. Move plan + log to .dev/plan/archive/
 2. Add entry to "Completed Phases" table in memo.md
-3. Create next phase plan in plan/active/ (use Plan Mode)
+3. Create next phase plan in .dev/plan/active/ (use Plan Mode)
 
 ## Build & Test
 
@@ -313,7 +317,7 @@ Production version is a full redesign from Beta. Key changes:
 - GcStrategy trait for GC abstraction -> future.md §5
 - BuiltinDef with metadata (doc, arglists, added) -> future.md §10
 - core.clj AOT compilation -> future.md §9.6
-- Design decisions recorded as ADRs in doc/adr/
+- Design decisions recorded as ADRs in docs/adr/
 ````
 
 ---
@@ -435,7 +439,7 @@ description: >
   Use when user says "progress", "status", "what's next", "phase check",
   or at the start of a session to orient.
   Do NOT use for running tests only (use zig build test directly).
-compatibility: Claude Code only. Requires plan/ directory structure.
+compatibility: Claude Code only. Requires .dev/plan/ directory structure.
 metadata:
   author: clojurewasm
   version: 1.0.0
@@ -446,13 +450,13 @@ Check progress of the current development phase.
 
 ## Steps
 
-1. Read `plan/memo.md` — identify current phase and position
-2. Read active plan file in `plan/active/` — check task completion
+1. Read `.dev/plan/memo.md` — identify current phase and position
+2. Read active plan file in `.dev/plan/active/` — check task completion
 3. Run `zig build test` — report pass/fail counts
-4. Aggregate `status/vars.yaml` — implementation coverage
+4. Aggregate `.dev/status/vars.yaml` — implementation coverage
 5. List pending tasks and recommend next action
 6. Report blockers if any
-7. Show latest entry from the active log file in `plan/active/`
+7. Show latest entry from the active log file in `.dev/plan/active/`
 
 ## Output Format
 
@@ -909,9 +913,6 @@ Resume that compatibility check and also verify take and drop
             yq-go                    # YAML processing (vars.yaml etc.)
             jq                       # JSON processing
 
-            # === Documentation ===
-            mdbook                   # mdBook build
-
             # === Dev Tools ===
             python3                  # Scripts & test generation
             nodePackages.prettier    # Markdown formatter
@@ -923,7 +924,7 @@ Resume that compatibility check and also verify take and drop
 
           shellHook = ''
             echo "ClojureWasm dev shell (Zig $(zig version))"
-            echo "Tools: clojure, wasmtime, hyperfine, yq, mdbook"
+            echo "Tools: clojure, wasmtime, hyperfine, yq"
           '';
         };
       });
@@ -940,7 +941,6 @@ Resume that compatibility check and also verify take and drop
 | babashka  | Test generation scripts            | Upstream test conversion                 |
 | hyperfine | Precise benchmark measurement      | Performance improvement                  |
 | yq        | Query/update vars.yaml, bench.yaml | Status checks                            |
-| mdbook    | Documentation build & preview      | Documentation updates                    |
 | gh        | Issue/PR creation, CI status       | PR creation                              |
 
 ---
@@ -959,15 +959,15 @@ Execute the following in Plan Mode:
 1. Set up toolchain with flake.nix (verify with nix develop)
 2. Create build.zig scaffold (zig build / zig build test must pass)
 3. Create src/ directory structure per docs/future.md §17
-4. Create initial versions of CLAUDE.md, plan/memo.md, status/vars.yaml
-5. Create scaffold for doc/adr/0001-nan-boxing.md
+4. Create initial versions of CLAUDE.md, .dev/plan/memo.md, .dev/status/vars.yaml
+5. Create scaffold for docs/adr/0001-nan-boxing.md
 6. git init && initial commit
 ```
 
 ### Phase 1: Reader + Analyzer
 
 ```
-Implement the Reader via TDD, following Phase 1 tasks in plan/memo.md.
+Implement the Reader via TDD, following Phase 1 tasks in .dev/plan/memo.md.
 
 References:
 - Beta's src/reader/reader.zig (reference structure, but redesign — no copy)
@@ -984,7 +984,7 @@ Notes:
 ### Phase 2: Native Route VM
 
 ```
-Implement the VM via TDD, following Phase 2 tasks in plan/memo.md.
+Implement the VM via TDD, following Phase 2 tasks in .dev/plan/memo.md.
 
 References:
 - Beta's src/runtime/ (value.zig, evaluator.zig, vm/vm.zig)
@@ -1005,7 +1005,7 @@ Test strategy:
 ### Phase 3: Builtin Functions + core.clj AOT
 
 ```
-Implement builtin functions following Phase 3 tasks in plan/memo.md.
+Implement builtin functions following Phase 3 tasks in .dev/plan/memo.md.
 
 Two implementation paths:
 1. Zig builtins (vm_intrinsic + runtime_fn):
@@ -1014,14 +1014,14 @@ Two implementation paths:
    - Use upstream core.clj docstrings verbatim (for compatibility)
 
 2. core.clj AOT (core_fn + core_macro):
-   - Define in Clojure in core/core.clj
+   - Define in Clojure in clj/core.clj
    - Build AOT pipeline at build time (future.md §9.6)
    - Reference upstream bootstrap order
 
 Compatibility testing:
 - Test that each function returns the same output as upstream
 - Verify upstream behavior with clj-nrepl-eval before writing tests
-- Record kind, ns, added in status/vars.yaml
+- Record kind, ns, added in .dev/status/vars.yaml
 ```
 
 ### Phase 4+: Optimization & Test Expansion
@@ -1096,10 +1096,10 @@ Can also be done within a single session using subagent chaining:
 
 ```bash
 # Fan-out: batch conversion of upstream tests
-for file in $(cat test/imported/pending.txt); do
-  claude -p "Convert test/imported/$file for ClojureWasm.\
+for file in $(cat test/upstream/pending.txt); do
+  claude -p "Convert test/upstream/$file for ClojureWasm.\
     Follow Tier 1 rules (future.md §10).\
-    Save converted file to test/imported/converted/" \
+    Save converted file to test/upstream/converted/" \
     --allowedTools "Read,Write,Bash(zig build test *)"
 done
 ```
@@ -1123,13 +1123,13 @@ echo "=== vars.yaml consistency check ==="
 yq '.vars.clojure_core | to_entries | map(select(.value.kind != null))
     | map(select(.value.kind |
       test("^(special_form|vm_intrinsic|runtime_fn|core_fn|core_macro)$") | not))
-    | length' status/vars.yaml | grep -q '^0$'
+    | length' .dev/status/vars.yaml | grep -q '^0$'
 
 echo "=== namespace correspondence check ==="
 # Verify ns field is set for all done vars
 yq '.vars.clojure_core | to_entries
     | map(select(.value.status == "done" and .value.ns == null))
-    | length' status/vars.yaml | grep -q '^0$'
+    | length' .dev/status/vars.yaml | grep -q '^0$'
 
 echo "All checks passed."
 ```
@@ -1172,7 +1172,7 @@ jobs:
 ## 11. ADR Template
 
 ```markdown
-# doc/adr/0000-template.md
+# docs/adr/0000-template.md
 
 # ADR-NNNN: Title
 

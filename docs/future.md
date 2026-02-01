@@ -1236,7 +1236,7 @@ ClojureWasm は特定バージョンの Clojure に準拠するため、
 # 例: 1.13 で追加された関数のうち未実装のものを抽出
 yq '.vars.clojure_core | to_entries
     | map(select(.value.added == "1.13" and .value.status != "done"))
-    | .[].key' status/vars.yaml
+    | .[].key' .dev/status/vars.yaml
 ```
 
 #### 名前空間対応の保証
@@ -1375,7 +1375,7 @@ Analyzer は `special_forms` テーブルを comptime で参照し、
 #### vars.yaml / compat_status.yaml との統合
 
 ```yaml
-# status/vars.yaml (拡張構想)
+# .dev/status/vars.yaml (拡張構想)
 clojure_ref_version: "1.12.0"  # 準拠を目指す本家バージョン
 
 vars:
@@ -1513,7 +1513,7 @@ Beta で学んだ「静かに壊れるバグ」「GC の網羅性」「暗黙の
 - **C/Zig ABI と FFI** (§15): 3階層の拡張機構 (Wasm / Zig プラグイン / C ABI)
 - **リポジトリ管理** (§16): GitHub Organization、CI/CD、リリース戦略
 - **ディレクトリ構造** (§17): 参考プロジェクト分析に基づく構成
-- **ドキュメント戦略** (§18): 4層構造、mdBook、ADR
+- **ドキュメント戦略** (§18): 4層構造、Markdown ドキュメント、ADR
 - **移行ロードマップ** (§19): Phase 0〜11 の具体的なステップ
 
 ---
@@ -1929,10 +1929,10 @@ clojurewasm/
     └── scoop-clojurewasm # Windows Scoop bucket
 ```
 
-- **メインリポジトリに集約**: src, book/ (mdBook), examples/, bench/ を1リポに置く
+- **メインリポジトリに集約**: src, docs/ (developer + examples), bench/ を1リポに置く
   - ドキュメントとコードを同じコミットで更新できる
-  - examples/ をテスト対象にできる (CI で壊れを検出)
-  - `zig build test && mdbook build` が1パイプラインで完結
+  - docs/examples/ をテスト対象にできる (CI で壊れを検出)
+  - `zig build test` が1パイプラインで完結
 - **配布チャネルのみ別リポ**: Homebrew は `homebrew-xxx` 命名規則で別リポ必須。
   他の OS 向けパッケージマネージャも同様 (各ツールの慣習に従う)
 - 配布チャネル以外の分離は、コントリビュータが増えて必要性が生じてから検討
@@ -1989,7 +1989,7 @@ jobs:
 
   compat:
     steps:
-      - run: bash test/imported/run_all.sh
+      - run: bash test/upstream/run_all.sh
       - run: diff compat_status.yaml expected_status.yaml
 
   bench:
@@ -2046,88 +2046,116 @@ CODE_OF_CONDUCT.md は Contributor Covenant v2.1 を採用。
 | 参考元        | 採用するもの                | 不採用 (理由)                             |
 |---------------|-----------------------------|-------------------------------------------|
 | jank          | `third-party/` ベンダリング | `src/` + `include/` 分離 (Zig では不要)   |
-| Babashka      | `doc/adr/` (ADR)            | feature-* サブモジュール (モノリポで十分) |
+| Babashka      | `docs/adr/` (ADR)           | feature-* サブモジュール (モノリポで十分) |
 | SCI           | `api/` と `impl/` の分離    | —                                         |
 | ClojureScript | フェーズ別モジュール分離    | —                                         |
 
 ### 17.2 ディレクトリツリー
 
+開発初期〜Alpha 前の構成。リリース時に追加するものは別記。
+
 ```
 clojurewasm/
+├── .claude/                       # Claude Code
+│   ├── CLAUDE.md                  # エージェント指示 (本体)
+│   ├── settings.json
+│   ├── skills/
+│   └── agents/
+│
+├── .dev/                          # 開発内部 (git 管理)
+│   ├── plan/                      # セッション計画・ログ
+│   │   ├── memo.md
+│   │   ├── active/
+│   │   └── archive/
+│   ├── status/                    # 内部進捗追跡
+│   │   ├── vars.yaml
+│   │   ├── bench.yaml
+│   │   └── namespaces.yaml
+│   └── notes/                     # 技術メモ・思考ノート
+│
 ├── src/
-│   ├── api/                  # 公開 API (embed 用インターフェース)
-│   │   ├── eval.zig          # evaluate(), load-file()
-│   │   ├── repl.zig          # REPL エントリポイント
-│   │   └── plugin.zig        # プラグイン API (§15)
+│   ├── api/                       # 公開 API (embed 用インターフェース)
+│   │   ├── eval.zig               # evaluate(), load-file()
+│   │   ├── repl.zig               # REPL エントリポイント
+│   │   └── plugin.zig             # プラグイン API (§15)
 │   │
-│   ├── common/               # 両路線で共有
-│   │   ├── reader/           # Tokenizer, Reader, Form
-│   │   ├── analyzer/         # Analyzer, Node, macro expansion
-│   │   ├── bytecode/         # OpCode 定義、定数テーブル
-│   │   ├── value/            # Value 型定義
-│   │   └── builtin/          # 組み込み関数 (意味論共通部)
+│   ├── common/                    # 両路線で共有
+│   │   ├── reader/                # Tokenizer, Reader, Form
+│   │   ├── analyzer/              # Analyzer, Node, macro expansion
+│   │   ├── bytecode/              # OpCode 定義、定数テーブル
+│   │   ├── value/                 # Value 型定義
+│   │   └── builtin/               # 組み込み関数 (意味論共通部)
 │   │
-│   ├── native/               # 超高速・単一バイナリ路線
-│   │   ├── vm/               # VM 実行エンジン (NaN boxing)
-│   │   ├── gc/               # 自前 GC
-│   │   ├── optimizer/        # 定数畳み込み、fused reduce
+│   ├── native/                    # 超高速・単一バイナリ路線
+│   │   ├── vm/                    # VM 実行エンジン (NaN boxing)
+│   │   ├── gc/                    # 自前 GC
+│   │   ├── optimizer/             # 定数畳み込み、fused reduce
 │   │   └── main.zig
 │   │
-│   └── wasm_rt/              # Wasm ランタイムフリーライド路線
-│       ├── vm/               # Wasm target VM
-│       ├── gc_bridge/        # WasmGC 連携
-│       ├── wasm_backend/     # WasmBackend trait 実装
-│       └── main.zig
+│   ├── wasm_rt/                   # Wasm ランタイムフリーライド路線
+│   │   ├── vm/                    # Wasm target VM
+│   │   ├── gc_bridge/             # WasmGC 連携
+│   │   ├── wasm_backend/          # WasmBackend trait 実装
+│   │   └── main.zig
+│   │
+│   └── wasm/                      # Wasm InterOp (両路線共通)
+│
+├── clj/                           # Clojure ソース (AOT → @embedFile)
+│   └── core.clj                   # Phase 5 で string.clj, set.clj 等追加
 │
 ├── test/
-│   ├── unit/                 # ユニットテスト (モジュール単位)
-│   ├── e2e/                  # エンドツーエンドテスト
-│   └── imported/             # upstream テスト (§10)
+│   ├── unit/                      # ユニットテスト (モジュール単位)
+│   ├── e2e/                       # エンドツーエンドテスト
+│   └── upstream/                  # upstream テスト変換 (§10)
 │       ├── sci/
 │       ├── cljs/
 │       └── clojure/
 │
-├── bench/                    # ベンチマークスイート
-├── third-party/              # ベンダリングされた依存 (§14.4)
-│   └── versions.txt
+├── docs/                          # 外向きドキュメント
+│   ├── developer/                 # 開発者向け実践ガイド
+│   │   ├── source-guide.md
+│   │   ├── adding-builtins.md
+│   │   ├── adding-types.md
+│   │   ├── debugging.md
+│   │   ├── performance.md
+│   │   └── wasm-module-dev.md
+│   ├── compatibility.md           # 互換性ステータス (自動生成)
+│   ├── benchmarks.md              # ベンチマーク結果・解説
+│   ├── differences.md             # 本家 Clojure との差異
+│   └── examples/                  # サンプルコード集
 │
-├── core/                     # Clojure ソース (AOT コンパイル対象、§9.6)
-│   └── core.clj
+├── bench/                         # ベンチマークスイート
+├── scripts/                       # CI・品質ゲートスクリプト
 │
-├── book/                     # mdBook ソース (§18)
-│   └── src/
-│
-├── doc/
-│   └── adr/                  # Architecture Decision Records (§18)
-│       ├── 0001-nan-boxing.md
-│       ├── 0002-gc-strategy.md
-│       └── template.md
-│
-├── examples/                 # サンプルコード
-├── status/                   # 実装状況・ベンチマーク (Beta から継承)
-│
-├── build.zig                 # comptime で native / wasm_rt を選択
-├── build.zig.zon             # Zig 依存管理
-├── LICENSE                   # EPL-1.0
-├── README.md
-├── CONTRIBUTING.md
-├── CODE_OF_CONDUCT.md
-├── SECURITY.md               # §14.5
-└── CHANGELOG.md              # §18
+├── build.zig                      # comptime で native / wasm_rt を選択
+├── build.zig.zon                  # Zig 依存管理
+├── flake.nix
+├── flake.lock
+├── LICENSE                        # EPL-1.0
+└── README.md
+```
+
+**リリース時に追加**:
+
+```
+docs/adr/           # Architecture Decision Records (.dev/notes/ から昇格)
+third-party/        # ベンダリングされた依存 (§14.4)
+CONTRIBUTING.md, CHANGELOG.md, CODE_OF_CONDUCT.md, SECURITY.md
 ```
 
 ### 17.3 Beta からの変更点
 
-| 項目           | Beta                         | 正式版                                    |
-|----------------|------------------------------|-------------------------------------------|
-| ソース構成     | `src/` フラット              | `src/api,common,native,wasm_rt/`          |
-| Clojure ソース | なし (全て Zig)              | `core/core.clj` (AOT コンパイル、§9.6)    |
-| テスト構成     | `test/` フラット             | `test/unit,e2e,imported/`                 |
-| 依存管理       | Git submodule (zware)        | `third-party/` ベンダリング               |
-| ドキュメント   | `docs/` (Markdown)           | `book/` (mdBook) + `doc/adr/`             |
-| 設計記録       | `plan/` (非公開ノート)       | `doc/adr/` (公開 ADR)                     |
-| 実装状況追跡   | `status/vars.yaml`           | `status/vars.yaml` + `compat_status.yaml` |
-| ビルド設定     | `build.zig` (単一ターゲット) | `build.zig` (comptime 切替)               |
+| 項目           | Beta                         | 正式版                                       |
+|----------------|------------------------------|----------------------------------------------|
+| ソース構成     | `src/` フラット              | `src/api,common,native,wasm_rt/`             |
+| Clojure ソース | なし (全て Zig)              | `clj/core.clj` (AOT コンパイル、§9.6)       |
+| テスト構成     | `test/` フラット             | `test/unit,e2e,upstream/`                    |
+| 依存管理       | Git submodule (zware)        | `third-party/` ベンダリング (リリース時)     |
+| ドキュメント   | `docs/` (Markdown)           | `docs/` (Markdown) + `docs/adr/` (リリース時) |
+| 設計記録       | `plan/` (非公開ノート)       | `docs/adr/` (公開 ADR) + `.dev/plan/`       |
+| 実装状況追跡   | `status/vars.yaml`           | `.dev/status/vars.yaml` + `compat_status.yaml` |
+| 開発者ガイド   | `docs/reference/` (内部)     | `docs/developer/` (外向き)                   |
+| ビルド設定     | `build.zig` (単一ターゲット) | `build.zig` (comptime 切替)                  |
 
 ### 17.4 §8 との関係
 
@@ -2140,32 +2168,31 @@ clojurewasm/
 
 ### 18.1 4層構造
 
-| 層                 | 対象読者           | 内容                            | 形式          |
-|--------------------|--------------------|---------------------------------|---------------|
-| Getting Started    | 初めてのユーザー   | インストール、Hello World、REPL | mdBook Ch.1   |
-| Language Reference | Clojure 経験者     | 互換性表、差異、独自機能        | mdBook Ch.2-5 |
-| Developer Guide    | コントリビューター | ビルド方法、テスト、PR ガイド   | mdBook Ch.6-8 |
-| Internals          | コア開発者         | VM 設計、GC、コンパイラ         | mdBook Ch.9+  |
+| 層                 | 対象読者           | 内容                            | 形式                  |
+|--------------------|--------------------|---------------------------------|-----------------------|
+| Getting Started    | 初めてのユーザー   | インストール、Hello World、REPL | `README.md` + `docs/` |
+| Language Reference | Clojure 経験者     | 互換性表、差異、独自機能        | `docs/` (Markdown)    |
+| Developer Guide    | コントリビューター | ビルド方法、テスト、PR ガイド   | `docs/developer/`     |
+| Internals          | コア開発者         | VM 設計、GC、コンパイラ         | `docs/developer/`     |
 
-### 18.2 mdBook 採用
+### 18.2 Markdown ドキュメント (mdBook 不採用)
 
-jank が mdBook + GitHub Pages でドキュメントを公開しており、
-Rust/Zig エコシステムでは事実上の標準。
+開発初期〜Alpha では `docs/` 配下に Markdown ファイルを直接配置する。
+mdBook は開発初期のオーバーヘッドに見合わないため不採用とした。
 
 メリット:
-- Markdown ベースで記述コスト低
-- `book.toml` + GitHub Actions で自動デプロイ
-- 検索機能内蔵
-- コードハイライト対応 (Clojure, Zig)
+- ビルドステップ不要、Markdown ファイルをそのまま GitHub で閲覧可能
+- ドキュメントツールの依存が増えない
+- 必要に応じて将来 mdBook や他のツールへ移行可能 (Markdown のため移行コスト低)
 
 デプロイ:
-- `main` push → GitHub Actions → GitHub Pages (`book.clojurewasm.org` 等)
-- PR 時はプレビュービルドで確認
+- GitHub リポジトリ上で直接閲覧 (追加のデプロイ不要)
+- 将来的に GitHub Pages で静的サイト化する場合は別途検討
 
 ### 18.3 ADR (Architecture Decision Records)
 
 Babashka が `doc/dev/` にメモを残す方式を採用しているが、
-正式版ではより構造化された ADR 形式で記録する。
+正式版ではより構造化された ADR 形式で `docs/adr/` に記録する。
 
 ADR テンプレート:
 
@@ -2209,7 +2236,7 @@ Accepted / Superseded by ADR-MMMM / Deprecated
 
 §10 の `compat_status.yaml` から以下を自動生成する:
 
-- mdBook 内の互換性テーブル (関数ごとの pass/fail/skip 一覧)
+- `docs/compatibility.md` 内の互換性テーブル (関数ごとの pass/fail/skip 一覧)
 - README.md のバッジ (`Compatibility: 87% (412/474 pass)`)
 - GitHub Pages のダッシュボード
 
@@ -2243,7 +2270,7 @@ Keep a Changelog 形式 (https://keepachangelog.com/) を採用:
 
 ### 18.6 README.md 構成方針
 
-README.md は簡潔に保ち、詳細は mdBook に誘導する:
+README.md は簡潔に保ち、詳細は `docs/` に誘導する:
 
 1. プロジェクト概要 (3-5 行)
 2. クイックスタート (インストール + 実行例)
@@ -2255,16 +2282,16 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 
 ### 18.7 Beta ドキュメントの移行
 
-| Beta                                | 正式版                                | 扱い              |
-|-------------------------------------|---------------------------------------|-------------------|
-| `docs/reference/architecture.md`    | `book/src/internals/architecture.md`  | 英訳して移行      |
-| `docs/reference/vm_design.md`       | ADR-0007 + `book/src/internals/vm.md` | 分割して移行      |
-| `docs/reference/gc_design.md`       | ADR-0002 + `book/src/internals/gc.md` | 分割して移行      |
-| `docs/reference/zig_guide.md`       | `book/src/dev/zig-guide.md`           | 英訳して移行      |
-| `docs/reference/lessons_learned.md` | 各 ADR に分散                         | 個別 ADR に展開   |
-| `plan/memo.md`                      | (移行しない)                          | Beta の開発記録   |
-| `plan/roadmap.md`                   | (移行しない)                          | Beta の開発記録   |
-| `docs/future.md`                    | ADR + book の設計章                   | 決定事項を ADR 化 |
+| Beta                                | 正式版                                         | 扱い              |
+|-------------------------------------|------------------------------------------------|-------------------|
+| `docs/reference/architecture.md`    | `docs/developer/architecture.md`               | 英訳して移行      |
+| `docs/reference/vm_design.md`       | ADR-0007 + `docs/developer/vm.md`              | 分割して移行      |
+| `docs/reference/gc_design.md`       | ADR-0002 + `docs/developer/gc.md`              | 分割して移行      |
+| `docs/reference/zig_guide.md`       | `docs/developer/zig-guide.md`                  | 英訳して移行      |
+| `docs/reference/lessons_learned.md` | 各 ADR (`docs/adr/`) に分散                    | 個別 ADR に展開   |
+| `plan/memo.md`                      | (移行しない)                                   | Beta の開発記録   |
+| `plan/roadmap.md`                   | (移行しない)                                   | Beta の開発記録   |
+| `docs/future.md`                    | ADR (`docs/adr/`) + `docs/` の設計ドキュメント | 決定事項を ADR 化 |
 
 ---
 
@@ -2306,7 +2333,7 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 - BuiltinDef にメタデータ (doc, arglists, added) を付与 (§10 メタデータ方針)
 - core.clj を作成: マクロ 43+個 + 高レベル関数を Clojure で定義 (§9.6)
 - ビルド時 AOT パイプライン構築: core.clj → bytecode → `@embedFile`
-- `status/vars.yaml` で `defined_in`, `ns`, `added` を追跡
+- `.dev/status/vars.yaml` で `defined_in`, `ns`, `added` を追跡
 - 名前空間対応検証: 全 Var が本家と同じ NS に配置されていることを CI で確認
 - テストオラクル (§10 L1) で基本動作を検証
 - 目標: Beta で実装済みの 545 関数のうち主要 200 関数をカバー
@@ -2362,7 +2389,7 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 ### Phase 8: Alpha リリース (v0.1.0-alpha)
 
 - 全テストが pass する状態
-- mdBook ドキュメントの初版公開 (§18)
+- ドキュメントの初版公開 (§18)
 - GitHub Releases でバイナリ配布
 - コミュニティへのアナウンス
 - フィードバック受付開始
@@ -2385,7 +2412,7 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 
 - API の後方互換性保証
 - 互換性テスト pass 率の目標達成 (L0-L2 で 90%+)
-- mdBook ドキュメント完成版
+- ドキュメント完成版
 - Homebrew Formula, GitHub Actions セットアップ
 - v1.0.0 タグ + GitHub Release
 
@@ -2443,9 +2470,9 @@ README.md は簡潔に保ち、詳細は mdBook に誘導する:
 
 ## タスク
 
-上記を踏まえて、以下を plan/ に作成してください:
+上記を踏まえて、以下を .dev/plan/ に作成してください:
 
-### A. 実装計画書 (plan/plan_0001_bootstrap.md)
+### A. 実装計画書 (.dev/plan/plan_0001_bootstrap.md)
 
 future.md §19 の Phase 1-3 を具体化した実装計画。各フェーズについて:
 
@@ -2457,7 +2484,7 @@ future.md §19 の Phase 1-3 を具体化した実装計画。各フェーズに
 特に Phase 1 (Reader + Analyzer) については、最初のコミットで
 何を含めるかまで具体化すること。
 
-### B. 設計判断メモ (plan/notes.md)
+### B. 設計判断メモ (.dev/notes/notes.md)
 
 Beta との差分を明記。少なくとも以下の判断を含む:
 
@@ -2467,7 +2494,7 @@ Beta との差分を明記。少なくとも以下の判断を含む:
 - Value 型の設計 (Beta の tagged union vs NaN boxing)
 - テストフレームワークの選択
 
-### C. 最初の作業用メモ (plan/memo.md)
+### C. 最初の作業用メモ (.dev/plan/memo.md)
 
 CLAUDE.md テンプレートの「実行計画テーブル」形式で、
 Phase 1 の具体的タスクを列挙。
@@ -2490,10 +2517,12 @@ Phase 1 の具体的タスクを列挙。
 ### 期待される成果物
 
 ```
-plan/
-├── plan_0001_bootstrap.md   # Phase 1-3 の詳細実装計画
-├── notes.md                 # 設計判断・Beta との差分
-└── memo.md                  # 実行計画テーブル (Phase 1)
+.dev/
+├── plan/
+│   ├── plan_0001_bootstrap.md   # Phase 1-3 の詳細実装計画
+│   └── memo.md                  # 実行計画テーブル (Phase 1)
+└── notes/
+    └── notes.md                 # 設計判断・Beta との差分
 ```
 
 この成果物をレビューした後、Phase 1 の最初のタスクから実装を開始する。

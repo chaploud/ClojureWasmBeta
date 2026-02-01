@@ -61,11 +61,10 @@ Claude Code の `add-dir` で追加すべきディレクトリ群。
 
 ```
 clojurewasm/
-├── CLAUDE.md                    # エージェント指示 (本体)
-├── CLAUDE.local.md              # ローカル固有設定 (.gitignore)
-├── .claude/
-│   ├── settings.json            # 権限・フック設定
-│   ├── skills/                  # カスタムスキル (Anthropic Skills 形式)
+├── .claude/                       # Claude Code
+│   ├── CLAUDE.md                  # エージェント指示 (本体)
+│   ├── settings.json              # 権限・フック設定
+│   ├── skills/                    # カスタムスキル (Anthropic Skills 形式)
 │   │   ├── tdd/
 │   │   │   ├── SKILL.md
 │   │   │   └── references/tdd-patterns.md
@@ -74,60 +73,65 @@ clojurewasm/
 │   │   └── compat-test/
 │   │       ├── SKILL.md
 │   │       └── references/edge-cases.md
-│   └── agents/                  # カスタムサブエージェント
+│   └── agents/                    # カスタムサブエージェント
 │       ├── security-reviewer.md
 │       ├── compat-checker.md
 │       ├── test-runner.md
 │       ├── codebase-explorer.md
 │       └── debugger.md
-├── flake.nix                    # ツールチェーン定義
+├── .dev/                          # 開発内部 (git 管理)
+│   ├── plan/                      # セッション計画・ログ
+│   │   ├── memo.md                # 現在地点のみ (常に小さく保つ)
+│   │   ├── active/                # 今のフェーズの計画+ログ (1セットだけ)
+│   │   │   ├── plan_0003_vm_bytecode.md
+│   │   │   └── log_0003_vm_bytecode.md
+│   │   └── archive/              # 完了フェーズの計画+ログ (対で保存)
+│   │       ├── plan_0001_tokenizer_reader.md
+│   │       ├── log_0001_tokenizer_reader.md
+│   │       ├── plan_0002_analyzer.md
+│   │       └── log_0002_analyzer.md
+│   ├── status/                    # 内部進捗追跡
+│   │   ├── vars.yaml              # Var 実装状況
+│   │   ├── bench.yaml             # ベンチマーク
+│   │   └── namespaces.yaml        # 名前空間対応状況
+│   └── notes/                     # 技術メモ・思考ノート
+├── flake.nix                      # ツールチェーン定義
 ├── flake.lock
 ├── build.zig
 ├── build.zig.zon
 ├── src/
-│   ├── api/                     # 公開 API (§17)
-│   ├── common/                  # 共有コード
-│   ├── native/                  # native 路線固有
-│   ├── wasm_rt/                 # wasm_rt 路線固有
-│   └── wasm/                    # Wasm InterOp (両路線共通)
-│       ├── loader.zig           # .wasm ロード
-│       ├── runtime.zig          # 関数呼び出し
-│       ├── interop.zig          # メモリ操作・マーシャリング
-│       ├── wit_parser.zig       # WIT パーサー (Phase 2)
-│       └── wit_types.zig        # WIT 型定義 (Phase 2)
-├── core/
-│   └── core.clj                 # AOT コンパイル対象 (§9.6)
+│   ├── api/                       # 公開 API (§17)
+│   ├── common/                    # 共有コード
+│   ├── native/                    # native 路線固有
+│   ├── wasm_rt/                   # wasm_rt 路線固有
+│   └── wasm/                      # Wasm InterOp (両路線共通)
+│       ├── loader.zig             # .wasm ロード
+│       ├── runtime.zig            # 関数呼び出し
+│       ├── interop.zig            # メモリ操作・マーシャリング
+│       ├── wit_parser.zig         # WIT パーサー (Phase 2)
+│       └── wit_types.zig          # WIT 型定義 (Phase 2)
+├── clj/                           # Clojure ソース (AOT → @embedFile)
+│   └── core.clj                   # AOT コンパイル対象 (§9.6)
 ├── test/
 │   ├── unit/
 │   ├── e2e/
-│   └── imported/                # upstream テスト (§10)
-├── plan/
-│   ├── memo.md                  # 現在地点のみ (常に小さく保つ)
-│   ├── active/                  # 今のフェーズの計画+ログ (1セットだけ)
-│   │   ├── plan_0003_vm_bytecode.md
-│   │   └── log_0003_vm_bytecode.md
-│   └── archive/                 # 完了フェーズの計画+ログ (対で保存)
-│       ├── plan_0001_tokenizer_reader.md
-│       ├── log_0001_tokenizer_reader.md
-│       ├── plan_0002_analyzer.md
-│       └── log_0002_analyzer.md
-├── status/
-│   ├── vars.yaml                # Var 実装状況
-│   ├── bench.yaml               # ベンチマーク
-│   └── namespaces.yaml          # 名前空間対応状況
-├── doc/
-│   └── adr/                     # Architecture Decision Records
-├── book/                        # mdBook ドキュメント
-├── bench/                       # ベンチマークスイート
-├── scripts/                     # CI/品質ゲートスクリプト
-└── examples/
+│   └── upstream/                  # upstream テスト変換 (§10)
+├── docs/                          # 外向きドキュメント
+│   ├── developer/                 # 開発者向け実践ガイド
+│   ├── compatibility.md           # 互換性ステータス (自動生成)
+│   ├── differences.md             # 本家 Clojure との差異
+│   └── examples/                  # サンプルコード集
+├── bench/                         # ベンチマークスイート
+├── scripts/                       # CI/品質ゲートスクリプト
+├── LICENSE
+└── README.md
 ```
 
-### 2.2 plan/ の運用フロー
+### 2.2 .dev/plan/ の運用フロー
 
 ```
 フェーズ開始時:
-  1. plan/active/ に plan_NNNN_タイトル.md を作成 (ゴール・タスクリスト)
+  1. .dev/plan/active/ に plan_NNNN_タイトル.md を作成 (ゴール・タスクリスト)
   2. memo.md を更新 (現在のフェーズ番号・active ファイル名)
 
 実装中:
@@ -136,8 +140,8 @@ clojurewasm/
   5. memo.md の「次のタスク」を更新
 
 フェーズ完了時:
-  6. plan + log を archive/ に移動
-  7. 次のフェーズの plan を active/ に作成
+  6. plan + log を .dev/plan/archive/ に移動
+  7. 次のフェーズの plan を .dev/plan/active/ に作成
   8. memo.md を更新
 ```
 
@@ -150,14 +154,14 @@ clojurewasm/
 ### 2.3 memo.md の構造
 
 memo.md は **現在地点のみ** を記録する。小さく保つこと。
-タスク詳細は active/ の plan ファイルに書く。
+タスク詳細は .dev/plan/active/ の plan ファイルに書く。
 
 ```markdown
 # ClojureWasm 開発メモ
 
 ## 現在地点
 
-- 現在のフェーズ: plan/active/plan_0003_vm_bytecode.md
+- 現在のフェーズ: .dev/plan/active/plan_0003_vm_bytecode.md
 - 直近の完了: Analyzer の基本ノード生成
 - 次のタスク: OpCode 定義とスタックマシン基盤
 - ブロッカー: なし
@@ -235,7 +239,7 @@ Zig で Clojure 処理系をフルスクラッチ実装。動作互換 (ブラ�
 
 参照実装: <Beta のパス> (add-dir 済み)
 
-現在の状態は plan/memo.md を参照。
+現在の状態は .dev/plan/memo.md を参照。
 設計の詳細は docs/future.md を参照。
 
 ## 言語ポリシー
@@ -267,25 +271,25 @@ IMPORTANT: t-wada (和田卓人) の推奨するテスト駆動開発の進め�
 ## セッションの進め方
 
 ### 開始時
-1. plan/memo.md を確認 (現在のフェーズと次のタスクを把握)
-2. plan/active/ の plan ファイルでタスク詳細を確認
+1. .dev/plan/memo.md を確認 (現在のフェーズと次のタスクを把握)
+2. .dev/plan/active/ の plan ファイルでタスク詳細を確認
 
 ### 開発中
 1. TDD サイクルで実装 (上記)
 2. Beta のコードを参照するが、コピペではなく理解して再設計
 3. テストが通ったらこまめにコミット
-4. タスク完了・発見・計画変更は plan/active/ の log ファイルに追記
+4. タスク完了・発見・計画変更は .dev/plan/active/ の log ファイルに追記
 
 ### タスク完了時
-1. plan/active/ の plan ファイルの該当タスクを「完了」に更新
+1. .dev/plan/active/ の plan ファイルの該当タスクを「完了」に更新
 2. memo.md の「次のタスク」を更新
 3. 意味のある単位で git commit
 4. 次の未完了タスクへ自動的に進む
 
 ### フェーズ完了時
-1. plan + log を plan/archive/ に移動
+1. plan + log を .dev/plan/archive/ に移動
 2. memo.md の「完了フェーズ」テーブルに追記
-3. 次のフェーズの plan を plan/active/ に作成 (Plan Mode で)
+3. 次のフェーズの plan を .dev/plan/active/ に作成 (Plan Mode で)
 
 ## ビルドとテスト
 
@@ -313,7 +317,7 @@ bash bench/run_bench.sh --quick
 - GcStrategy trait でGC抽象化 → future.md §5
 - BuiltinDef にメタデータ (doc, arglists, added) → future.md §10
 - core.clj AOT コンパイル → future.md §9.6
-- 設計判断は doc/adr/ に ADR として記録
+- 設計判断は docs/adr/ に ADR として記録
 ````
 
 ---
@@ -434,7 +438,7 @@ description: >
   「進捗」「ステータス」「次は何」「phase check」と言われた場合、
   またはセッション開始時の現状把握に使用。
   テスト実行だけの場合は使用しない (zig build test を直接使う)。
-compatibility: Claude Code 専用。plan/ ディレクトリ構造が必要。
+compatibility: Claude Code 専用。.dev/plan/ ディレクトリ構造が必要。
 metadata:
   author: clojurewasm
   version: 1.0.0
@@ -445,13 +449,13 @@ metadata:
 
 ## 手順
 
-1. `plan/memo.md` を読む — 現在のフェーズと位置を特定
-2. `plan/active/` の plan ファイルを読む — タスク完了状況を確認
+1. `.dev/plan/memo.md` を読む — 現在のフェーズと位置を特定
+2. `.dev/plan/active/` の plan ファイルを読む — タスク完了状況を確認
 3. `zig build test` を実行 — pass/fail 数を報告
-4. `status/vars.yaml` を集計 — 実装カバレッジ
+4. `.dev/status/vars.yaml` を集計 — 実装カバレッジ
 5. 未完了タスクの一覧と次のアクションを推奨
 6. ブロッカーがあれば報告
-7. `plan/active/` の log ファイルの最新エントリを表示
+7. `.dev/plan/active/` の log ファイルの最新エントリを表示
 
 ## 出力フォーマット
 
@@ -907,9 +911,6 @@ security-reviewer でセキュリティ問題を見つけて、次に debugger �
             yq-go                    # YAML 処理 (vars.yaml 等)
             jq                       # JSON 処理
 
-            # === ドキュメント ===
-            mdbook                   # mdBook ビルド
-
             # === 開発補助 ===
             python3                  # スクリプト・テスト生成
             nodePackages.prettier    # Markdown フォーマッタ
@@ -921,7 +922,7 @@ security-reviewer でセキュリティ問題を見つけて、次に debugger �
 
           shellHook = ''
             echo "ClojureWasm dev shell (Zig $(zig version))"
-            echo "Tools: clojure, wasmtime, hyperfine, yq, mdbook"
+            echo "Tools: clojure, wasmtime, hyperfine, yq"
           '';
         };
       });
@@ -938,7 +939,6 @@ security-reviewer でセキュリティ問題を見つけて、次に debugger �
 | babashka    | テスト生成スクリプト                       | upstream テスト変換時             |
 | hyperfine   | ベンチマーク精密計測                       | パフォーマンス改善時              |
 | yq          | vars.yaml / bench.yaml の照会・更新        | ステータス確認時                  |
-| mdbook      | ドキュメントビルド・プレビュー             | ドキュメント更新時                |
 | gh          | Issue/PR 作成、CI ステータス確認           | PR 作成時                         |
 
 ---
@@ -957,15 +957,15 @@ Plan Mode で以下を実行:
 1. flake.nix でツールチェーンを構築 (nix develop で確認)
 2. build.zig の雛形を作成 (zig build / zig build test が通る状態)
 3. src/ 以下のディレクトリ構造を docs/future.md §17 に従って作成
-4. CLAUDE.md, plan/memo.md, status/vars.yaml の初期版を作成
-5. doc/adr/0001-nan-boxing.md の雛形を作成
+4. CLAUDE.md, .dev/plan/memo.md, .dev/status/vars.yaml の初期版を作成
+5. docs/adr/0001-nan-boxing.md の雛形を作成
 6. git init && 初回コミット
 ```
 
 ### Phase 1: Reader + Analyzer
 
 ```
-plan/memo.md の Phase 1 タスクに従い、TDD で Reader を実装する。
+.dev/plan/memo.md の Phase 1 タスクに従い、TDD で Reader を実装する。
 
 参照:
 - Beta の src/reader/reader.zig (構造を参考にするが、コピーではなく再設計)
@@ -982,7 +982,7 @@ plan/memo.md の Phase 1 タスクに従い、TDD で Reader を実装する。
 ### Phase 2: Native 路線 VM
 
 ```
-plan/memo.md の Phase 2 タスクに従い、TDD で VM を実装する。
+.dev/plan/memo.md の Phase 2 タスクに従い、TDD で VM を実装する。
 
 参照:
 - Beta の src/runtime/ (value.zig, evaluator.zig, vm/vm.zig)
@@ -1003,7 +1003,7 @@ plan/memo.md の Phase 2 タスクに従い、TDD で VM を実装する。
 ### Phase 3: Builtin 関数 + core.clj AOT
 
 ```
-plan/memo.md の Phase 3 タスクに従い、builtin 関数を実装する。
+.dev/plan/memo.md の Phase 3 タスクに従い、builtin 関数を実装する。
 
 2つの実装パス:
 1. Zig builtin (vm_intrinsic + runtime_fn):
@@ -1012,14 +1012,14 @@ plan/memo.md の Phase 3 タスクに従い、builtin 関数を実装する。
    - 本家 core.clj の docstring をそのまま使う (互換性のため)
 
 2. core.clj AOT (core_fn + core_macro):
-   - core/core.clj にClojureで定義
+   - clj/core.clj にClojureで定義
    - ビルド時 AOT パイプラインを構築 (future.md §9.6)
    - 本家のブートストラップ順序を参考にする
 
 互換性テスト:
 - 各関数について本家と同じ入出力を返すことをテスト
 - clj-nrepl-eval で本家の振る舞いを確認してからテストを書く
-- status/vars.yaml に kind, ns, added を記録
+- .dev/status/vars.yaml に kind, ns, added を記録
 ```
 
 ### Phase 4+: 最適化・テスト拡充
@@ -1094,10 +1094,10 @@ Claude Code Best Practice に基づくセッション管理。
 
 ```bash
 # ファンアウト: upstream テストの一括変換
-for file in $(cat test/imported/pending.txt); do
-  claude -p "test/imported/$file を ClojureWasm 用に変換して。\
+for file in $(cat test/upstream/pending.txt); do
+  claude -p "test/upstream/$file を ClojureWasm 用に変換して。\
     Tier 1 ルール (future.md §10) に従う。\
-    変換できたら test/imported/converted/ に保存" \
+    変換できたら test/upstream/converted/ に保存" \
     --allowedTools "Read,Write,Bash(zig build test *)"
 done
 ```
@@ -1121,13 +1121,13 @@ echo "=== vars.yaml consistency check ==="
 yq '.vars.clojure_core | to_entries | map(select(.value.kind != null))
     | map(select(.value.kind |
       test("^(special_form|vm_intrinsic|runtime_fn|core_fn|core_macro)$") | not))
-    | length' status/vars.yaml | grep -q '^0$'
+    | length' .dev/status/vars.yaml | grep -q '^0$'
 
 echo "=== namespace correspondence check ==="
 # Verify ns field is set for all done vars
 yq '.vars.clojure_core | to_entries
     | map(select(.value.status == "done" and .value.ns == null))
-    | length' status/vars.yaml | grep -q '^0$'
+    | length' .dev/status/vars.yaml | grep -q '^0$'
 
 echo "All checks passed."
 ```
@@ -1170,7 +1170,7 @@ jobs:
 ## 11. ADR テンプレート
 
 ```markdown
-# doc/adr/0000-template.md
+# docs/adr/0000-template.md
 
 # ADR-NNNN: タイトル
 
