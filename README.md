@@ -3,6 +3,11 @@
 This repository is intended for experimental and research use.
 A more formal project with complete English documentation will be published separately in the future.
 
+=> 2026/02/10 Update:
+
+🚀 The official, fully English version of ClojureWasm has been released:
+https://github.com/clojurewasm/ClojureWasm
+
 **Zig で Clojure 処理系をフルスクラッチ実装。**
 
 JVM を一切使わず、Tokenizer から GC まで全てを Zig で書き上げた Clojure 処理系です。
